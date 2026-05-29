@@ -15,6 +15,9 @@ export interface CsvUserRow {
 
 export type ModuleStatus = "not_started" | "in_progress" | "completed";
 
+/** 'text' = existing demo slides   'pdf' = uploaded PDF assessment */
+export type ContentType = "text" | "pdf";
+
 export interface TrainingModule {
   id: string;
   title: string;
@@ -23,6 +26,12 @@ export interface TrainingModule {
   durationMinutes: number;
   status: ModuleStatus;
   batchIds: string[];
+  /** Present when contentType === 'pdf'. Public URL served from /uploads/ */
+  pdfUrl?: string;
+  /** Defaults to 'text' for all existing demo modules. */
+  contentType?: ContentType;
+  /** Unix ms timestamp — used to sort uploaded assessments newest-first. */
+  createdAt?: number;
 }
 
 export interface McqOption {

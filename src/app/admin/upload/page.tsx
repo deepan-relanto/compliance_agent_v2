@@ -2,7 +2,7 @@
 
 import { RouteGuard } from "@/components/auth/route-guard";
 import { AdminShell } from "@/components/layout/admin-shell";
-import { UnderConstruction } from "@/components/layout/under-construction";
+import { UploadPanel } from "@/components/admin/upload-panel";
 
 export default function AdminUploadPage() {
   return (
@@ -11,10 +11,7 @@ export default function AdminUploadPage() {
         title="Upload PDF"
         subtitle="Upload training decks and auto-generate checkpoint MCQs."
       >
-        <UnderConstruction
-          title="Upload PDF"
-          description="PPT/PDF ingestion, slide conversion, and Gemini MCQ generation will be available here."
-        />
+        <UploadPanel />
       </AdminShell>
     </RouteGuard>
   );

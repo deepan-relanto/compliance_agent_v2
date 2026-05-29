@@ -299,3 +299,43 @@ export function getModulesForBatch(batchId: string): TrainingModule[] {
 export function getMcqForSlide(moduleId: string, slideIndex: number): McqQuestion | undefined {
   return MOCK_MCQS[moduleId]?.find((q) => q.slideIndex === slideIndex);
 }
+
+// ─── Uploaded Assessment Store (client-side, localStorage-backed) ─────────────
+// This is a lightweight PoC store. Replace with a real DB/API in production.
+
+const STORE_KEY = "compliance-uploaded-assessments";
+
+export function getUploadedAssessments(): TrainingModule[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    return raw ? (JSON.parse(raw) as TrainingModule[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveUploadedAssessment(module: TrainingModule): void {
+  if (typeof window === "undefined") return;
+  const existing = getUploadedAssessments();
+  // Deduplicate by id, then prepend so newest is always first
+  const deduped = existing.filter((m) => m.id !== module.id);
+  localStorage.setItem(STORE_KEY, JSON.stringify([module, ...deduped]));
+}
+
+export function getAllModulesForBatch(batchId: string): TrainingModule[] {
+  const demo = getModulesForBatch(batchId);
+  const uploaded = getUploadedAssessments()
+    .filter((m) => m.batchIds.includes(batchId) || m.batchIds.includes("all"))
+    // Sort newest-first so the most recently created assessment is at the top
+    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+  // Uploaded assessments appear above the static demo modules
+  return [...uploaded, ...demo];
+}
+
+export function findModuleById(id: string): TrainingModule | undefined {
+  return (
+    TRAINING_MODULES.find((m) => m.id === id) ??
+    getUploadedAssessments().find((m) => m.id === id)
+  );
+}

@@ -8,9 +8,17 @@ import { getMcqForSlide, MOCK_MCQS, SLIDE_CONTENT } from "@/lib/mock-data";
 import type { McqQuestion, TrainingModule } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronLeft, ChevronRight, Maximize2, Minimize2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileText, Loader2, Maximize2, Minimize2 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+// import { Document, Page, pdfjs } from "react-pdf";
+import "react-pdf/dist/Page/AnnotationLayer.css";
+import "react-pdf/dist/Page/TextLayer.css";
+
+// Configure the PDF.js worker — required by react-pdf v7+
+// Using unpkg ensures Next.js webpack doesn't crash on client-side bundling
+// pdfjs.GlobalWorkerOptions.workerSrc =
+//   `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 const SLIDES_BETWEEN_GATES = 3;
 
@@ -32,7 +40,13 @@ interface SlideViewerProps {
 }
 
 export function SlideViewer({ module }: SlideViewerProps) {
-  const slides = SLIDE_CONTENT[module.id] ?? ["Slide content"];
+  // PDF modules: slides array drives the progress bar + navigation counts.
+  // Real page count is detected by react-pdf and updates this via setNumPages.
+  const [numPages, setNumPages] = useState<number>(module.slideCount);
+  const slides =
+    module.contentType === "pdf"
+      ? Array.from({ length: numPages }, (_, i) => `Page ${i + 1}`)
+      : (SLIDE_CONTENT[module.id] ?? ["Slide content"]);
   const totalSlides = slides.length;
   const moduleMcqs = MOCK_MCQS[module.id] ?? [];
 
@@ -153,18 +167,40 @@ export function SlideViewer({ module }: SlideViewerProps) {
               transition={{ duration: 0.2 }}
               className="flex flex-1 items-center justify-center p-6 sm:p-10"
             >
-              <div className="w-full max-w-3xl rounded-md border border-zinc-200 bg-white p-8 shadow-[var(--shadow-card)] sm:p-12">
-                <p className="text-xs font-semibold uppercase tracking-widest text-[#f15a24]">
-                  Slide {slideIndex + 1}
-                </p>
-                <h2 className="mt-3 text-2xl font-semibold tracking-tight text-zinc-900 sm:text-3xl text-balance">
-                  {slides[slideIndex]}
-                </h2>
-                <p className="mt-4 text-sm leading-relaxed text-zinc-500">
-                  Checkpoint every three slides. You cannot skip ahead without a
-                  correct answer.
-                </p>
-              </div>
+              {module.contentType === "pdf" && module.pdfUrl ? (
+                // ── PDF assessment: one page at a time via react-pdf ───────
+                <div className="flex h-full w-full max-w-4xl flex-col overflow-hidden rounded-md border border-zinc-200 bg-white shadow-[var(--shadow-card)]">
+                  <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-2">
+                    <p className="text-xs font-semibold uppercase tracking-widest text-[#f15a24]">
+                      Page {slideIndex + 1} of {numPages}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-3.5 w-3.5 text-zinc-400" strokeWidth={1.5} />
+                      <span className="text-xs text-zinc-400">{module.title}</span>
+                    </div>
+                  </div>
+                  {/* Scrollable PDF canvas area — only the current page is rendered */}
+                  <div className="flex flex-1 items-center justify-center overflow-auto bg-zinc-100 p-4">
+                    <div className="p-10 bg-white">
+                      PDF VIEWER TEMPORARILY DISABLED
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                // Text-based demo slide (existing behavior — unchanged)
+                <div className="w-full max-w-3xl rounded-md border border-zinc-200 bg-white p-8 shadow-[var(--shadow-card)] sm:p-12">
+                  <p className="text-xs font-semibold uppercase tracking-widest text-[#f15a24]">
+                    Slide {slideIndex + 1}
+                  </p>
+                  <h2 className="mt-3 text-2xl font-semibold tracking-tight text-zinc-900 sm:text-3xl text-balance">
+                    {slides[slideIndex]}
+                  </h2>
+                  <p className="mt-4 text-sm leading-relaxed text-zinc-500">
+                    Checkpoint every three slides. You cannot skip ahead without a
+                    correct answer.
+                  </p>
+                </div>
+              )}
             </motion.div>
           ) : (
             <motion.div

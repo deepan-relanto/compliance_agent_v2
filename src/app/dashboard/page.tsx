@@ -4,12 +4,22 @@ import { RouteGuard } from "@/components/auth/route-guard";
 import { ModuleCard } from "@/components/employee/module-card";
 import { EmployeeShell } from "@/components/layout/employee-shell";
 import { useAuthStore } from "@/lib/auth-store";
-import { getModulesForBatch } from "@/lib/mock-data";
+import { getAllModulesForBatch } from "@/lib/mock-data";
+import type { TrainingModule } from "@/lib/types";
 import { BookOpen, CheckCircle2, Clock3 } from "lucide-react";
+import { useEffect, useState } from "react";
 
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
-  const modules = user?.batchId ? getModulesForBatch(user.batchId) : [];
+
+  // Read uploaded assessments from localStorage client-side only
+  const [modules, setModules] = useState<TrainingModule[]>([]);
+  useEffect(() => {
+    if (user?.batchId) {
+      setModules(getAllModulesForBatch(user.batchId));
+    }
+  }, [user?.batchId]);
+
   const completedCount = modules.filter((m) => m.status === "completed").length;
   const inProgressCount = modules.filter((m) => m.status === "in_progress").length;
   const totalMinutes = modules.reduce((acc, m) => acc + m.durationMinutes, 0);
