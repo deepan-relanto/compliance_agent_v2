@@ -7,7 +7,8 @@
  * Shape: Record<"username|moduleId", AssessmentProgress>
  */
 
-import type { ModuleStatus } from "./types";
+import type { ModuleStatus, WarningHistoryEntry } from "./types";
+import { logAudit } from "./audit-store";
 
 export interface AssessmentProgress {
   username: string;
@@ -19,13 +20,23 @@ export interface AssessmentProgress {
   status: ModuleStatus;
   lastAccessedAt: number; // Unix ms
   completedAt?: number;   // Unix ms, only set when status === "completed"
+  warningCount: number;
+  warningHistory: WarningHistoryEntry[];
+  failedAt?: number;
+  failedReason?: string;
+  retakeCount: number;
+  lastFailureAt?: number;
+  lastFailureReason?: string;
+  archivedWarnings: { attempt: number; warnings: WarningHistoryEntry[] }[];
 }
 
 const STORE_KEY = "compliance-progress";
+const WARNING_COOLDOWN_MS = 5000;
+
 
 // ── Low-level helpers ─────────────────────────────────────────────────────────
 
-function readAll(): Record<string, AssessmentProgress> {
+export function readAll(): Record<string, AssessmentProgress> {
   if (typeof window === "undefined") return {};
   try {
     const raw = localStorage.getItem(STORE_KEY);
@@ -35,7 +46,7 @@ function readAll(): Record<string, AssessmentProgress> {
   }
 }
 
-function writeAll(data: Record<string, AssessmentProgress>): void {
+export function writeAll(data: Record<string, AssessmentProgress>): void {
   if (typeof window === "undefined") return;
   localStorage.setItem(STORE_KEY, JSON.stringify(data));
 }
@@ -48,7 +59,7 @@ function key(username: string, moduleId: string): string {
 
 /**
  * Called when the assessment viewer mounts (user opens the assessment).
- * Creates an "in_progress" record if none exists; leaves "completed" alone.
+ * Creates an "in_progress" record if none exists; leaves "completed" / "failed" alone.
  */
 export function markInProgress(
   username: string,
@@ -61,8 +72,17 @@ export function markInProgress(
   const k = key(username, moduleId);
   const existing = all[k];
 
-  // Never downgrade a completed assessment back to in_progress
-  if (existing?.status === "completed") return;
+  // Never downgrade a completed, failed, or permanently_failed assessment
+  if (
+    existing?.status === "completed" ||
+    existing?.status === "failed" ||
+    existing?.status === "permanently_failed"
+  ) {
+    return;
+  }
+
+  const isNew = !existing;
+  const isRetake = existing?.status === "not_started" && (existing?.retakeCount ?? 0) > 0;
 
   all[k] = {
     username,
@@ -74,8 +94,22 @@ export function markInProgress(
     status: "in_progress",
     lastAccessedAt: Date.now(),
     completedAt: existing?.completedAt,
+    warningCount: existing?.warningCount ?? 0,
+    warningHistory: existing?.warningHistory ?? [],
+    failedAt: existing?.failedAt,
+    failedReason: existing?.failedReason,
+    retakeCount: existing?.retakeCount ?? 0,
+    lastFailureAt: existing?.lastFailureAt,
+    lastFailureReason: existing?.lastFailureReason,
+    archivedWarnings: existing?.archivedWarnings ?? [],
   };
   writeAll(all);
+
+  if (isNew) {
+    logAudit("Assessment Started", username, `Started initial attempt of ${moduleTitle}`);
+  } else if (isRetake) {
+    logAudit("Retake Started", username, `Started Retake #${existing?.retakeCount} of ${moduleTitle}`);
+  }
 }
 
 /**
@@ -89,7 +123,7 @@ export function saveSlideProgress(
   const all = readAll();
   const k = key(username, moduleId);
   const existing = all[k];
-  if (!existing || existing.status === "completed") return;
+  if (!existing || existing.status === "completed" || existing.status === "failed" || existing.status === "permanently_failed") return;
 
   all[k] = {
     ...existing,
@@ -106,7 +140,7 @@ export function markCompleted(username: string, moduleId: string): void {
   const all = readAll();
   const k = key(username, moduleId);
   const existing = all[k];
-  if (!existing) return;
+  if (!existing || existing.status === "failed" || existing.status === "permanently_failed") return;
 
   all[k] = {
     ...existing,
@@ -116,6 +150,8 @@ export function markCompleted(username: string, moduleId: string): void {
     completedAt: Date.now(),
   };
   writeAll(all);
+
+  logAudit("Assessment Completed", username, `Successfully completed ${existing.moduleTitle}.`);
 }
 
 /**
@@ -152,3 +188,138 @@ export function getProgressForBatchLive(batchId: string): AssessmentProgress[] {
 export function getProgressForUser(username: string): AssessmentProgress[] {
   return Object.values(readAll()).filter((p) => p.username === username);
 }
+
+/**
+ * Returns all progress records in the system.
+ */
+export function getAllProgressRecords(): AssessmentProgress[] {
+  return Object.values(readAll());
+}
+
+/**
+ * Increments warning count, logs history, and handles automatic failure at >= 3 warnings.
+ * Uses a warning cooldown to prevent multiple logs for a single user action.
+ */
+export function addWarning(
+  username: string,
+  moduleId: string,
+  reason: string,
+): AssessmentProgress {
+  const all = readAll();
+  const k = key(username, moduleId);
+  const existing = all[k];
+
+  if (!existing) {
+    // If warning triggered before markInProgress for some reason, skeleton
+    return {} as AssessmentProgress;
+  }
+
+  // If already failed, completed, or permanently failed, do not record further warnings
+  if (
+    existing.status === "failed" ||
+    existing.status === "completed" ||
+    existing.status === "permanently_failed"
+  ) {
+    return existing;
+  }
+
+  // Cooldown check: ignore if warning logged within last 5 seconds
+  if (existing.warningHistory && existing.warningHistory.length > 0) {
+    const lastWarning = existing.warningHistory[existing.warningHistory.length - 1];
+    const diff = Date.now() - lastWarning.timestamp;
+    if (diff < WARNING_COOLDOWN_MS) {
+      return existing;
+    }
+  }
+
+  const newCount = (existing.warningCount ?? 0) + 1;
+  const newHistory = [
+    ...(existing.warningHistory ?? []),
+    { reason, timestamp: Date.now() },
+  ];
+
+  const willFail = newCount >= 3;
+  const isPermanent = willFail && (existing.retakeCount ?? 0) >= 2;
+  const finalStatus = isPermanent
+    ? "permanently_failed"
+    : willFail
+      ? "failed"
+      : existing.status;
+
+  all[k] = {
+    ...existing,
+    warningCount: newCount,
+    warningHistory: newHistory,
+    lastAccessedAt: Date.now(),
+    status: finalStatus,
+    failedAt: willFail ? Date.now() : existing.failedAt,
+    failedReason: isPermanent
+      ? "Maximum retake limit reached"
+      : willFail
+        ? "Maximum warning limit reached"
+        : existing.failedReason,
+    lastFailureAt: willFail ? Date.now() : existing.lastFailureAt,
+    lastFailureReason: isPermanent
+      ? "Maximum retake limit reached"
+      : willFail
+        ? "Maximum warning limit reached"
+        : existing.lastFailureReason,
+  };
+
+  writeAll(all);
+
+  // Log audits
+  logAudit("Warning Issued", username, `Violation warning issued for ${existing.moduleTitle}. Reason: ${reason}`);
+
+  if (isPermanent) {
+    logAudit("Assessment Failed", username, `Failed attempt #${(existing.retakeCount ?? 0) + 1} of ${existing.moduleTitle}`);
+    logAudit("Retake Limit Reached", username, `Maximum retakes exhausted for ${existing.moduleTitle}`);
+    logAudit("Assessment Permanently Failed", username, `Assessment ${existing.moduleTitle} is permanently failed.`);
+  } else if (willFail) {
+    logAudit("Assessment Failed", username, `Failed attempt #${(existing.retakeCount ?? 0) + 1} of ${existing.moduleTitle}. Reached maximum warning count.`);
+  }
+
+  return all[k];
+}
+
+export function markAssessmentFailed(
+  username: string,
+  moduleId: string,
+  reason: string,
+): AssessmentProgress {
+  const all = readAll();
+  const k = key(username, moduleId);
+  const existing = all[k];
+  if (!existing) return {} as AssessmentProgress;
+
+  const isPermanent = (existing.retakeCount ?? 0) >= 2;
+  const status = isPermanent ? "permanently_failed" : "failed";
+
+  all[k] = {
+    ...existing,
+    status,
+    failedAt: Date.now(),
+    failedReason: reason,
+    lastFailureAt: Date.now(),
+    lastFailureReason: reason,
+    lastAccessedAt: Date.now(),
+  };
+
+  writeAll(all);
+  return all[k];
+}
+
+/**
+ * Returns the current warning count and full warning logs.
+ */
+export function getWarningStatus(
+  username: string,
+  moduleId: string,
+): { warningCount: number; warningHistory: WarningHistoryEntry[] } {
+  const p = getProgress(username, moduleId);
+  return {
+    warningCount: p?.warningCount ?? 0,
+    warningHistory: p?.warningHistory ?? [],
+  };
+}
+

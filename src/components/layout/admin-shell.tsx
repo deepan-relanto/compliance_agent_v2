@@ -12,6 +12,7 @@ import {
   LogOut,
   MessageSquare,
   Settings,
+  ShieldAlert,
   Upload,
 } from "lucide-react";
 import Link from "next/link";
@@ -36,6 +37,12 @@ const navItems = [
     label: "Upload PDF",
     icon: Upload,
     isActive: (path: string) => path.startsWith("/admin/upload"),
+  },
+  {
+    href: "/admin/monitoring",
+    label: "Monitoring",
+    icon: ShieldAlert,
+    isActive: (path: string) => path.startsWith("/admin/monitoring"),
   },
   {
     href: "/admin/analytics",

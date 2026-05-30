@@ -44,7 +44,7 @@ export default function AdminPage() {
           />
         </section>
 
-        <section className="mt-6 grid gap-4 md:grid-cols-3">
+        <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Link
             href="/admin/batches"
             className="rounded-md border border-zinc-200 bg-white p-5 shadow-[var(--shadow-card)] transition-colors hover:border-[#2e3192]/40"
@@ -53,7 +53,7 @@ export default function AdminPage() {
               Batch Management
             </p>
             <h3 className="mt-2 text-lg font-semibold text-zinc-900">
-              Open batch command view
+              Open batch view
             </h3>
             <p className="mt-1 text-sm text-zinc-500">
               Drill down into each batch for pass/fail trends, live controls, and AI insights.
@@ -71,6 +71,20 @@ export default function AdminPage() {
             </h3>
             <p className="mt-1 text-sm text-zinc-500">
               Prepare modules, generate checkpoint MCQs, and publish to selected batches.
+            </p>
+          </Link>
+          <Link
+            href="/admin/monitoring"
+            className="rounded-md border border-zinc-200 bg-white p-5 shadow-[var(--shadow-card)] transition-colors hover:border-[#2e3192]/40"
+          >
+            <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">
+              Integrity Monitoring
+            </p>
+            <h3 className="mt-2 text-lg font-semibold text-zinc-900">
+              Assessment Monitoring
+            </h3>
+            <p className="mt-1 text-sm text-zinc-500">
+              Track real-time warning logs, browser focus events, and automatic failures.
             </p>
           </Link>
           <Link

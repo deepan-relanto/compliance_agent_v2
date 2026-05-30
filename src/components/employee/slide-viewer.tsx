@@ -5,7 +5,7 @@ import { McqModal } from "@/components/employee/mcq-modal";
 import { RelantoLogo } from "@/components/brand/relanto-logo";
 import { Button } from "@/components/ui/button";
 import { getMcqForSlide, MOCK_MCQS, SLIDE_CONTENT } from "@/lib/mock-data";
-import type { McqQuestion, TrainingModule } from "@/lib/types";
+import type { McqQuestion, TrainingModule, WarningHistoryEntry, ReviewRequest, ModuleStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronLeft, ChevronRight, FileText, Maximize2, Minimize2 } from "lucide-react";
@@ -13,7 +13,8 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuthStore } from "@/lib/auth-store";
-import { markInProgress, markCompleted, saveSlideProgress, getProgress } from "@/lib/progress-store";
+import { markInProgress, markCompleted, saveSlideProgress, getProgress, addWarning } from "@/lib/progress-store";
+import { getPendingRequest, submitReviewRequest, getAllReviewRequests } from "@/lib/review-store";
 import { updateUploadedAssessmentSlideCount } from "@/lib/mock-data";
 
 // Isolated client-only PDF renderer — dynamically imported so pdfjs-dist is
@@ -81,6 +82,64 @@ export function SlideViewer({ module }: SlideViewerProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showFinalQa, setShowFinalQa] = useState(false);
 
+  // ── Integrity Monitoring State ──────────────────────────────────────────
+  const [liveWarningCount, setLiveWarningCount] = useState<number>(() => {
+    if (!user?.username) return 0;
+    const progress = getProgress(user.username, module.id);
+    return progress?.warningCount ?? 0;
+  });
+
+  const [liveWarningHistory, setLiveWarningHistory] = useState<WarningHistoryEntry[]>(() => {
+    if (!user?.username) return [];
+    const progress = getProgress(user.username, module.id);
+    return progress?.warningHistory ?? [];
+  });
+
+  const [isFailed, setIsFailed] = useState<boolean>(() => {
+    if (!user?.username) return false;
+    const progress = getProgress(user.username, module.id);
+    return progress?.status === "failed" || progress?.status === "permanently_failed";
+  });
+
+  const [activeWarningReason, setActiveWarningReason] = useState<string | null>(null);
+
+  // ── Integrity Enhancement States ─────────────────────────────────────────
+  const [retakeCount, setRetakeCount] = useState<number>(0);
+  const [dbStatus, setDbStatus] = useState<ModuleStatus>("in_progress");
+  const [reviewRequest, setReviewRequest] = useState<ReviewRequest | null>(null);
+  const [showReviewForm, setShowReviewForm] = useState(false);
+  const [explanation, setExplanation] = useState("");
+  const [reviewError, setReviewError] = useState("");
+  const [reviewSuccess, setReviewSuccess] = useState(false);
+  const [showExitModal, setShowExitModal] = useState(false);
+
+  const loadIntegrityState = useCallback(() => {
+    if (user?.username) {
+      const prog = getProgress(user.username, module.id);
+      if (prog) {
+        setRetakeCount(prog.retakeCount ?? 0);
+        setDbStatus(prog.status);
+        setIsFailed(prog.status === "failed" || prog.status === "permanently_failed");
+      }
+      const requests = getAllReviewRequests();
+      const userReqs = requests.filter(
+        (r) => r.username === user.username && r.moduleId === module.id
+      );
+      if (userReqs.length > 0) {
+        setReviewRequest(userReqs[0]);
+      } else {
+        setReviewRequest(null);
+      }
+    }
+  }, [user?.username, module.id]);
+
+  useEffect(() => {
+    loadIntegrityState();
+  }, [loadIntegrityState]);
+
+  const isExitingRef = useRef(false);
+  const focusTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   const isLastSlide = slideIndex === totalSlides - 1;
   const gateIndex = useMemo(
     () => Math.floor(nextClickCount / SLIDES_BETWEEN_GATES),
@@ -112,11 +171,106 @@ export function SlideViewer({ module }: SlideViewerProps) {
     };
   }, [enterFullscreen]);
 
+  const triggerWarning = useCallback((reason: string) => {
+    if (isExitingRef.current || !user?.username) return;
+
+    // Check progress status before logging warning
+    const currentProgress = getProgress(user.username, module.id);
+    if (
+      currentProgress?.status === "completed" ||
+      currentProgress?.status === "failed" ||
+      currentProgress?.status === "permanently_failed"
+    ) {
+      return;
+    }
+
+    // Call addWarning in store (includes the 5s cooldown check inside)
+    const updated = addWarning(user.username, module.id, reason);
+
+    setLiveWarningCount(updated.warningCount);
+    setLiveWarningHistory(updated.warningHistory);
+
+    if (updated.status === "failed" || updated.status === "permanently_failed") {
+      setIsFailed(true);
+      loadIntegrityState();
+    } else if (updated.warningCount !== liveWarningCount) {
+      // Show warning modal only if warning count was actually incremented (i.e. not on cooldown)
+      setActiveWarningReason(reason);
+    }
+  }, [user?.username, module.id, liveWarningCount, loadIntegrityState]);
+
   useEffect(() => {
-    const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+    const onFsChange = () => {
+      if (isExitingRef.current || isFailed) return;
+      if (document.fullscreenElement === null) {
+        setIsFullscreen(false);
+        triggerWarning("Exited Fullscreen");
+      } else {
+        setIsFullscreen(true);
+      }
+    };
     document.addEventListener("fullscreenchange", onFsChange);
     return () => document.removeEventListener("fullscreenchange", onFsChange);
-  }, []);
+  }, [triggerWarning, isFailed]);
+
+  // ── Tab Switch / Visibility Monitoring ───────────────────────────────────
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (isExitingRef.current || isFailed) return;
+      if (document.visibilityState === "hidden") {
+        triggerWarning("Switched Browser Tab");
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [triggerWarning, isFailed]);
+
+  // ── Window Focus Defocus Grace Period Monitoring ────────────────────────
+  useEffect(() => {
+    const handleBlur = () => {
+      if (isExitingRef.current || isFailed) return;
+      if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current);
+      focusTimeoutRef.current = setTimeout(() => {
+        triggerWarning("Window Lost Focus");
+      }, 3000); // 3-second grace period
+    };
+
+    const handleFocus = () => {
+      if (focusTimeoutRef.current) {
+        clearTimeout(focusTimeoutRef.current);
+        focusTimeoutRef.current = null;
+      }
+    };
+
+    window.addEventListener("blur", handleBlur);
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      window.removeEventListener("blur", handleBlur);
+      window.removeEventListener("focus", handleFocus);
+      if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current);
+    };
+  }, [triggerWarning, isFailed]);
+
+  // ── Navigation (Refresh / Leave page) Monitoring ─────────────────────────
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isExitingRef.current || !user?.username) return;
+      const currentProgress = getProgress(user.username, module.id);
+      if (currentProgress?.status === "completed" || currentProgress?.status === "failed") {
+        return;
+      }
+
+      // Record warning synchronously in localStorage before exit
+      addWarning(user.username, module.id, "Attempted Navigation");
+
+      e.preventDefault();
+      e.returnValue = "";
+      return "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [user?.username, module.id]);
 
   // ── Progress tracking ────────────────────────────────────────────────────
   // Mark in_progress when the viewer mounts (user opened the assessment).
@@ -159,6 +313,7 @@ export function SlideViewer({ module }: SlideViewerProps) {
   const tryAdvance = () => {
     if (isLastSlide) {
       // Mark completed BEFORE showing the feedback form
+      isExitingRef.current = true;
       if (user?.username) markCompleted(user.username, module.id);
       setShowFinalQa(true);
       return;
@@ -188,6 +343,11 @@ export function SlideViewer({ module }: SlideViewerProps) {
           {module.title}
         </span>
         <div className="flex items-center gap-2">
+          {liveWarningCount > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700 border border-amber-200">
+              Warnings: {liveWarningCount} / 3
+            </span>
+          )}
           <span className="font-mono text-xs text-zinc-500">
             {slideIndex + 1} / {totalSlides}
           </span>
@@ -202,12 +362,16 @@ export function SlideViewer({ module }: SlideViewerProps) {
               <Maximize2 className="h-3.5 w-3.5" />
             )}
           </Button>
-          <Link
-            href="/dashboard"
-            className="inline-flex h-8 items-center rounded-md border border-zinc-200 px-3 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setShowExitModal(true);
+            }}
+            className="h-8 border-zinc-200 text-zinc-700 hover:bg-zinc-50 px-3 text-xs"
           >
             Exit
-          </Link>
+          </Button>
         </div>
       </header>
 
@@ -281,6 +445,9 @@ export function SlideViewer({ module }: SlideViewerProps) {
                 />
                 <Link
                   href="/dashboard"
+                  onClick={() => {
+                    isExitingRef.current = true;
+                  }}
                   className="flex h-10 w-full items-center justify-center rounded-md bg-[#2e3192] text-sm font-medium text-white hover:bg-[#3d42a8]"
                 >
                   Return to dashboard
@@ -321,6 +488,271 @@ export function SlideViewer({ module }: SlideViewerProps) {
       )}
 
       <McqModal question={gateMcq} open={mcqOpen} onCorrect={handleMcqCorrect} />
+
+      {/* ── Warning Notification Modal overlay ────────────────────────────── */}
+      {activeWarningReason && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-zinc-900/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-sm rounded-lg border border-amber-200 bg-white p-6 shadow-xl text-center space-y-5 animate-in fade-in zoom-in-95 duration-250">
+            <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-amber-100">
+              <span className="text-lg font-bold text-amber-600">!</span>
+            </div>
+            <div className="space-y-1.5">
+              <h3 className="text-lg font-bold text-zinc-900">Warning {liveWarningCount} of 3</h3>
+              <p className="text-sm text-zinc-500 leading-relaxed text-balance">
+                {activeWarningReason === "Exited Fullscreen" && "You exited fullscreen mode."}
+                {activeWarningReason === "Switched Browser Tab" && "You switched browser tabs."}
+                {activeWarningReason === "Window Lost Focus" && "The assessment lost window focus."}
+                {activeWarningReason === "Attempted Navigation" && "You attempted to navigate away."}
+              </p>
+              <p className="text-xs text-amber-600 font-semibold">
+                Warnings Remaining: {3 - liveWarningCount}
+              </p>
+              <p className="text-xs text-zinc-400 mt-2">
+                If you accumulate 3 warnings, the assessment will automatically fail.
+              </p>
+            </div>
+            <Button
+              className="w-full bg-[#2e3192] text-white hover:bg-[#3d42a8]"
+              onClick={async () => {
+                setActiveWarningReason(null);
+                // Re-enter fullscreen when possible
+                try {
+                  if (!document.fullscreenElement) {
+                    await document.documentElement.requestFullscreen();
+                    setIsFullscreen(true);
+                  }
+                } catch {
+                  setIsFullscreen(true);
+                }
+              }}
+            >
+              Continue Assessment
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Exit Confirmation Modal overlay ─────────────────────────────── */}
+      {showExitModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-sm rounded-lg border border-zinc-200 bg-white p-6 shadow-xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            <h3 className="text-base font-bold text-zinc-900 text-left">Exit Assessment?</h3>
+            <div className="text-xs text-zinc-500 space-y-2 leading-relaxed text-left">
+              <p>You are about to leave this assessment.</p>
+              <p className="font-semibold text-zinc-600">If you exit now:</p>
+              <ul className="list-disc pl-4 space-y-1">
+                <li>Your current progress will be saved.</li>
+                <li>The assessment session will end.</li>
+                <li>You can return later and continue from where you left off (if not failed).</li>
+              </ul>
+              <p className="mt-2 font-medium">Do you want to proceed?</p>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs border-zinc-200 text-zinc-700"
+                onClick={() => setShowExitModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                className="bg-red-650 text-white hover:bg-red-700 text-xs"
+                onClick={() => {
+                  isExitingRef.current = true;
+                  if (user?.username) {
+                    saveSlideProgress(user.username, module.id, slideIndex);
+                  }
+                  if (document.fullscreenElement) {
+                    document.exitFullscreen().catch(() => undefined);
+                  }
+                  window.location.href = "/dashboard";
+                }}
+              >
+                Exit Assessment
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Failed Lock Screen Overlay ─────────────────────────────────────── */}
+      {isFailed && (() => {
+        const retakesRemaining = Math.max(0, 2 - retakeCount);
+        const isPendingReview = reviewRequest?.status === "Pending";
+        const isRejectedReview = reviewRequest?.status === "Rejected";
+        const isPermanentlyFailed =
+          dbStatus === "permanently_failed" ||
+          (liveWarningCount >= 3 && retakesRemaining <= 0);
+
+        const handleSubmitReview = (e: React.FormEvent) => {
+          e.preventDefault();
+          if (!explanation.trim()) {
+            setReviewError("Please provide an explanation.");
+            return;
+          }
+          if (!user?.username) return;
+
+          try {
+            submitReviewRequest(
+              user.username,
+              module.id,
+              module.title,
+              liveWarningCount,
+              Date.now(),
+              explanation.trim()
+            );
+            setReviewSuccess(true);
+            setExplanation("");
+            setReviewError("");
+            loadIntegrityState();
+          } catch (err: any) {
+            setReviewError(err.message || "Failed to submit request.");
+          }
+        };
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/80 backdrop-blur-xs p-4">
+            <div className="w-full max-w-md rounded-lg border border-red-200 bg-white p-6 shadow-2xl text-center space-y-5 animate-in fade-in zoom-in-95 duration-300">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
+                <span className="text-xl font-bold text-red-600">!</span>
+              </div>
+              <div className="space-y-2">
+                <h2 className="text-xl font-bold text-zinc-950">
+                  {isPermanentlyFailed ? "Assessment Permanently Failed" : "Assessment Failed"}
+                </h2>
+                <p className="text-xs text-zinc-500">
+                  {isPermanentlyFailed
+                    ? "Maximum retake limit reached. This assessment can no longer be retaken."
+                    : "Maximum warning limit reached."}
+                </p>
+                <p className="text-sm font-semibold text-red-600">
+                  Warnings: {liveWarningCount} / 3
+                </p>
+                {!isPermanentlyFailed && !isPendingReview && (
+                  <p className="text-xs text-zinc-400">
+                    Retakes Remaining: {retakesRemaining}
+                  </p>
+                )}
+              </div>
+
+              <div className="border-t border-b border-zinc-100 py-3 text-left">
+                <p className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider mb-2">Warning History</p>
+                <div className="max-h-24 overflow-y-auto space-y-1.5 font-mono text-[10px] text-zinc-500 pr-1">
+                  {liveWarningHistory.map((item, idx) => (
+                    <div key={idx} className="flex justify-between border-b border-zinc-50 pb-0.5">
+                      <span className="font-sans text-zinc-700">{item.reason}</span>
+                      <span>
+                        {new Date(item.timestamp).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit",
+                        })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Case A: Permanently Failed details */}
+              {isPermanentlyFailed && (
+                <div className="rounded-md bg-zinc-950 text-zinc-100 p-3 text-left space-y-1 text-xs">
+                  <p className="font-bold text-zinc-200">Maximum Retake Limit Reached</p>
+                  <p className="text-[11px] text-zinc-400 leading-relaxed">
+                    This assessment can no longer be retaken as it has reached the absolute retake limit (2 retakes). Please contact compliance.
+                  </p>
+                </div>
+              )}
+
+              {/* Case B: Pending Review details */}
+              {isPendingReview && (
+                <div className="rounded-md bg-amber-50 border border-amber-100 p-3 text-left space-y-1 text-xs text-amber-900">
+                  <p className="font-bold text-amber-800">A review request is already under review</p>
+                  <p className="text-[11px] text-amber-700 leading-relaxed">
+                    You have already submitted a review request. The compliance administrator will review it.
+                  </p>
+                </div>
+              )}
+
+              {/* Case C: Rejected Review details */}
+              {isRejectedReview && !isPendingReview && !isPermanentlyFailed && (
+                <div className="rounded-md bg-red-50 border border-red-100 p-3 text-left space-y-1 text-xs text-red-900">
+                  <p className="font-bold text-red-850">Review Request Rejected</p>
+                  <p className="text-[11px] text-red-700 leading-relaxed">
+                    Admin Comment: "{reviewRequest?.adminComment || "No comments provided."}"
+                  </p>
+                  <p className="text-[10px] text-red-500 mt-1">
+                    You may submit another explanation if you have remaining retakes.
+                  </p>
+                </div>
+              )}
+
+              {/* Form or Request Button */}
+              {!isPermanentlyFailed && !isPendingReview && (
+                <div className="space-y-4 pt-1">
+                  {!showReviewForm ? (
+                    <Button
+                      className="w-full bg-blue-600 text-white hover:bg-blue-700 text-xs font-semibold"
+                      onClick={() => setShowReviewForm(true)}
+                    >
+                      Request Review
+                    </Button>
+                  ) : (
+                    <form onSubmit={handleSubmitReview} className="space-y-3 text-left">
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-zinc-700">Reason for Failure</label>
+                        <textarea
+                          rows={3}
+                          className="w-full rounded-md border border-zinc-200 p-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#2e3192]"
+                          placeholder="Please explain why the assessment integrity rules were violated. Provide any relevant context or explanation."
+                          value={explanation}
+                          onChange={(e) => setExplanation(e.target.value)}
+                        />
+                      </div>
+                      {reviewError && (
+                        <p className="text-xs text-red-600 font-medium">{reviewError}</p>
+                      )}
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 text-xs"
+                          onClick={() => {
+                            setShowReviewForm(false);
+                            setExplanation("");
+                            setReviewError("");
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          type="submit"
+                          size="sm"
+                          className="flex-1 bg-blue-600 text-white hover:bg-blue-700 text-xs"
+                        >
+                          Submit Request
+                        </Button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+              )}
+
+              <Button
+                className="w-full bg-zinc-900 text-white hover:bg-zinc-800 text-xs"
+                onClick={() => {
+                  isExitingRef.current = true;
+                  window.location.href = "/dashboard";
+                }}
+              >
+                Return to Dashboard
+              </Button>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

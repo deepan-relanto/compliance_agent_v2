@@ -13,7 +13,38 @@ export interface CsvUserRow {
   batch_id: string;
 }
 
-export type ModuleStatus = "not_started" | "in_progress" | "completed";
+export type ModuleStatus = "not_started" | "in_progress" | "completed" | "failed" | "permanently_failed";
+
+export interface WarningHistoryEntry {
+  reason: string;
+  timestamp: number; // Unix ms
+}
+
+export interface ReviewRequest {
+  id: string;
+  username: string;
+  moduleId: string;
+  moduleTitle: string;
+  warningCount: number;
+  failureTimestamp: number;
+  userExplanation: string;
+  status: "Pending" | "Approved" | "Rejected";
+  submittedTimestamp: number;
+  decisionTimestamp?: number;
+  approvedBy?: string;
+  approvedAt?: number;
+  rejectedBy?: string;
+  rejectedAt?: number;
+  adminComment?: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  action: string;
+  admin: string;
+  timestamp: number;
+  details?: string;
+}
 
 /** 'text' = existing demo slides   'pdf' = uploaded PDF assessment */
 export type ContentType = "text" | "pdf";
