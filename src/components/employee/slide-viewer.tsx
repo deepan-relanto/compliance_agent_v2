@@ -8,17 +8,21 @@ import { getMcqForSlide, MOCK_MCQS, SLIDE_CONTENT } from "@/lib/mock-data";
 import type { McqQuestion, TrainingModule } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronLeft, ChevronRight, FileText, Loader2, Maximize2, Minimize2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileText, Maximize2, Minimize2 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
-// import { Document, Page, pdfjs } from "react-pdf";
-import "react-pdf/dist/Page/AnnotationLayer.css";
-import "react-pdf/dist/Page/TextLayer.css";
+import dynamic from "next/dynamic";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAuthStore } from "@/lib/auth-store";
+import { markInProgress, markCompleted, saveSlideProgress, getProgress } from "@/lib/progress-store";
+import { updateUploadedAssessmentSlideCount } from "@/lib/mock-data";
 
-// Configure the PDF.js worker — required by react-pdf v7+
-// Using unpkg ensures Next.js webpack doesn't crash on client-side bundling
-// pdfjs.GlobalWorkerOptions.workerSrc =
-//   `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+// Isolated client-only PDF renderer — dynamically imported so pdfjs-dist is
+// never bundled into the SSR pass (fixes "Object.defineProperty called on
+// non-object" which happens when Webpack eval wraps pdfjs ESM modules).
+const PdfPageViewer = dynamic(
+  () => import("@/components/employee/pdf-page-viewer").then((m) => m.PdfPageViewer),
+  { ssr: false },
+);
 
 const SLIDES_BETWEEN_GATES = 3;
 
@@ -40,6 +44,8 @@ interface SlideViewerProps {
 }
 
 export function SlideViewer({ module }: SlideViewerProps) {
+  const user = useAuthStore((s) => s.user);
+
   // PDF modules: slides array drives the progress bar + navigation counts.
   // Real page count is detected by react-pdf and updates this via setNumPages.
   const [numPages, setNumPages] = useState<number>(module.slideCount);
@@ -50,7 +56,25 @@ export function SlideViewer({ module }: SlideViewerProps) {
   const totalSlides = slides.length;
   const moduleMcqs = MOCK_MCQS[module.id] ?? [];
 
-  const [slideIndex, setSlideIndex] = useState(0);
+  // ── Fix: initialize from saved progress ──────────────────────────────────
+  // useState lazy initializer runs once at mount. Reading localStorage here
+  // is safe because SlideViewer is a client-only component (ssr:false import).
+  const [slideIndex, setSlideIndex] = useState<number>(() => {
+    if (!user?.username) return 0;
+    const saved = getProgress(user.username, module.id);
+    // Only restore if the assessment is in_progress (not completed)
+    if (saved && saved.status === "in_progress" && saved.currentSlide > 0) {
+      return saved.currentSlide;
+    }
+    return 0;
+  });
+
+  // ── Fix: first-render guard to prevent overwriting saved position ─────────
+  // saveSlideProgress must NOT fire on mount (slideIndex just initialized to
+  // the saved value — writing it back immediately would corrupt future saves
+  // if the effect ran before markInProgress had a chance to write the record).
+  const isMounted = useRef(false);
+
   const [nextClickCount, setNextClickCount] = useState(0);
   const [mcqOpen, setMcqOpen] = useState(false);
   const [gateMcq, setGateMcq] = useState<McqQuestion>(FALLBACK_MCQ);
@@ -94,6 +118,35 @@ export function SlideViewer({ module }: SlideViewerProps) {
     return () => document.removeEventListener("fullscreenchange", onFsChange);
   }, []);
 
+  // ── Progress tracking ────────────────────────────────────────────────────
+  // Mark in_progress when the viewer mounts (user opened the assessment).
+  useEffect(() => {
+    if (user?.username) {
+      markInProgress(
+        user.username,
+        module.id,
+        module.title,
+        user.batchId,
+        totalSlides,
+      );
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.username, module.id]);
+
+  // Persist slide position whenever the user navigates.
+  // Guard: skip the initial mount so we never overwrite the restored position
+  // (slideIndex starts at the saved value — writing it back immediately would
+  // defeat the restore if the progress record doesn't exist yet).
+  useEffect(() => {
+    if (!isMounted.current) {
+      isMounted.current = true;
+      return; // skip mount — position was just loaded, not navigated
+    }
+    if (user?.username) {
+      saveSlideProgress(user.username, module.id, slideIndex);
+    }
+  }, [user?.username, module.id, slideIndex]);
+
   const openGate = () => {
     const mcq =
       getMcqForSlide(module.id, slideIndex) ??
@@ -105,6 +158,8 @@ export function SlideViewer({ module }: SlideViewerProps) {
 
   const tryAdvance = () => {
     if (isLastSlide) {
+      // Mark completed BEFORE showing the feedback form
+      if (user?.username) markCompleted(user.username, module.id);
       setShowFinalQa(true);
       return;
     }
@@ -181,9 +236,18 @@ export function SlideViewer({ module }: SlideViewerProps) {
                   </div>
                   {/* Scrollable PDF canvas area — only the current page is rendered */}
                   <div className="flex flex-1 items-center justify-center overflow-auto bg-zinc-100 p-4">
-                    <div className="p-10 bg-white">
-                      PDF VIEWER TEMPORARILY DISABLED
-                    </div>
+                    <PdfPageViewer
+                      pdfUrl={module.pdfUrl!}
+                      pageNumber={slideIndex + 1}
+                      onLoadSuccess={(n) => {
+                        // Update in-memory page count for the viewer header + progress dots
+                        setNumPages(n);
+                        // Migration: patch the stored assessment record if the page
+                        // count was wrong (e.g. the old hardcoded slideCount:10).
+                        // No-ops if count is already correct or module is a demo module.
+                        updateUploadedAssessmentSlideCount(module.id, n);
+                      }}
+                    />
                   </div>
                 </div>
               ) : (
@@ -210,7 +274,11 @@ export function SlideViewer({ module }: SlideViewerProps) {
               className="flex flex-1 items-center justify-center p-6"
             >
               <div className="w-full max-w-md space-y-4">
-                <FinalQaForm moduleTitle={module.title} />
+                <FinalQaForm
+                  moduleTitle={module.title}
+                  moduleId={module.id}
+                  userId={user?.username ?? ""}
+                />
                 <Link
                   href="/dashboard"
                   className="flex h-10 w-full items-center justify-center rounded-md bg-[#2e3192] text-sm font-medium text-white hover:bg-[#3d42a8]"

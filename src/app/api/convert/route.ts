@@ -75,5 +75,6 @@ export async function POST(req: NextRequest) {
     ok: true,
     pdfUrl: result.pdfUrl,
     originalName: result.originalName,
+    pageCount: result.pageCount,
   });
 }

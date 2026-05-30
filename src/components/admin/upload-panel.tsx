@@ -39,6 +39,7 @@ type PanelState = "idle" | "processing" | "naming" | "done" | "error";
 interface ConversionResult {
   pdfUrl: string;
   originalName: string;
+  pageCount: number;
 }
 
 const MAX_MB = 50;
@@ -322,7 +323,13 @@ export function UploadPanel() {
       // Pre-fill the assessment name from the original filename (no extension)
       const guessedName = json.originalName.replace(/\.pptx?$/i, "").replace(/[-_]/g, " ");
       setAssessmentName(guessedName);
-      setConversionResult({ pdfUrl: json.pdfUrl, originalName: json.originalName });
+      setConversionResult({
+        pdfUrl: json.pdfUrl,
+        originalName: json.originalName,
+        pageCount: typeof json.pageCount === "number" && json.pageCount > 0
+          ? json.pageCount
+          : 1,
+      });
       setState("naming");
     } catch {
       setServerError("Could not reach the server. Check your connection and try again.");
@@ -351,13 +358,10 @@ export function UploadPanel() {
       id,
       title: trimmedName,
       description: `Uploaded from ${conversionResult.originalName}`,
-      // slideCount is unknown without PDF page detection — default to 10.
-      // react-pdf will detect the real page count and update the viewer.
-      slideCount: 10,
+      // Use the real PDF page count returned by the conversion API.
+      slideCount: conversionResult.pageCount,
       durationMinutes: 20,
       status: "not_started",
-      // "all" is a sentinel that getAllModulesForBatch uses to include the
-      // assessment for every batch. Replace with a real batch picker later.
       batchIds: ["all"],
       pdfUrl: conversionResult.pdfUrl,
       contentType: "pdf",

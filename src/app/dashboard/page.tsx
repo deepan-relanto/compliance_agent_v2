@@ -5,6 +5,7 @@ import { ModuleCard } from "@/components/employee/module-card";
 import { EmployeeShell } from "@/components/layout/employee-shell";
 import { useAuthStore } from "@/lib/auth-store";
 import { getAllModulesForBatch } from "@/lib/mock-data";
+import { getProgressForUser } from "@/lib/progress-store";
 import type { TrainingModule } from "@/lib/types";
 import { BookOpen, CheckCircle2, Clock3 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -12,16 +13,36 @@ import { useEffect, useState } from "react";
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
 
-  // Read uploaded assessments from localStorage client-side only
+  // Read modules from localStorage client-side only
   const [modules, setModules] = useState<TrainingModule[]>([]);
-  useEffect(() => {
-    if (user?.batchId) {
-      setModules(getAllModulesForBatch(user.batchId));
-    }
-  }, [user?.batchId]);
 
-  const completedCount = modules.filter((m) => m.status === "completed").length;
-  const inProgressCount = modules.filter((m) => m.status === "in_progress").length;
+  // Real status counts derived from the progress store
+  const [completedCount, setCompletedCount] = useState(0);
+  const [inProgressCount, setInProgressCount] = useState(0);
+
+  useEffect(() => {
+    if (!user?.batchId) return;
+    const mods = getAllModulesForBatch(user.batchId);
+    setModules(mods);
+
+    if (user.username) {
+      const progressEntries = getProgressForUser(user.username);
+      const progressMap = Object.fromEntries(
+        progressEntries.map((p) => [p.moduleId, p.status]),
+      );
+
+      let completed = 0;
+      let inProgress = 0;
+      for (const m of mods) {
+        const s = progressMap[m.id] ?? m.status;
+        if (s === "completed") completed++;
+        else if (s === "in_progress") inProgress++;
+      }
+      setCompletedCount(completed);
+      setInProgressCount(inProgress);
+    }
+  }, [user?.batchId, user?.username]);
+
   const totalMinutes = modules.reduce((acc, m) => acc + m.durationMinutes, 0);
 
   return (

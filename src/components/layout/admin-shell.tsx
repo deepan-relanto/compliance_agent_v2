@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   LayoutGrid,
   LogOut,
+  MessageSquare,
   Settings,
   Upload,
 } from "lucide-react";
@@ -41,6 +42,12 @@ const navItems = [
     label: "Analytics",
     icon: BarChart3,
     isActive: (path: string) => path.startsWith("/admin/analytics"),
+  },
+  {
+    href: "/admin/feedback",
+    label: "Feedback",
+    icon: MessageSquare,
+    isActive: (path: string) => path.startsWith("/admin/feedback"),
   },
   {
     href: "/admin/settings",

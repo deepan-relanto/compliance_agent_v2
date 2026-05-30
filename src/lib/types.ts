@@ -57,3 +57,8 @@ export interface EmployeeProgress {
   timeSpentMinutes: number;
   status: ModuleStatus;
 }
+
+// Re-export store types so consumers can import from a single @/lib/types
+export type { AssessmentProgress } from "./progress-store";
+export type { FeedbackEntry } from "./feedback-store";
+

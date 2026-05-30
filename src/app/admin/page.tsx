@@ -44,7 +44,7 @@ export default function AdminPage() {
           />
         </section>
 
-        <section className="mt-6 grid gap-4 md:grid-cols-2">
+        <section className="mt-6 grid gap-4 md:grid-cols-3">
           <Link
             href="/admin/batches"
             className="rounded-md border border-zinc-200 bg-white p-5 shadow-[var(--shadow-card)] transition-colors hover:border-[#2e3192]/40"
@@ -71,6 +71,20 @@ export default function AdminPage() {
             </h3>
             <p className="mt-1 text-sm text-zinc-500">
               Prepare modules, generate checkpoint MCQs, and publish to selected batches.
+            </p>
+          </Link>
+          <Link
+            href="/admin/feedback"
+            className="rounded-md border border-zinc-200 bg-white p-5 shadow-[var(--shadow-card)] transition-colors hover:border-[#2e3192]/40"
+          >
+            <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">
+              Learner Feedback
+            </p>
+            <h3 className="mt-2 text-lg font-semibold text-zinc-900">
+              View all feedback
+            </h3>
+            <p className="mt-1 text-sm text-zinc-500">
+              Read feedback submitted by learners after completing assessments.
             </p>
           </Link>
         </section>

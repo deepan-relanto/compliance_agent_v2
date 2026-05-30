@@ -339,3 +339,31 @@ export function findModuleById(id: string): TrainingModule | undefined {
     getUploadedAssessments().find((m) => m.id === id)
   );
 }
+
+/**
+ * Patches only the slideCount of an already-saved uploaded assessment.
+ *
+ * Called from the assessment viewer when react-pdf's onLoadSuccess reports
+ * the real PDF page count. This acts as a one-time migration: records that
+ * were saved with the old hardcoded slideCount:10 are corrected the first
+ * time a user (or admin) opens the assessment.
+ *
+ * No-ops for demo modules (they don't live in localStorage).
+ * No-ops if the stored count already matches realCount.
+ */
+export function updateUploadedAssessmentSlideCount(
+  moduleId: string,
+  realCount: number,
+): void {
+  if (typeof window === "undefined") return;
+  if (!Number.isFinite(realCount) || realCount < 1) return;
+
+  const all = getUploadedAssessments();
+  const idx = all.findIndex((m) => m.id === moduleId);
+  if (idx === -1) return;               // demo module — not in this store
+  if (all[idx].slideCount === realCount) return; // already correct, skip write
+
+  all[idx] = { ...all[idx], slideCount: realCount };
+  localStorage.setItem(STORE_KEY, JSON.stringify(all));
+}
+

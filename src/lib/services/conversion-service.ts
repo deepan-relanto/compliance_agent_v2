@@ -39,6 +39,7 @@ export interface ConversionResult {
   pdfUrl: string;   // Public URL for browser download, e.g. /uploads/abc123.pdf
   pdfPath: string;  // Absolute FS path — useful for future storage providers
   originalName: string;
+  pageCount: number; // Actual number of pages in the generated PDF
 }
 
 export interface ConversionError {
@@ -93,6 +94,50 @@ function detectLibreOffice(): string | null {
     }
   }
   return null;
+}
+
+// ─── PDF Page Counter ──────────────────────────────────────────────────────────
+
+/**
+ * Counts pages in a PDF file by scanning its cross-reference trailer for
+ * the /Count entry — the PDF spec stores total page count there.
+ *
+ * Works without any additional npm dependencies. Falls back to 1 if the
+ * trailer cannot be parsed (e.g. corrupt/encrypted PDF).
+ */
+function countPdfPages(pdfPath: string): number {
+  try {
+    // Read the last 2 KB where the PDF trailer typically lives
+    const stat = fs.statSync(pdfPath);
+    const chunkSize = Math.min(2048, stat.size);
+    const buffer = Buffer.alloc(chunkSize);
+    const fd = fs.openSync(pdfPath, "r");
+    fs.readSync(fd, buffer, 0, chunkSize, stat.size - chunkSize);
+    fs.closeSync(fd);
+
+    const tail = buffer.toString("latin1");
+
+    // The trailer dict looks like: << ... /Count 17 ... >>
+    // Match the last occurrence (handles linearized PDFs)
+    const matches = [...tail.matchAll(/\/Count\s+(\d+)/g)];
+    if (matches.length > 0) {
+      const last = matches[matches.length - 1];
+      const count = parseInt(last[1], 10);
+      if (!isNaN(count) && count > 0) return count;
+    }
+
+    // Fallback: scan the full file if trailer scan missed it
+    const full = fs.readFileSync(pdfPath, "latin1");
+    const allMatches = [...full.matchAll(/\/Count\s+(\d+)/g)];
+    if (allMatches.length > 0) {
+      // The largest /Count is the root Pages node (child nodes have smaller counts)
+      const max = Math.max(...allMatches.map((m) => parseInt(m[1], 10)));
+      if (!isNaN(max) && max > 0) return max;
+    }
+  } catch (err) {
+    console.warn("[conversion-service] Could not count PDF pages:", err);
+  }
+  return 1; // safe fallback
 }
 
 // ─── Core Conversion (Provider) ───────────────────────────────────────────────
@@ -228,10 +273,15 @@ export async function convertPptToPdf(
 
   console.log(`[conversion-service] PDF ready: ${finalPdfPath}`);
 
+  // Count actual pages in the generated PDF
+  const pageCount = countPdfPages(finalPdfPath);
+  console.log(`[conversion-service] Page count: ${pageCount}`);
+
   return {
     ok: true,
     pdfUrl: `/uploads/${finalPdfName}`,
     pdfPath: finalPdfPath,
     originalName,
+    pageCount,
   };
 }
