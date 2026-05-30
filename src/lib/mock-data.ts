@@ -27,6 +27,7 @@ export const TRAINING_MODULES: TrainingModule[] = [
     durationMinutes: 18,
     status: "not_started",
     batchIds: ["batch_a", "batch_b"],
+    feedbackRequired: true,
   },
   {
     id: "gdpr-refresh",

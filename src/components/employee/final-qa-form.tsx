@@ -10,9 +10,10 @@ interface FinalQaFormProps {
   moduleTitle: string;
   moduleId: string;
   userId: string;
+  onSuccess?: () => void;
 }
 
-export function FinalQaForm({ moduleTitle, moduleId, userId }: FinalQaFormProps) {
+export function FinalQaForm({ moduleTitle, moduleId, userId, onSuccess }: FinalQaFormProps) {
   const [message, setMessage] = useState("");
   const [rating, setRating] = useState<number>(0);
   const [hoveredStar, setHoveredStar] = useState<number>(0);
@@ -25,6 +26,9 @@ export function FinalQaForm({ moduleTitle, moduleId, userId }: FinalQaFormProps)
     const ratingPrefix = rating > 0 ? `[Rating: ${rating}/5] ` : "";
     submitFeedback(userId, moduleId, moduleTitle, ratingPrefix + message.trim());
     setSubmitted(true);
+    if (onSuccess) {
+      onSuccess();
+    }
   };
 
   if (submitted) {

@@ -8,12 +8,12 @@ import { getMcqForSlide, MOCK_MCQS, SLIDE_CONTENT } from "@/lib/mock-data";
 import type { McqQuestion, TrainingModule, WarningHistoryEntry, ReviewRequest, ModuleStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronLeft, ChevronRight, FileText, Maximize2, Minimize2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileText, Maximize2, Minimize2, ShieldCheck, ShieldAlert } from "lucide-react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuthStore } from "@/lib/auth-store";
-import { markInProgress, markCompleted, saveSlideProgress, getProgress, addWarning } from "@/lib/progress-store";
+import { markInProgress, markCompleted, saveSlideProgress, getProgress, addWarning, saveAcknowledgement } from "@/lib/progress-store";
 import { getPendingRequest, submitReviewRequest, getAllReviewRequests } from "@/lib/review-store";
 import { updateUploadedAssessmentSlideCount } from "@/lib/mock-data";
 
@@ -81,6 +81,9 @@ export function SlideViewer({ module }: SlideViewerProps) {
   const [gateMcq, setGateMcq] = useState<McqQuestion>(FALLBACK_MCQ);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showFinalQa, setShowFinalQa] = useState(false);
+  const [showAcknowledgement, setShowAcknowledgement] = useState(false);
+  const [isAcknowledged, setIsAcknowledged] = useState(false);
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
 
   // ── Integrity Monitoring State ──────────────────────────────────────────
   const [liveWarningCount, setLiveWarningCount] = useState<number>(() => {
@@ -312,10 +315,7 @@ export function SlideViewer({ module }: SlideViewerProps) {
 
   const tryAdvance = () => {
     if (isLastSlide) {
-      // Mark completed BEFORE showing the feedback form
-      isExitingRef.current = true;
-      if (user?.username) markCompleted(user.username, module.id);
-      setShowFinalQa(true);
+      setShowAcknowledgement(true);
       return;
     }
     const upcoming = nextClickCount + 1;
@@ -326,6 +326,14 @@ export function SlideViewer({ module }: SlideViewerProps) {
     }
     setNextClickCount(upcoming);
     setSlideIndex((i) => Math.min(i + 1, totalSlides - 1));
+  };
+
+  const handleAcknowledgementSubmit = () => {
+    if (!user?.username) return;
+    const feedbackRequired = !!module.feedbackRequired;
+    saveAcknowledgement(user.username, module.id, feedbackRequired);
+    setShowAcknowledgement(false);
+    setShowFinalQa(true);
   };
 
   const handleMcqCorrect = () => {
@@ -377,7 +385,90 @@ export function SlideViewer({ module }: SlideViewerProps) {
 
       <div className="relative flex flex-1 flex-col overflow-hidden">
         <AnimatePresence mode="wait">
-          {!showFinalQa ? (
+          {showAcknowledgement ? (
+            <motion.div
+              key="acknowledgement"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              transition={{ duration: 0.2 }}
+              className="flex flex-1 items-center justify-center p-6 sm:p-10"
+            >
+              <div className="w-full max-w-lg rounded-lg border border-zinc-200 bg-white p-6 shadow-[var(--shadow-card)] sm:p-8 space-y-6">
+                <div className="flex items-center gap-3 border-b border-zinc-100 pb-4">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[#2e3192]">
+                    <ShieldCheck className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-zinc-950">Training Acknowledgement</h2>
+                    <p className="text-xs text-zinc-500">Please review the compliance declaration below.</p>
+                  </div>
+                </div>
+
+                <div className="rounded-md bg-zinc-50 border border-zinc-200/60 p-4 space-y-3">
+                  <p className="text-xs font-bold text-zinc-700 uppercase tracking-wider">I acknowledge that:</p>
+                  <ul className="space-y-2.5 text-xs text-zinc-650 leading-relaxed pl-1">
+                    <li className="flex items-start gap-2">
+                      <span className="text-[#f15a24] font-bold mt-0.5">•</span>
+                      <span>I have completed this training material.</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-[#f15a24] font-bold mt-0.5">•</span>
+                      <span>I have reviewed and understood the concepts presented in this assessment.</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-[#f15a24] font-bold mt-0.5">•</span>
+                      <span>I have completed this assessment honestly and without unauthorized assistance.</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-[#f15a24] font-bold mt-0.5">•</span>
+                      <span>I understand that compliance with these guidelines is my responsibility.</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-[#f15a24] font-bold mt-0.5">•</span>
+                      <span>The information provided during this assessment is accurate to the best of my knowledge.</span>
+                    </li>
+                  </ul>
+                </div>
+
+                <label className="flex items-start gap-3 cursor-pointer select-none rounded-md border border-zinc-100 bg-zinc-50/30 p-3.5 hover:bg-zinc-50 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={isAcknowledged}
+                    onChange={(e) => setIsAcknowledged(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-[#2e3192] focus:ring-[#2e3192]/30 cursor-pointer"
+                  />
+                  <div className="space-y-0.5">
+                    <span className="text-xs font-semibold text-zinc-800">
+                      I acknowledge and agree to the statements above.
+                    </span>
+                    <p className="text-[10px] text-zinc-500 leading-normal">
+                      By checking this box, you confirm your compliance attestation.
+                    </p>
+                  </div>
+                </label>
+
+                <div className="flex flex-col sm:flex-row gap-2 pt-2">
+                  <Button
+                    variant="outline"
+                    className="flex-1 text-xs border-zinc-200 text-zinc-700 h-10 hover:bg-zinc-50"
+                    onClick={() => {
+                      setShowAcknowledgement(false);
+                    }}
+                  >
+                    Back to Assessment
+                  </Button>
+                  <Button
+                    className="flex-1 text-xs bg-[#2e3192] hover:bg-[#3d42a8] text-white font-semibold h-10 disabled:opacity-50 disabled:pointer-events-none"
+                    disabled={!isAcknowledged}
+                    onClick={handleAcknowledgementSubmit}
+                  >
+                    Continue
+                  </Button>
+                </div>
+              </div>
+            </motion.div>
+          ) : !showFinalQa ? (
             <motion.div
               key={slideIndex}
               initial={{ opacity: 0, x: 12 }}
@@ -423,7 +514,7 @@ export function SlideViewer({ module }: SlideViewerProps) {
                   <h2 className="mt-3 text-2xl font-semibold tracking-tight text-zinc-900 sm:text-3xl text-balance">
                     {slides[slideIndex]}
                   </h2>
-                  <p className="mt-4 text-sm leading-relaxed text-zinc-500">
+                  <p className="mt-4 text-sm leading-relaxed text-zinc-550">
                     Checkpoint every three slides. You cannot skip ahead without a
                     correct answer.
                   </p>
@@ -438,19 +529,41 @@ export function SlideViewer({ module }: SlideViewerProps) {
               className="flex flex-1 items-center justify-center p-6"
             >
               <div className="w-full max-w-md space-y-4">
+                {module.feedbackRequired && (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 flex gap-2 text-xs text-amber-800">
+                    <ShieldAlert className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+                    <div>
+                      <p className="font-semibold">Feedback Submission Required</p>
+                      <p className="text-amber-700 mt-0.5">
+                        This training module requires you to submit feedback or ask questions before completion.
+                      </p>
+                    </div>
+                  </div>
+                )}
                 <FinalQaForm
                   moduleTitle={module.title}
                   moduleId={module.id}
                   userId={user?.username ?? ""}
+                  onSuccess={() => {
+                    setFeedbackSubmitted(true);
+                    if (user?.username) {
+                      markCompleted(user.username, module.id);
+                    }
+                  }}
                 />
                 <Link
                   href="/dashboard"
                   onClick={() => {
                     isExitingRef.current = true;
                   }}
-                  className="flex h-10 w-full items-center justify-center rounded-md bg-[#2e3192] text-sm font-medium text-white hover:bg-[#3d42a8]"
+                  className={cn(
+                    "flex h-10 w-full items-center justify-center rounded-md text-sm font-medium transition-colors",
+                    (module.feedbackRequired && !feedbackSubmitted)
+                      ? "border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
+                      : "bg-[#2e3192] text-white hover:bg-[#3d42a8]"
+                  )}
                 >
-                  Return to dashboard
+                  {(module.feedbackRequired && !feedbackSubmitted) ? "Exit without completing" : "Return to dashboard"}
                 </Link>
               </div>
             </motion.div>
@@ -458,7 +571,7 @@ export function SlideViewer({ module }: SlideViewerProps) {
         </AnimatePresence>
       </div>
 
-      {!showFinalQa && (
+      {!showFinalQa && !showAcknowledgement && (
         <footer className="flex h-14 shrink-0 items-center justify-between border-t border-zinc-200 bg-white px-5">
           <Button
             variant="ghost"

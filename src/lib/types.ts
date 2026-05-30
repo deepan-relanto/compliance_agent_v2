@@ -63,6 +63,26 @@ export interface TrainingModule {
   contentType?: ContentType;
   /** Unix ms timestamp — used to sort uploaded assessments newest-first. */
   createdAt?: number;
+  /** If feedback is required to mark the assessment fully completed. */
+  feedbackRequired?: boolean;
+}
+
+export interface AssessmentAcknowledgement {
+  userId: string;
+  userName: string;
+  assessmentId: string;
+  assessmentName: string;
+  accepted: boolean;
+  timestamp: number;
+  // Future compatibility fields
+  digitalSignature?: string;
+  employeeIdConfirm?: string;
+  managerApproval?: {
+    approved: boolean;
+    managerId: string;
+    timestamp: number;
+  };
+  certificateId?: string;
 }
 
 export interface McqOption {

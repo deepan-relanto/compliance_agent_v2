@@ -7,7 +7,7 @@
  * Shape: Record<"username|moduleId", AssessmentProgress>
  */
 
-import type { ModuleStatus, WarningHistoryEntry } from "./types";
+import type { ModuleStatus, WarningHistoryEntry, AssessmentAcknowledgement } from "./types";
 import { logAudit } from "./audit-store";
 
 export interface AssessmentProgress {
@@ -28,6 +28,7 @@ export interface AssessmentProgress {
   lastFailureAt?: number;
   lastFailureReason?: string;
   archivedWarnings: { attempt: number; warnings: WarningHistoryEntry[] }[];
+  acknowledgement?: AssessmentAcknowledgement;
 }
 
 const STORE_KEY = "compliance-progress";
@@ -152,6 +153,49 @@ export function markCompleted(username: string, moduleId: string): void {
   writeAll(all);
 
   logAudit("Assessment Completed", username, `Successfully completed ${existing.moduleTitle}.`);
+}
+
+/**
+ * Saves training acknowledgement record for a user and module.
+ * If feedback is NOT required, marks the assessment as completed.
+ */
+export function saveAcknowledgement(
+  username: string,
+  moduleId: string,
+  feedbackRequired: boolean = false,
+): void {
+  const all = readAll();
+  const k = key(username, moduleId);
+  const existing = all[k];
+  if (!existing || existing.status === "failed" || existing.status === "permanently_failed") return;
+
+  const timestamp = Date.now();
+  const ack: AssessmentAcknowledgement = {
+    userId: username,
+    userName: username,
+    assessmentId: moduleId,
+    assessmentName: existing.moduleTitle,
+    accepted: true,
+    timestamp,
+  };
+
+  all[k] = {
+    ...existing,
+    acknowledgement: ack,
+    lastAccessedAt: timestamp,
+  };
+
+  if (!feedbackRequired) {
+    all[k].status = "completed";
+    all[k].completedAt = timestamp;
+  }
+
+  writeAll(all);
+
+  logAudit("Acknowledgement Accepted", username, `Accepted training acknowledgement for ${existing.moduleTitle}.`);
+  if (!feedbackRequired) {
+    logAudit("Assessment Completed", username, `Successfully completed ${existing.moduleTitle}.`);
+  }
 }
 
 /**

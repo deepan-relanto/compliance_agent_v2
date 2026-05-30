@@ -236,8 +236,9 @@ export function MonitoringPanel() {
                       <th className="px-6 py-3">Assessment</th>
                       <th className="px-6 py-3 text-center">Warnings</th>
                       <th className="px-6 py-3 text-center">Retakes Used</th>
+                      <th className="px-6 py-3 text-center">Acknowledged</th>
                       <th className="px-6 py-3">Status</th>
-                      <th className="px-6 py-3">Last Activity</th>
+                      <th className="px-6 py-3 font-medium">Last Activity</th>
                       <th className="px-6 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
@@ -272,6 +273,17 @@ export function MonitoringPanel() {
                         </td>
                         <td className="px-6 py-4 align-middle text-center text-xs font-semibold text-zinc-700">
                           {record.retakeCount ?? 0} / 2
+                        </td>
+                        <td className="px-6 py-4 align-middle text-center">
+                          {record.acknowledgement?.accepted ? (
+                            <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 border border-emerald-200/40">
+                              Yes
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded bg-zinc-50 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-500 border border-zinc-200">
+                              No
+                            </span>
+                          )}
                         </td>
                         <td className="px-6 py-4 align-middle">
                           <StatusBadge status={record.status} />
@@ -558,6 +570,38 @@ export function MonitoringPanel() {
                   </div>
                 </div>
               )}
+
+              {/* Compliance Attestation (Acknowledgement) Details */}
+              <div className="bg-zinc-50 rounded-md p-3 border border-zinc-200/60 space-y-2">
+                <p className="text-xs font-semibold text-zinc-800 flex items-center gap-1.5">
+                  <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                  Compliance Attestation & Acknowledgement
+                </p>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="text-zinc-500 font-medium">Acknowledged:</span>{" "}
+                    <span className={`font-semibold ${selectedRecord.acknowledgement?.accepted ? "text-emerald-700" : "text-zinc-500"}`}>
+                      {selectedRecord.acknowledgement?.accepted ? "Yes" : "No"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-zinc-500 font-medium">Timestamp:</span>{" "}
+                    <span className="font-mono text-zinc-700 text-[11px]">
+                      {selectedRecord.acknowledgement?.timestamp
+                        ? new Date(selectedRecord.acknowledgement.timestamp).toLocaleString()
+                        : "—"}
+                    </span>
+                  </div>
+                </div>
+                {selectedRecord.acknowledgement && (
+                  <div className="pt-1.5 border-t border-zinc-200 mt-1.5 text-[9px] text-zinc-400 space-y-0.5 font-mono">
+                    <p>User ID: {selectedRecord.acknowledgement.userId}</p>
+                    <p>User Name: {selectedRecord.acknowledgement.userName}</p>
+                    <p>Assessment ID: {selectedRecord.acknowledgement.assessmentId}</p>
+                    <p>Assessment Name: {selectedRecord.acknowledgement.assessmentName}</p>
+                  </div>
+                )}
+              </div>
 
               {/* Failure status explanation */}
               {(selectedRecord.status === "failed" || selectedRecord.status === "permanently_failed") && (
