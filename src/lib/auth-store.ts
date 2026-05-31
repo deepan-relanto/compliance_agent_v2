@@ -1,25 +1,15 @@
 "use client";
 
-import Papa from "papaparse";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { AUTH_CSV } from "./mock-data";
-import type { AuthUser, CsvUserRow } from "./types";
+import type { AuthUser } from "./types";
 
 interface AuthState {
   user: AuthUser | null;
   isHydrated: boolean;
-  login: (username: string, password: string) => { ok: boolean; error?: string };
+  login: (username: string, password: string) => Promise<{ ok: boolean; error?: string }>;
   logout: () => void;
   setHydrated: () => void;
-}
-
-function parseUsers(): CsvUserRow[] {
-  const result = Papa.parse<CsvUserRow>(AUTH_CSV, {
-    header: true,
-    skipEmptyLines: true,
-  });
-  return result.data.filter((row) => row.username && row.password);
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -28,27 +18,22 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       isHydrated: false,
       setHydrated: () => set({ isHydrated: true }),
-      login: (username, password) => {
-        const normalized = username.trim().toLowerCase();
-        const users = parseUsers();
-        const match = users.find(
-          (u) =>
-            u.username.trim().toLowerCase() === normalized &&
-            u.password === password,
-        );
-
-        if (!match) {
-          return { ok: false, error: "Invalid email or password." };
+      login: async (username, password) => {
+        try {
+          const res = await fetch("/api/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: username, password }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) {
+            return { ok: false, error: data.error ?? "Invalid email or password." };
+          }
+          set({ user: data.user });
+          return { ok: true };
+        } catch {
+          return { ok: false, error: "Could not reach the server." };
         }
-
-        set({
-          user: {
-            username: match.username,
-            role: match.role,
-            batchId: match.batch_id?.trim() || "",
-          },
-        });
-        return { ok: true };
       },
       logout: () => set({ user: null }),
     }),

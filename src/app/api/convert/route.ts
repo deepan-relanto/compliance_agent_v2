@@ -8,7 +8,12 @@
  * This route contains zero business logic — it is a thin HTTP adapter.
  */
 
-import { convertPptToPdf, MAX_FILE_SIZE_BYTES } from "@/lib/services/conversion-service";
+import {
+  convertPptToPdf,
+  isPdfUpload,
+  MAX_FILE_SIZE_BYTES,
+  storePdfUpload,
+} from "@/lib/services/conversion-service";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -50,12 +55,9 @@ export async function POST(req: NextRequest) {
 
   const buffer = Buffer.from(await file.arrayBuffer());
 
-  const result = await convertPptToPdf(
-    buffer,
-    file.name,
-    file.type,
-    sizeBytes,
-  );
+  const result = isPdfUpload(file.name, file.type)
+    ? await storePdfUpload(buffer, file.name, file.type, sizeBytes)
+    : await convertPptToPdf(buffer, file.name, file.type, sizeBytes);
 
   if (!result.ok) {
     const statusMap: Record<string, number> = {
@@ -76,5 +78,6 @@ export async function POST(req: NextRequest) {
     pdfUrl: result.pdfUrl,
     originalName: result.originalName,
     pageCount: result.pageCount,
+    skippedConversion: isPdfUpload(file.name, file.type),
   });
 }

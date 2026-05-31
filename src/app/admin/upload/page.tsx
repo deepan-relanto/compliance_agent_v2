@@ -8,8 +8,8 @@ export default function AdminUploadPage() {
   return (
     <RouteGuard allowedRoles={["admin"]}>
       <AdminShell
-        title="Upload PDF"
-        subtitle="Upload training decks and auto-generate checkpoint MCQs."
+        title="Upload content"
+        subtitle="Upload PowerPoint or PDF files, assign batches, and publish checkpoint MCQs."
       >
         <UploadPanel />
       </AdminShell>

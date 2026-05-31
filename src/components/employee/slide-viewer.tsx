@@ -4,11 +4,12 @@ import { FinalQaForm } from "@/components/employee/final-qa-form";
 import { McqModal } from "@/components/employee/mcq-modal";
 import { RelantoLogo } from "@/components/brand/relanto-logo";
 import { Button } from "@/components/ui/button";
-import { getMcqForSlide, MOCK_MCQS, SLIDE_CONTENT } from "@/lib/mock-data";
+import { getMcqForSlide } from "@/lib/mock-data";
 import type { McqQuestion, TrainingModule, WarningHistoryEntry, ReviewRequest, ModuleStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronLeft, ChevronRight, FileText, Maximize2, Minimize2, ShieldCheck, ShieldAlert } from "lucide-react";
+import { ProctorRulesModal } from "@/components/employee/proctor-rules-modal";
+import { ChevronLeft, ChevronRight, Clock, FileText, Maximize2, Minimize2, ShieldCheck, ShieldAlert } from "lucide-react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -30,21 +31,30 @@ const SLIDES_BETWEEN_GATES = 3;
 const FALLBACK_MCQ: McqQuestion = {
   id: "gate-fallback",
   slideIndex: -1,
-  prompt: "Which approach prevents skipping mandatory training checkpoints?",
+  prompt: "No checkpoint question is available for this slide. Select any option to continue.",
   options: [
-    { id: "a", label: "Client-only slide counters" },
-    { id: "b", label: "Server-validated checkpoint gates" },
-    { id: "c", label: "Optional honor-system quizzes" },
-    { id: "d", label: "Downloadable PDF attestations" },
+    { id: "a", label: "Continue training" },
+    { id: "b", label: "Continue training (alternate)" },
+    { id: "c", label: "Continue training (alternate 2)" },
+    { id: "d", label: "Continue training (alternate 3)" },
   ],
-  correctOptionId: "b",
 };
+
+function formatElapsed(ms: number): string {
+  const totalSec = Math.floor(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
 
 interface SlideViewerProps {
   module: TrainingModule;
+  mcqs?: McqQuestion[];
 }
 
-export function SlideViewer({ module }: SlideViewerProps) {
+export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
   const user = useAuthStore((s) => s.user);
 
   // PDF modules: slides array drives the progress bar + navigation counts.
@@ -53,9 +63,9 @@ export function SlideViewer({ module }: SlideViewerProps) {
   const slides =
     module.contentType === "pdf"
       ? Array.from({ length: numPages }, (_, i) => `Page ${i + 1}`)
-      : (SLIDE_CONTENT[module.id] ?? ["Slide content"]);
+      : [`${module.title} — content`];
   const totalSlides = slides.length;
-  const moduleMcqs = MOCK_MCQS[module.id] ?? [];
+  const moduleMcqs = mcqs;
 
   // ── Fix: initialize from saved progress ──────────────────────────────────
   // useState lazy initializer runs once at mount. Reading localStorage here
@@ -115,6 +125,10 @@ export function SlideViewer({ module }: SlideViewerProps) {
   const [reviewError, setReviewError] = useState("");
   const [reviewSuccess, setReviewSuccess] = useState(false);
   const [showExitModal, setShowExitModal] = useState(false);
+  const [showProctorRules, setShowProctorRules] = useState(true);
+  const [sessionStarted, setSessionStarted] = useState(false);
+  const [sessionStartMs, setSessionStartMs] = useState<number | null>(null);
+  const [elapsedMs, setElapsedMs] = useState(0);
 
   const loadIntegrityState = useCallback(() => {
     if (user?.username) {
@@ -166,16 +180,32 @@ export function SlideViewer({ module }: SlideViewerProps) {
   }, []);
 
   useEffect(() => {
+    if (!sessionStarted) return;
     enterFullscreen();
     return () => {
       if (document.fullscreenElement) {
         document.exitFullscreen().catch(() => undefined);
       }
     };
-  }, [enterFullscreen]);
+  }, [sessionStarted, enterFullscreen]);
+
+  useEffect(() => {
+    if (!sessionStarted || sessionStartMs === null) return;
+    const tick = () => setElapsedMs(Date.now() - sessionStartMs);
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [sessionStarted, sessionStartMs]);
+
+  const handleBeginSession = () => {
+    setShowProctorRules(false);
+    setSessionStarted(true);
+    setSessionStartMs(Date.now());
+    enterFullscreen();
+  };
 
   const triggerWarning = useCallback((reason: string) => {
-    if (isExitingRef.current || !user?.username) return;
+    if (!sessionStarted || isExitingRef.current || !user?.username) return;
 
     // Check progress status before logging warning
     const currentProgress = getProgress(user.username, module.id);
@@ -200,7 +230,7 @@ export function SlideViewer({ module }: SlideViewerProps) {
       // Show warning modal only if warning count was actually incremented (i.e. not on cooldown)
       setActiveWarningReason(reason);
     }
-  }, [user?.username, module.id, liveWarningCount, loadIntegrityState]);
+  }, [sessionStarted, user?.username, module.id, liveWarningCount, loadIntegrityState]);
 
   useEffect(() => {
     const onFsChange = () => {
@@ -306,7 +336,8 @@ export function SlideViewer({ module }: SlideViewerProps) {
 
   const openGate = () => {
     const mcq =
-      getMcqForSlide(module.id, slideIndex) ??
+      moduleMcqs.find((q) => q.slideIndex === slideIndex + 1) ??
+      getMcqForSlide() ??
       moduleMcqs[gateIndex % Math.max(moduleMcqs.length, 1)] ??
       FALLBACK_MCQ;
     setGateMcq(mcq);
@@ -336,27 +367,43 @@ export function SlideViewer({ module }: SlideViewerProps) {
     setShowFinalQa(true);
   };
 
-  const handleMcqCorrect = () => {
+  const handleMcqContinue = () => {
     setMcqOpen(false);
     if (!isLastSlide) {
       setSlideIndex((i) => Math.min(i + 1, totalSlides - 1));
     }
   };
 
+  if (!sessionStarted) {
+    return (
+      <div className="fixed inset-0 z-30 flex items-center justify-center bg-zinc-100">
+        <ProctorRulesModal
+          open={showProctorRules}
+          moduleTitle={module.title}
+          onAccept={handleBeginSession}
+        />
+      </div>
+    );
+  }
+
   return (
-    <div className="fixed inset-0 z-30 flex flex-col bg-zinc-100">
-      <header className="flex h-14 shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-5">
+    <div className="fixed inset-0 z-30 flex flex-col bg-zinc-900">
+      <header className="flex h-12 shrink-0 items-center justify-between border-b border-zinc-800 bg-zinc-950 px-4 text-white">
         <RelantoLogo size="sm" showTagline={false} />
-        <span className="hidden text-sm font-medium text-zinc-600 sm:inline">
+        <span className="hidden truncate text-sm font-medium text-zinc-300 sm:inline max-w-[240px]">
           {module.title}
         </span>
         <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1 rounded-md bg-zinc-800 px-2 py-1 font-mono text-xs text-zinc-300">
+            <Clock className="h-3 w-3" />
+            {formatElapsed(elapsedMs)}
+          </span>
           {liveWarningCount > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700 border border-amber-200">
+            <span className="inline-flex items-center gap-1 rounded-md bg-amber-950 px-2 py-1 text-xs font-semibold text-amber-400 border border-amber-800">
               Warnings: {liveWarningCount} / 3
             </span>
           )}
-          <span className="font-mono text-xs text-zinc-500">
+          <span className="font-mono text-xs text-zinc-400">
             {slideIndex + 1} / {totalSlides}
           </span>
           <Button
@@ -376,7 +423,7 @@ export function SlideViewer({ module }: SlideViewerProps) {
             onClick={() => {
               setShowExitModal(true);
             }}
-            className="h-8 border-zinc-200 text-zinc-700 hover:bg-zinc-50 px-3 text-xs"
+            className="h-8 border-zinc-700 bg-transparent text-zinc-300 hover:bg-zinc-800 hover:text-white px-3 text-xs"
           >
             Exit
           </Button>
@@ -475,34 +522,30 @@ export function SlideViewer({ module }: SlideViewerProps) {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -12 }}
               transition={{ duration: 0.2 }}
-              className="flex flex-1 items-center justify-center p-6 sm:p-10"
+              className="flex min-h-0 flex-1 flex-col p-4 sm:p-6"
             >
               {module.contentType === "pdf" && module.pdfUrl ? (
-                // ── PDF assessment: one page at a time via react-pdf ───────
-                <div className="flex h-full w-full max-w-4xl flex-col overflow-hidden rounded-md border border-zinc-200 bg-white shadow-[var(--shadow-card)]">
-                  <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-2">
+                <div className="mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-zinc-700/80 bg-zinc-950 shadow-2xl">
+                  <div className="flex shrink-0 items-center justify-between border-b border-zinc-800 px-4 py-2.5">
                     <p className="text-xs font-semibold uppercase tracking-widest text-[#f15a24]">
                       Page {slideIndex + 1} of {numPages}
                     </p>
-                    <div className="flex items-center gap-2">
-                      <FileText className="h-3.5 w-3.5 text-zinc-400" strokeWidth={1.5} />
-                      <span className="text-xs text-zinc-400">{module.title}</span>
+                    <div className="flex items-center gap-2 text-zinc-500">
+                      <FileText className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      <span className="max-w-[200px] truncate text-xs">{module.title}</span>
                     </div>
                   </div>
-                  {/* Scrollable PDF canvas area — only the current page is rendered */}
-                  <div className="flex flex-1 items-center justify-center overflow-auto bg-zinc-100 p-4">
-                    <PdfPageViewer
-                      pdfUrl={module.pdfUrl!}
-                      pageNumber={slideIndex + 1}
-                      onLoadSuccess={(n) => {
-                        // Update in-memory page count for the viewer header + progress dots
-                        setNumPages(n);
-                        // Migration: patch the stored assessment record if the page
-                        // count was wrong (e.g. the old hardcoded slideCount:10).
-                        // No-ops if count is already correct or module is a demo module.
-                        updateUploadedAssessmentSlideCount(module.id, n);
-                      }}
-                    />
+                  <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-zinc-800/50 p-6">
+                    <div className="w-full max-w-3xl rounded-sm bg-white shadow-xl ring-1 ring-black/20">
+                      <PdfPageViewer
+                        pdfUrl={module.pdfUrl!}
+                        pageNumber={slideIndex + 1}
+                        onLoadSuccess={(n) => {
+                          setNumPages(n);
+                          updateUploadedAssessmentSlideCount();
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -514,9 +557,8 @@ export function SlideViewer({ module }: SlideViewerProps) {
                   <h2 className="mt-3 text-2xl font-semibold tracking-tight text-zinc-900 sm:text-3xl text-balance">
                     {slides[slideIndex]}
                   </h2>
-                  <p className="mt-4 text-sm leading-relaxed text-zinc-550">
-                    Checkpoint every three slides. You cannot skip ahead without a
-                    correct answer.
+                  <p className="mt-4 text-sm leading-relaxed text-zinc-500">
+                    Checkpoint every three slides. Answer each question to continue.
                   </p>
                 </div>
               )}
@@ -572,12 +614,13 @@ export function SlideViewer({ module }: SlideViewerProps) {
       </div>
 
       {!showFinalQa && !showAcknowledgement && (
-        <footer className="flex h-14 shrink-0 items-center justify-between border-t border-zinc-200 bg-white px-5">
+        <footer className="flex h-12 shrink-0 items-center justify-between border-t border-zinc-800 bg-zinc-950 px-4">
           <Button
             variant="ghost"
             size="sm"
             disabled={slideIndex === 0}
             onClick={() => setSlideIndex((i) => Math.max(0, i - 1))}
+            className="text-zinc-300 hover:bg-zinc-800 hover:text-white disabled:opacity-40"
           >
             <ChevronLeft className="h-4 w-4" />
             Previous
@@ -588,19 +631,28 @@ export function SlideViewer({ module }: SlideViewerProps) {
                 key={i}
                 className={cn(
                   "h-1 w-5 rounded-md transition-colors",
-                  i <= slideIndex ? "bg-[#2e3192]" : "bg-zinc-200",
+                  i <= slideIndex ? "bg-[#f15a24]" : "bg-zinc-700",
                 )}
               />
             ))}
           </div>
-          <Button size="sm" onClick={tryAdvance}>
+          <Button
+            size="sm"
+            onClick={tryAdvance}
+            className="bg-[#f15a24] hover:bg-[#d94e1f] text-white"
+          >
             {isLastSlide ? "Finish" : "Next"}
             <ChevronRight className="h-4 w-4" />
           </Button>
         </footer>
       )}
 
-      <McqModal question={gateMcq} open={mcqOpen} onCorrect={handleMcqCorrect} />
+      <McqModal
+        moduleId={module.id}
+        question={gateMcq}
+        open={mcqOpen}
+        onContinue={handleMcqContinue}
+      />
 
       {/* ── Warning Notification Modal overlay ────────────────────────────── */}
       {activeWarningReason && (
@@ -720,8 +772,10 @@ export function SlideViewer({ module }: SlideViewerProps) {
             setExplanation("");
             setReviewError("");
             loadIntegrityState();
-          } catch (err: any) {
-            setReviewError(err.message || "Failed to submit request.");
+          } catch (err: unknown) {
+            setReviewError(
+              err instanceof Error ? err.message : "Failed to submit request.",
+            );
           }
         };
 
@@ -793,7 +847,7 @@ export function SlideViewer({ module }: SlideViewerProps) {
                 <div className="rounded-md bg-red-50 border border-red-100 p-3 text-left space-y-1 text-xs text-red-900">
                   <p className="font-bold text-red-850">Review Request Rejected</p>
                   <p className="text-[11px] text-red-700 leading-relaxed">
-                    Admin Comment: "{reviewRequest?.adminComment || "No comments provided."}"
+                    Admin Comment: &ldquo;{reviewRequest?.adminComment || "No comments provided."}&rdquo;
                   </p>
                   <p className="text-[10px] text-red-500 mt-1">
                     You may submit another explanation if you have remaining retakes.

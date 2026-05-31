@@ -4,12 +4,12 @@
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 
-  --color-background: #ffffff;
+  --color-background: #fafafa;
   --color-foreground: #18181b;
   --color-muted: #71717a;
   --color-muted-foreground: #a1a1aa;
   --color-border: #e4e4e7;
-  --color-surface: #fafafa;
+  --color-surface: #ffffff;
   --color-surface-elevated: #ffffff;
   --color-brand: #2e3192;
   --color-brand-light: #3d42a8;
@@ -18,9 +18,10 @@
   --color-success: #059669;
   --color-danger: #dc2626;
 
-  --shadow-crisp: 0 1px 2px rgba(24, 24, 27, 0.06), 0 0 0 1px rgba(24, 24, 27, 0.04);
-  --shadow-card: 0 1px 3px rgba(24, 24, 27, 0.08), 0 4px 12px rgba(24, 24, 27, 0.04);
-  --shadow-elevated: 0 8px 30px rgba(46, 49, 146, 0.08), 0 0 0 1px rgba(24, 24, 27, 0.05);
+  --shadow-crisp: 0 1px 2px rgba(24, 24, 27, 0.05), 0 0 0 1px rgba(24, 24, 27, 0.04);
+  --shadow-card: 0 1px 2px rgba(24, 24, 27, 0.04), 0 4px 16px rgba(24, 24, 27, 0.06);
+  --shadow-elevated: 0 12px 40px rgba(46, 49, 146, 0.1), 0 0 0 1px rgba(24, 24, 27, 0.04);
+  --radius-card: 0.625rem;
 }
 
 @layer base {
@@ -33,18 +34,18 @@
   }
 
   body {
-    @apply bg-white text-zinc-900 font-sans text-[14.5px] leading-[1.5];
+    @apply bg-[#fafafa] text-zinc-900 font-sans text-[15px] leading-[1.55];
     font-feature-settings: "rlig" 1, "calt" 1;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.011em;
   }
 
   ::selection {
-    @apply bg-[#2e3192]/15 text-zinc-900;
+    @apply bg-[#2e3192]/12 text-zinc-900;
   }
 
   h1, h2, h3, h4 {
     @apply tracking-tight text-zinc-900;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.025em;
   }
 }
 
@@ -53,14 +54,29 @@
     text-wrap: balance;
   }
 
+  .page-bg {
+    background-color: #fafafa;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -20%, rgba(46, 49, 146, 0.06), transparent),
+      linear-gradient(to bottom, #fafafa, #f4f4f5);
+  }
+
   .surface-card {
-    @apply bg-white border border-zinc-200/80 rounded-md;
+    @apply bg-white border border-zinc-200/90 rounded-[var(--radius-card)];
     box-shadow: var(--shadow-card);
   }
 
   .grid-pattern-light {
-    background-image: linear-gradient(#f4f4f5 1px, transparent 1px),
-      linear-gradient(90deg, #f4f4f5 1px, transparent 1px);
-    background-size: 40px 40px;
+    background-image: linear-gradient(#ececee 1px, transparent 1px),
+      linear-gradient(90deg, #ececee 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  .icon-tile {
+    @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-100 bg-zinc-50;
+  }
+
+  .icon-tile-brand {
+    @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#2e3192]/10 bg-[#2e3192]/5;
   }
 }

@@ -77,8 +77,10 @@ export function MonitoringPanel() {
       refreshData();
       setSelectedReview(null);
       setActionError("");
-    } catch (err: any) {
-      setActionError(err.message || "Failed to approve request.");
+    } catch (err: unknown) {
+      setActionError(
+        err instanceof Error ? err.message : "Failed to approve request.",
+      );
     }
   };
 
@@ -95,8 +97,10 @@ export function MonitoringPanel() {
       setAdminComment("");
       setShowRejectForm(false);
       setActionError("");
-    } catch (err: any) {
-      setActionError(err.message || "Failed to reject request.");
+    } catch (err: unknown) {
+      setActionError(
+        err instanceof Error ? err.message : "Failed to reject request.",
+      );
     }
   };
 
@@ -676,9 +680,9 @@ export function MonitoringPanel() {
 
               {/* Employee Explanation */}
               <div className="rounded-md bg-zinc-50 border border-zinc-200 p-3 space-y-1 text-xs">
-                <p className="font-bold text-zinc-700">User's Explanation for Violations:</p>
+                <p className="font-bold text-zinc-700">User&apos;s Explanation for Violations:</p>
                 <p className="text-zinc-650 italic leading-relaxed">
-                  "{selectedReview.userExplanation || "No comments provided."}"
+                  &ldquo;{selectedReview.userExplanation || "No comments provided."}&rdquo;
                 </p>
                 <p className="text-[9px] text-zinc-400 pt-1 text-right">
                   Submitted: {new Date(selectedReview.submittedTimestamp).toLocaleString()}
@@ -712,7 +716,7 @@ export function MonitoringPanel() {
                   </p>
                   {selectedReview.adminComment && (
                     <p className="mt-1 leading-normal italic text-[11px]">
-                      Comment: "{selectedReview.adminComment}"
+                      Comment: &ldquo;{selectedReview.adminComment}&rdquo;
                     </p>
                   )}
                 </div>

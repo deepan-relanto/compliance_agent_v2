@@ -8,9 +8,9 @@ interface UnderConstructionProps {
 
 export function UnderConstruction({ title, description }: UnderConstructionProps) {
   return (
-    <Card className="max-w-lg">
+    <Card className="mx-auto max-w-lg">
       <CardContent className="flex flex-col items-center px-8 py-14 text-center">
-        <div className="flex h-12 w-12 items-center justify-center rounded-md bg-[#2e3192]/8">
+        <div className="icon-tile-brand h-12 w-12">
           <Construction className="h-6 w-6 text-[#2e3192]" strokeWidth={1.5} />
         </div>
         <p className="mt-5 text-xs font-semibold uppercase tracking-widest text-[#f15a24]">

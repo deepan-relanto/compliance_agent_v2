@@ -3,6 +3,7 @@
 import { RelantoLogo } from "@/components/brand/relanto-logo";
 import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/lib/auth-store";
+import { cn } from "@/lib/utils";
 import { LogOut } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -18,53 +19,76 @@ export function EmployeeShell({ children, title, subtitle }: EmployeeShellProps)
   const logout = useAuthStore((s) => s.logout);
   const router = useRouter();
 
+  const batchLabel = user?.batchId
+    ? user.batchId.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+    : null;
+
   return (
-    <div className="min-h-screen bg-zinc-50/70">
-      <header className="sticky top-0 z-30 border-b border-zinc-200 bg-white/95 backdrop-blur-sm">
-        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
-          <Link href="/dashboard">
+    <div className="min-h-screen page-bg">
+      <header className="sticky top-0 z-30 w-full border-b border-zinc-200/80 bg-white/90 backdrop-blur-md">
+        <div className="flex h-[60px] w-full items-center justify-between px-5 sm:px-8 lg:px-10">
+          <Link href="/dashboard" className="rounded-lg outline-offset-2 focus-visible:ring-2 focus-visible:ring-[#2e3192]/30">
             <RelantoLogo size="sm" showTagline className="justify-start" />
           </Link>
-          <div className="flex items-center gap-4">
-            <div className="hidden text-right sm:block">
-              <p className="text-xs font-medium text-zinc-900">{user?.username}</p>
-              {user?.batchId && (
-                <p className="text-[11px] uppercase tracking-wider text-zinc-500">
-                  {user.batchId.replace("_", " ")}
-                </p>
-              )}
-            </div>
+          <div className="flex items-center gap-3">
+            {user && (
+              <div className="hidden items-center gap-3 rounded-lg border border-zinc-200/80 bg-zinc-50/80 px-3 py-1.5 sm:flex">
+                <div className="flex h-7 w-7 items-center justify-center rounded-md bg-[#2e3192] text-[11px] font-semibold text-white">
+                  {user.username.charAt(0).toUpperCase()}
+                </div>
+                <div className="text-left leading-tight">
+                  <p className="max-w-[180px] truncate text-xs font-medium text-zinc-800">
+                    {user.username}
+                  </p>
+                  {batchLabel && (
+                    <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+                      {batchLabel}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
             <Button
               variant="ghost"
               size="sm"
+              className="text-zinc-600"
               onClick={() => {
                 logout();
                 router.push("/login");
               }}
             >
               <LogOut className="h-3.5 w-3.5" strokeWidth={1.75} />
-              Sign out
+              <span className="hidden sm:inline">Sign out</span>
             </Button>
           </div>
         </div>
       </header>
 
       {(title || subtitle) && (
-        <div className="border-b border-zinc-100 bg-white">
-          <div className="mx-auto max-w-6xl px-6 py-7">
+        <div className="border-b border-zinc-200/60 bg-white/60">
+          <div className="mx-auto w-full max-w-7xl px-5 py-8 sm:px-8 lg:px-10">
             {title && (
-              <h1 className="text-[28px] font-semibold tracking-tight text-zinc-900">
+              <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 sm:text-[1.65rem]">
                 {title}
               </h1>
             )}
             {subtitle && (
-              <p className="mt-1.5 text-[14px] text-zinc-500">{subtitle}</p>
+              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-500">
+                {subtitle}
+              </p>
             )}
           </div>
         </div>
       )}
 
-      <main className="mx-auto max-w-6xl px-6 py-8">{children}</main>
+      <main
+        className={cn(
+          "mx-auto w-full max-w-7xl px-5 py-8 sm:px-8 lg:px-10",
+          title ? "pb-12" : "py-10",
+        )}
+      >
+        {children}
+      </main>
     </div>
   );
 }

@@ -1,28 +1,30 @@
 "use client";
 
 import { StatusBadge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { useAuthStore } from "@/lib/auth-store";
 import { getProgress, getModuleStatus } from "@/lib/progress-store";
-import type { TrainingModule } from "@/lib/types";
+import type { ModuleStatus, TrainingModule } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { Clock, Layers, Play } from "lucide-react";
+import { Clock, FileText, Layers, Play } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import type { ModuleStatus } from "@/lib/types";
 
 interface ModuleCardProps {
   module: TrainingModule;
 }
 
+const statusAccent: Record<ModuleStatus, string> = {
+  not_started: "bg-[#2e3192]",
+  in_progress: "bg-[#f15a24]",
+  completed: "bg-emerald-500",
+  failed: "bg-red-500",
+  permanently_failed: "bg-zinc-800",
+};
+
 export function ModuleCard({ module }: ModuleCardProps) {
   const user = useAuthStore((s) => s.user);
-
-  // Read real progress from localStorage (client-side only)
   const [status, setStatus] = useState<ModuleStatus>(module.status);
-  const [progressPercent, setProgressPercent] = useState(
-    module.status === "completed" ? 100 : module.status === "in_progress" ? 42 : 0,
-  );
+  const [progressPercent, setProgressPercent] = useState(0);
 
   useEffect(() => {
     if (!user?.username) return;
@@ -37,65 +39,87 @@ export function ModuleCard({ module }: ModuleCardProps) {
             : 0;
       setProgressPercent(pct);
     } else {
-      // Fall back to the status baked into the module object (demo modules)
       const s = getModuleStatus(user.username, module.id);
       setStatus(s);
-      setProgressPercent(s === "completed" ? 100 : s === "in_progress" ? 42 : 0);
+      setProgressPercent(s === "completed" ? 100 : 0);
     }
-  }, [user?.username, module.id]);
+  }, [user?.username, module.id, module.status]);
+
+  const ctaLabel =
+    status === "not_started"
+      ? "Start"
+      : status === "completed"
+        ? "Review"
+        : "Resume";
 
   return (
-    <Card className="overflow-hidden transition-shadow hover:shadow-[var(--shadow-elevated)]">
-      <CardContent className="p-0">
-        <div className="flex flex-col sm:flex-row sm:items-stretch">
-          <div className="flex-1 p-5">
-            <div className="flex flex-wrap items-center gap-2">
-              <StatusBadge status={status} />
-              <span className="text-xs font-medium text-zinc-400">Mandatory</span>
+    <article className="surface-card group overflow-hidden transition-all hover:border-zinc-300/90 hover:shadow-[var(--shadow-elevated)]">
+      <div className="flex flex-col sm:flex-row">
+        <div
+          className={cn("w-full shrink-0 sm:w-1", statusAccent[status])}
+          aria-hidden
+        />
+        <div className="flex flex-1 flex-col sm:flex-row sm:items-stretch">
+          <div className="flex flex-1 gap-4 p-5 sm:p-6">
+            <div className="icon-tile hidden h-11 w-11 sm:flex">
+              <FileText className="h-5 w-5 text-zinc-500" strokeWidth={1.5} />
             </div>
-            <h3 className="mt-2 text-base font-semibold tracking-tight text-zinc-900">
-              {module.title}
-            </h3>
-            <p className="mt-1.5 text-sm leading-relaxed text-zinc-500 line-clamp-2">
-              {module.description}
-            </p>
-            <div className="mt-3 flex gap-4 text-xs text-zinc-500">
-              <span className="inline-flex items-center gap-1">
-                <Layers className="h-3.5 w-3.5" strokeWidth={1.5} />
-                {module.slideCount} slides
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <Clock className="h-3.5 w-3.5" strokeWidth={1.5} />
-                ~{module.durationMinutes} min
-              </span>
-            </div>
-            <div className="mt-4">
-              <div className="flex justify-between text-xs text-zinc-500">
-                <span>Progress</span>
-                <span className="font-medium text-zinc-700">{progressPercent}%</span>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge status={status} />
+                <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">
+                  Mandatory
+                </span>
+                {module.contentType === "pdf" && (
+                  <span className="text-[11px] text-zinc-400">· PDF</span>
+                )}
               </div>
-              <div className="mt-1.5 h-1.5 overflow-hidden rounded-md bg-zinc-100">
-                <div
-                  className={cn(
-                    "h-full rounded-md transition-all duration-500",
-                    status === "completed" ? "bg-emerald-500" : "bg-[#2e3192]",
-                  )}
-                  style={{ width: `${progressPercent}%` }}
-                />
+              <h3 className="mt-2 text-[15px] font-semibold tracking-tight text-zinc-900 group-hover:text-[#2e3192]">
+                {module.title}
+              </h3>
+              <p className="mt-1.5 text-sm leading-relaxed text-zinc-500 line-clamp-2">
+                {module.description}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-4 text-xs text-zinc-500">
+                <span className="inline-flex items-center gap-1.5">
+                  <Layers className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  {module.slideCount} slides
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  ~{module.durationMinutes} min
+                </span>
+              </div>
+              <div className="mt-4 max-w-md">
+                <div className="flex justify-between text-xs text-zinc-500">
+                  <span>Progress</span>
+                  <span className="font-medium tabular-nums text-zinc-700">
+                    {progressPercent}%
+                  </span>
+                </div>
+                <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-zinc-100">
+                  <div
+                    className={cn(
+                      "h-full rounded-full transition-all duration-500",
+                      status === "completed" ? "bg-emerald-500" : "bg-[#2e3192]",
+                    )}
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
               </div>
             </div>
           </div>
-          <div className="flex items-center border-t border-zinc-100 bg-zinc-50/50 p-4 sm:w-36 sm:border-l sm:border-t-0">
+          <div className="flex items-center border-t border-zinc-100 bg-zinc-50/60 px-5 py-4 sm:w-[148px] sm:flex-col sm:justify-center sm:border-l sm:border-t-0 sm:px-4">
             <Link
               href={`/training/${module.id}`}
-              className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-md bg-[#2e3192] px-4 text-sm font-medium text-white hover:bg-[#3d42a8]"
+              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#2e3192] px-4 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#3d42a8]"
             >
               <Play className="h-3.5 w-3.5" strokeWidth={1.75} />
-              {status === "not_started" ? "Start" : status === "completed" ? "Review" : "Resume"}
+              {ctaLabel}
             </Link>
           </div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </article>
   );
 }

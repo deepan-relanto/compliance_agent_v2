@@ -70,6 +70,29 @@ src/
 - Fullscreen requested on training launch (browser Fullscreen API)
 - Admin “Execute” buttons log simulated broadcast messages only
 
+## Database (Neon PostgreSQL)
+
+1. Copy `.env.example` to `.env` and set `DATABASE_URL` (your Neon connection string).
+2. Run:
+
+```bash
+npm run db:setup
+```
+
+This creates all tables and seeds demo users, batches, modules, and MCQs.
+
+| Script | Purpose |
+|--------|---------|
+| `npm run db:migrate` | Apply `src/lib/db/schema.sql` |
+| `npm run db:seed` | Insert demo data |
+| `npm run db:setup` | Both |
+
+### Tables
+
+`batches`, `users`, `training_modules`, `module_batches`, `upload_files`, `mcq_questions`, `mcq_options`, `assessment_progress`, `feedback_entries`, `review_requests`, `audit_logs`, `live_sessions`
+
+Uploaded assessments are also POSTed to `/api/assessments` when created in the admin UI.
+
 ## Environment
 
-Copy `.env.example` when backend keys are added (e.g. `NEXT_PUBLIC_API_URL`). Frontend runs without env for now.
+See `.env.example` for `DATABASE_URL` and optional Azure AD keys.

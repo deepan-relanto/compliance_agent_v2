@@ -105,7 +105,7 @@ export function PdfPageViewer({
   return (
     <div
       ref={containerRef}
-      className="relative flex h-full w-full items-start justify-center overflow-auto"
+      className="relative flex min-h-[320px] w-full items-center justify-center overflow-auto py-2"
     >
       {/* Loading overlay — shown while the page canvas is being drawn */}
       {pageLoading && (

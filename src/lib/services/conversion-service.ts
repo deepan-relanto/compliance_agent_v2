@@ -29,6 +29,9 @@ export const ALLOWED_MIME_TYPES = [
 
 export const ALLOWED_EXTENSIONS = [".ppt", ".pptx"];
 
+export const PDF_MIME_TYPES = ["application/pdf"];
+export const PDF_EXTENSIONS = [".pdf"];
+
 /** Where uploaded PPT files and generated PDFs are stored */
 const UPLOADS_DIR = path.join(process.cwd(), "public", "uploads");
 
@@ -284,4 +287,66 @@ export async function convertPptToPdf(
     originalName,
     pageCount,
   };
+}
+
+/**
+ * Stores an uploaded PDF as-is (no LibreOffice conversion).
+ */
+export async function storePdfUpload(
+  buffer: Buffer,
+  originalName: string,
+  mimeType: string,
+  sizeBytes: number,
+): Promise<ConversionOutcome> {
+  const ext = path.extname(originalName).toLowerCase();
+
+  if (ext !== ".pdf") {
+    return {
+      ok: false,
+      code: "INVALID_TYPE",
+      message: "Only .pdf files are accepted for direct upload.",
+    };
+  }
+
+  if (sizeBytes > MAX_FILE_SIZE_BYTES) {
+    return {
+      ok: false,
+      code: "FILE_TOO_LARGE",
+      message: `File exceeds the 50 MB limit (received ${(sizeBytes / 1024 / 1024).toFixed(1)} MB).`,
+    };
+  }
+
+  try {
+    ensureUploadsDir();
+    const finalPdfName = `${crypto.randomUUID()}.pdf`;
+    const finalPdfPath = path.join(UPLOADS_DIR, finalPdfName);
+    fs.writeFileSync(finalPdfPath, buffer);
+    console.log(`[conversion-service] PDF stored: ${finalPdfPath}`);
+
+    const pageCount = countPdfPages(finalPdfPath);
+    console.log(`[conversion-service] Page count: ${pageCount}`);
+
+    return {
+      ok: true,
+      pdfUrl: `/uploads/${finalPdfName}`,
+      pdfPath: finalPdfPath,
+      originalName,
+      pageCount,
+    };
+  } catch (err) {
+    console.error("[conversion-service] PDF storage error:", err);
+    return {
+      ok: false,
+      code: "STORAGE_ERROR",
+      message: "Failed to save the PDF. Check server storage permissions.",
+    };
+  }
+}
+
+export function isPdfUpload(
+  originalName: string,
+  mimeType: string,
+): boolean {
+  const ext = path.extname(originalName).toLowerCase();
+  return PDF_EXTENSIONS.includes(ext) || PDF_MIME_TYPES.includes(mimeType);
 }

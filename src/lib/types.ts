@@ -95,7 +95,8 @@ export interface McqQuestion {
   slideIndex: number;
   prompt: string;
   options: McqOption[];
-  correctOptionId: string;
+  /** Only set after server validation — never in module GET */
+  correctOptionId?: string;
 }
 
 export interface EmployeeProgress {
