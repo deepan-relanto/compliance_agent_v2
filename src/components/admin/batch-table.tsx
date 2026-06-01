@@ -52,7 +52,7 @@ export function BatchTable({
                     {row.progressPercent}%
                   </td>
                   <td className="px-6 py-3.5 tabular-nums text-zinc-600">
-                    {row.mcqPassRate}%
+                    {row.scorePercent != null ? `${row.scorePercent}%` : `${row.mcqPassRate}%`}
                   </td>
                   <td className="px-6 py-3.5 tabular-nums text-zinc-500">
                     {row.timeSpentMinutes}m

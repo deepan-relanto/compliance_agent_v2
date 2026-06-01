@@ -14,7 +14,23 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuthStore } from "@/lib/auth-store";
-import { markInProgress, markCompleted, saveSlideProgress, getProgress, addWarning, saveAcknowledgement } from "@/lib/progress-store";
+import {
+  markInProgress,
+  markCompleted,
+  saveSlideProgress,
+  getProgress,
+  addWarning,
+  saveAcknowledgement,
+  applyScoreResult,
+  resetForScoreRetake,
+} from "@/lib/progress-store";
+import {
+  syncProgressStart,
+  syncSlideProgress,
+  finalizeAssessmentScore,
+  requestScoreRetake,
+} from "@/lib/progress-api";
+import { PASS_THRESHOLD_PERCENT } from "@/lib/constants";
 import { getPendingRequest, submitReviewRequest, getAllReviewRequests } from "@/lib/review-store";
 import { updateUploadedAssessmentSlideCount } from "@/lib/mock-data";
 
@@ -129,6 +145,15 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
   const [sessionStarted, setSessionStarted] = useState(false);
   const [sessionStartMs, setSessionStartMs] = useState<number | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [showScoreResult, setShowScoreResult] = useState(false);
+  const [scoreResult, setScoreResult] = useState<{
+    scorePercent: number;
+    passed: boolean;
+    canRetake: boolean;
+    mcqCorrect: number;
+    mcqTotal: number;
+  } | null>(null);
+  const [retakeLoading, setRetakeLoading] = useState(false);
 
   const loadIntegrityState = useCallback(() => {
     if (user?.username) {
@@ -316,6 +341,13 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
         user.batchId,
         totalSlides,
       );
+      void syncProgressStart({
+        userEmail: user.username,
+        moduleId: module.id,
+        moduleTitle: module.title,
+        batchId: user.batchId,
+        totalSlides,
+      });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.username, module.id]);
@@ -331,8 +363,13 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
     }
     if (user?.username) {
       saveSlideProgress(user.username, module.id, slideIndex);
+      void syncSlideProgress(user.username, module.id, slideIndex, {
+        moduleTitle: module.title,
+        batchId: user.batchId,
+        totalSlides,
+      });
     }
-  }, [user?.username, module.id, slideIndex]);
+  }, [user?.username, module.id, slideIndex, module.title, user?.batchId, totalSlides]);
 
   const openGate = () => {
     const mcq =
@@ -359,12 +396,47 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
     setSlideIndex((i) => Math.min(i + 1, totalSlides - 1));
   };
 
-  const handleAcknowledgementSubmit = () => {
+  const handleAcknowledgementSubmit = async () => {
     if (!user?.username) return;
+    const result = await finalizeAssessmentScore(user.username, module.id);
+    if (result) {
+      setScoreResult(result);
+      applyScoreResult(user.username, module.id, {
+        scorePercent: result.scorePercent,
+        passed: result.passed,
+        mcqCorrect: result.mcqCorrect,
+        mcqTotal: result.mcqTotal,
+        failedReason: result.passed
+          ? undefined
+          : `Score ${result.scorePercent}% is at or below the passing threshold (${PASS_THRESHOLD_PERCENT}%).`,
+      });
+      if (!result.passed) {
+        setShowAcknowledgement(false);
+        setShowScoreResult(true);
+        return;
+      }
+    }
     const feedbackRequired = !!module.feedbackRequired;
     saveAcknowledgement(user.username, module.id, feedbackRequired);
     setShowAcknowledgement(false);
     setShowFinalQa(true);
+  };
+
+  const handleScoreRetake = async () => {
+    if (!user?.username) return;
+    setRetakeLoading(true);
+    const res = await requestScoreRetake(user.username, module.id);
+    setRetakeLoading(false);
+    if (res.ok) {
+      resetForScoreRetake(user.username, module.id);
+      setShowScoreResult(false);
+      setScoreResult(null);
+      setSlideIndex(0);
+      setNextClickCount(0);
+      setShowFinalQa(false);
+      setFeedbackSubmitted(false);
+      isMounted.current = false;
+    }
   };
 
   const handleMcqContinue = () => {
@@ -651,8 +723,72 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
         moduleId={module.id}
         question={gateMcq}
         open={mcqOpen}
+        userEmail={user?.username}
+        moduleTitle={module.title}
+        batchId={user?.batchId}
+        totalSlides={totalSlides}
         onContinue={handleMcqContinue}
       />
+
+      {showScoreResult && scoreResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/70 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-lg border border-zinc-200 bg-white p-8 text-center shadow-xl">
+            <div
+              className={cn(
+                "mx-auto flex h-14 w-14 items-center justify-center rounded-full",
+                scoreResult.passed ? "bg-emerald-100" : "bg-amber-100",
+              )}
+            >
+              <span
+                className={cn(
+                  "text-2xl font-bold",
+                  scoreResult.passed ? "text-emerald-600" : "text-amber-600",
+                )}
+              >
+                {scoreResult.scorePercent}%
+              </span>
+            </div>
+            <h3 className="mt-5 text-xl font-semibold text-zinc-900">
+              {scoreResult.passed ? "Assessment passed" : "Below passing score"}
+            </h3>
+            <p className="mt-2 text-sm text-zinc-500">
+              You answered {scoreResult.mcqCorrect} of {scoreResult.mcqTotal} checkpoint
+              questions correctly. Passing score is above {PASS_THRESHOLD_PERCENT}%.
+            </p>
+            {scoreResult.canRetake ? (
+              <div className="mt-6 flex flex-col gap-2">
+                <Button
+                  variant="primary"
+                  className="w-full"
+                  disabled={retakeLoading}
+                  onClick={handleScoreRetake}
+                >
+                  {retakeLoading ? "Preparing retake…" : "Retake assessment"}
+                </Button>
+                <Link
+                  href="/dashboard"
+                  className="text-sm text-zinc-500 hover:text-[#2e3192]"
+                  onClick={() => {
+                    isExitingRef.current = true;
+                  }}
+                >
+                  Return to dashboard
+                </Link>
+              </div>
+            ) : (
+              <Link
+                href="/dashboard"
+                className="mt-6 inline-flex h-10 w-full items-center justify-center rounded-md bg-[#2e3192] text-sm font-medium text-white"
+                onClick={() => {
+                  isExitingRef.current = true;
+                }}
+              >
+                Return to dashboard
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Warning Notification Modal overlay ────────────────────────────── */}
       {activeWarningReason && (

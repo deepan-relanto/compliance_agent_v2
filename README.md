@@ -66,7 +66,8 @@ src/
 ## Mock behaviors (intentional)
 
 - Login validates against embedded CSV in `AUTH_CSV`
-- MCQ appears every **3** “Next slide” clicks; correct answer required to proceed
+- MCQ appears every **3** “Next slide” clicks; answers are validated server-side and contribute to a final score
+- Passing score is **above 70%**; at or below 70% learners may retake from the dashboard
 - Fullscreen requested on training launch (browser Fullscreen API)
 - Admin “Execute” buttons log simulated broadcast messages only
 
@@ -85,7 +86,19 @@ This creates all tables and seeds demo users, batches, modules, and MCQs.
 |--------|---------|
 | `npm run db:migrate` | Apply `src/lib/db/schema.sql` |
 | `npm run db:seed` | Insert demo data |
-| `npm run db:setup` | Both |
+| `npm run db:setup` | Migrate + alter + seed |
+| `npm run db:reset` | Fresh test: clear all modules/uploads, re-seed users & batches |
+| `npm run db:clear-modules` | Clear training content only (keeps users/batches) |
+
+### Content library (admin)
+
+Nav item **Content library** (`/admin/upload`):
+
+- **Upload new** — PDF/PPT → stored in `public/uploads/`, assign batches, NVIDIA MCQ generation (or auto-reuse questions if the same PDF was uploaded before).
+- **Reuse content** — Publish an existing PDF + MCQ set to more batches without calling the LLM again.
+- **Learner scores** — All checkpoint scores; passing threshold is **above 70%**. At or below 70%, learners can retake.
+
+Scores are stored in Neon `assessment_progress` (`score_percent`, `mcq_correct`, `mcq_total`).
 
 ### Tables
 

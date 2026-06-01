@@ -29,6 +29,9 @@ export interface AssessmentProgress {
   lastFailureReason?: string;
   archivedWarnings: { attempt: number; warnings: WarningHistoryEntry[] }[];
   acknowledgement?: AssessmentAcknowledgement;
+  mcqCorrect?: number;
+  mcqTotal?: number;
+  scorePercent?: number | null;
 }
 
 const STORE_KEY = "compliance-progress";
@@ -365,5 +368,103 @@ export function getWarningStatus(
     warningCount: p?.warningCount ?? 0,
     warningHistory: p?.warningHistory ?? [],
   };
+}
+
+/** Apply server-side score fields into local progress (for dashboard display). */
+export function mergeServerProgress(
+  username: string,
+  entries: {
+    moduleId: string;
+    moduleTitle: string;
+    batchId: string;
+    currentSlide: number;
+    totalSlides: number;
+    status: ModuleStatus;
+    retakeCount: number;
+    mcqCorrect: number;
+    mcqTotal: number;
+    scorePercent: number | null;
+    failedReason?: string | null;
+    completedAt?: string | null;
+  }[],
+): void {
+  const all = readAll();
+  for (const e of entries) {
+    const k = key(username, e.moduleId);
+    const existing = all[k];
+    all[k] = {
+      username,
+      moduleId: e.moduleId,
+      moduleTitle: e.moduleTitle,
+      batchId: e.batchId,
+      currentSlide: e.currentSlide,
+      totalSlides: e.totalSlides,
+      status: e.status,
+      lastAccessedAt: existing?.lastAccessedAt ?? Date.now(),
+      completedAt: e.completedAt
+        ? new Date(e.completedAt).getTime()
+        : existing?.completedAt,
+      warningCount: existing?.warningCount ?? 0,
+      warningHistory: existing?.warningHistory ?? [],
+      retakeCount: e.retakeCount,
+      failedReason: e.failedReason ?? existing?.failedReason,
+      archivedWarnings: existing?.archivedWarnings ?? [],
+      mcqCorrect: e.mcqCorrect,
+      mcqTotal: e.mcqTotal,
+      scorePercent: e.scorePercent,
+    };
+  }
+  writeAll(all);
+}
+
+export function applyScoreResult(
+  username: string,
+  moduleId: string,
+  result: {
+    scorePercent: number;
+    passed: boolean;
+    mcqCorrect: number;
+    mcqTotal: number;
+    failedReason?: string;
+  },
+): void {
+  const all = readAll();
+  const k = key(username, moduleId);
+  const existing = all[k];
+  if (!existing) return;
+
+  all[k] = {
+    ...existing,
+    mcqCorrect: result.mcqCorrect,
+    mcqTotal: result.mcqTotal,
+    scorePercent: result.scorePercent,
+    status: result.passed ? "completed" : "failed",
+    failedReason: result.passed ? undefined : result.failedReason,
+    completedAt: result.passed ? Date.now() : undefined,
+    lastAccessedAt: Date.now(),
+  };
+  writeAll(all);
+}
+
+/** Reset local progress for a score-based retake. */
+export function resetForScoreRetake(username: string, moduleId: string): void {
+  const all = readAll();
+  const k = key(username, moduleId);
+  const existing = all[k];
+  if (!existing) return;
+
+  all[k] = {
+    ...existing,
+    status: "not_started",
+    currentSlide: 0,
+    mcqCorrect: 0,
+    mcqTotal: existing.mcqTotal ?? 0,
+    scorePercent: null,
+    failedReason: undefined,
+    completedAt: undefined,
+    retakeCount: (existing.retakeCount ?? 0) + 1,
+    lastAccessedAt: Date.now(),
+  };
+  writeAll(all);
 }
 

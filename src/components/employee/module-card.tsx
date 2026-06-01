@@ -5,8 +5,12 @@ import { useAuthStore } from "@/lib/auth-store";
 import { getProgress, getModuleStatus } from "@/lib/progress-store";
 import type { ModuleStatus, TrainingModule } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { Clock, FileText, Layers, Play } from "lucide-react";
+import { PASS_THRESHOLD_PERCENT } from "@/lib/constants";
+import { Clock, FileText, Layers, Play, Trophy } from "lucide-react";
+import { requestScoreRetake } from "@/lib/progress-api";
+import { resetForScoreRetake } from "@/lib/progress-store";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 interface ModuleCardProps {
@@ -23,14 +27,17 @@ const statusAccent: Record<ModuleStatus, string> = {
 
 export function ModuleCard({ module }: ModuleCardProps) {
   const user = useAuthStore((s) => s.user);
+  const router = useRouter();
   const [status, setStatus] = useState<ModuleStatus>(module.status);
   const [progressPercent, setProgressPercent] = useState(0);
+  const [scorePercent, setScorePercent] = useState<number | null>(null);
 
   useEffect(() => {
     if (!user?.username) return;
     const p = getProgress(user.username, module.id);
     if (p) {
       setStatus(p.status);
+      setScorePercent(p.scorePercent ?? null);
       const pct =
         p.status === "completed"
           ? 100
@@ -42,11 +49,18 @@ export function ModuleCard({ module }: ModuleCardProps) {
       const s = getModuleStatus(user.username, module.id);
       setStatus(s);
       setProgressPercent(s === "completed" ? 100 : 0);
+      setScorePercent(null);
     }
   }, [user?.username, module.id, module.status]);
 
-  const ctaLabel =
-    status === "not_started"
+  const canScoreRetake =
+    status === "failed" &&
+    scorePercent != null &&
+    scorePercent <= PASS_THRESHOLD_PERCENT;
+
+  const ctaLabel = canScoreRetake
+    ? "Retake"
+    : status === "not_started"
       ? "Start"
       : status === "completed"
         ? "Review"
@@ -72,6 +86,19 @@ export function ModuleCard({ module }: ModuleCardProps) {
                 </span>
                 {module.contentType === "pdf" && (
                   <span className="text-[11px] text-zinc-400">· PDF</span>
+                )}
+                {scorePercent != null && (
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                      scorePercent > PASS_THRESHOLD_PERCENT
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "bg-amber-50 text-amber-800",
+                    )}
+                  >
+                    <Trophy className="h-3 w-3" />
+                    {scorePercent}%
+                  </span>
                 )}
               </div>
               <h3 className="mt-2 text-[15px] font-semibold tracking-tight text-zinc-900 group-hover:text-[#2e3192]">
@@ -112,6 +139,15 @@ export function ModuleCard({ module }: ModuleCardProps) {
           <div className="flex items-center border-t border-zinc-100 bg-zinc-50/60 px-5 py-4 sm:w-[148px] sm:flex-col sm:justify-center sm:border-l sm:border-t-0 sm:px-4">
             <Link
               href={`/training/${module.id}`}
+              onClick={async (e) => {
+                if (!canScoreRetake || !user?.username) return;
+                e.preventDefault();
+                const res = await requestScoreRetake(user.username, module.id);
+                if (res.ok) {
+                  resetForScoreRetake(user.username, module.id);
+                  router.push(`/training/${module.id}`);
+                }
+              }}
               className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#2e3192] px-4 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#3d42a8]"
             >
               <Play className="h-3.5 w-3.5" strokeWidth={1.75} />

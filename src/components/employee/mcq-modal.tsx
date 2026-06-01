@@ -11,10 +11,23 @@ interface McqModalProps {
   moduleId: string;
   question: McqQuestion;
   open: boolean;
+  userEmail?: string;
+  moduleTitle?: string;
+  batchId?: string;
+  totalSlides?: number;
   onContinue: (wasCorrect: boolean) => void;
 }
 
-export function McqModal({ moduleId, question, open, onContinue }: McqModalProps) {
+export function McqModal({
+  moduleId,
+  question,
+  open,
+  userEmail,
+  moduleTitle,
+  batchId,
+  totalSlides,
+  onContinue,
+}: McqModalProps) {
   const [selected, setSelected] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [wasCorrect, setWasCorrect] = useState(false);
@@ -51,7 +64,13 @@ export function McqModal({ moduleId, question, open, onContinue }: McqModalProps
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ optionId: selected }),
+          body: JSON.stringify({
+            optionId: selected,
+            userEmail,
+            moduleTitle,
+            batchId,
+            totalSlides,
+          }),
         },
       );
       const data = await res.json();

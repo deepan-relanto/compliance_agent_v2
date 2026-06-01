@@ -6,7 +6,8 @@ import { EmployeeShell } from "@/components/layout/employee-shell";
 import { PageSection } from "@/components/ui/page-section";
 import { StatCard } from "@/components/ui/stat-card";
 import { useAuthStore } from "@/lib/auth-store";
-import { getProgressForUser } from "@/lib/progress-store";
+import { fetchUserProgress } from "@/lib/progress-api";
+import { getProgressForUser, mergeServerProgress } from "@/lib/progress-store";
 import type { ModuleStatus, TrainingModule } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
@@ -51,6 +52,26 @@ export default function DashboardPage() {
       if (data.ok && Array.isArray(data.modules)) {
         setModules(data.modules);
         if (user.username) {
+          const serverEntries = await fetchUserProgress(user.username);
+          if (serverEntries.length > 0) {
+            mergeServerProgress(
+              user.username,
+              serverEntries.map((e) => ({
+                moduleId: e.moduleId,
+                moduleTitle: e.moduleTitle,
+                batchId: e.batchId,
+                currentSlide: e.currentSlide,
+                totalSlides: e.totalSlides,
+                status: e.status,
+                retakeCount: e.retakeCount,
+                mcqCorrect: e.mcqCorrect,
+                mcqTotal: e.mcqTotal,
+                scorePercent: e.scorePercent,
+                failedReason: e.failedReason,
+                completedAt: e.completedAt,
+              })),
+            );
+          }
           const progressEntries = getProgressForUser(user.username);
           const progressMap = Object.fromEntries(
             progressEntries.map((p) => [p.moduleId, p.status]),

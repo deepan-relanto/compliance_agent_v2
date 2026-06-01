@@ -7,7 +7,7 @@
  *   1. idle       — drop-zone / file picker
  *   2. processing — converting PPT → PDF via /api/convert
  *   3. naming     — PDF ready; admin enters an assessment name
- *   4. done       — assessment saved to localStorage; shown on user dashboard
+ *   4. done       — assessment saved to Neon; shown on user dashboard
  *   error         — any step failure
  *
  * Design tokens used: Card, CardHeader, CardContent, Button, Input,
@@ -316,6 +316,7 @@ export function UploadPanel() {
   const [skippedConversion, setSkippedConversion] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [mcqCountCreated, setMcqCountCreated] = useState(0);
+  const [questionsReused, setQuestionsReused] = useState(false);
 
   const isProcessing = state === "processing";
   const fileIsPdf = file ? isPdfFile(file) : false;
@@ -457,6 +458,7 @@ export function UploadPanel() {
       setAssignedBatches(labels);
       setCreatedTitle(trimmedName);
       setMcqCountCreated(json.mcqCount ?? 0);
+      setQuestionsReused(Boolean(json.reused));
       setState("done");
     } catch {
       setPublishError("Could not reach the server. Check DATABASE_URL and NVIDIA_API_KEY.");
@@ -714,8 +716,11 @@ export function UploadPanel() {
               <span className="font-medium text-zinc-700">
                 {assignedBatches.length > 0 ? assignedBatches.join(", ") : "selected batches"}
               </span>
-              . {mcqCountCreated} scenario-based checkpoint
-              {mcqCountCreated === 1 ? "" : "s"} generated via NVIDIA LLM.
+              . {mcqCountCreated} checkpoint
+              {mcqCountCreated === 1 ? "" : "s"}
+              {questionsReused
+                ? " reused from matching PDF (no new LLM run)."
+                : " generated via NVIDIA LLM."}
             </p>
             <Button
               id="upload-another-btn"

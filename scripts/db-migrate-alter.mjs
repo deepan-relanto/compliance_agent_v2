@@ -49,4 +49,12 @@ const sql = neon(url);
 await sql`ALTER TABLE training_modules ADD COLUMN IF NOT EXISTS content_hash TEXT`;
 await sql`ALTER TABLE training_modules ADD COLUMN IF NOT EXISTS mcq_generation_status TEXT NOT NULL DEFAULT 'pending'`;
 
+await sql`ALTER TABLE assessment_progress ADD COLUMN IF NOT EXISTS mcq_correct INTEGER NOT NULL DEFAULT 0`;
+await sql`ALTER TABLE assessment_progress ADD COLUMN IF NOT EXISTS mcq_total INTEGER NOT NULL DEFAULT 0`;
+await sql`ALTER TABLE assessment_progress ADD COLUMN IF NOT EXISTS score_percent INTEGER`;
+await sql`ALTER TABLE assessment_progress ADD COLUMN IF NOT EXISTS mcq_answers JSONB NOT NULL DEFAULT '{}'::jsonb`;
+
+await sql`ALTER TABLE upload_files ADD COLUMN IF NOT EXISTS module_id TEXT REFERENCES training_modules(id) ON DELETE SET NULL`;
+await sql`ALTER TABLE upload_files ADD COLUMN IF NOT EXISTS content_hash TEXT`;
+
 console.log("✅ Schema alterations applied.");

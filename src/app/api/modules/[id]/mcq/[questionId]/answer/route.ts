@@ -1,16 +1,18 @@
 import { getSql } from "@/lib/db";
+import { recordMcqAnswerDb } from "@/lib/services/progress-db-service";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-/** POST — server-side MCQ answer validation (correct answer never sent to client beforehand) */
+/** POST — validate MCQ answer and record score progress */
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; questionId: string }> },
 ) {
   try {
     const { id: moduleId, questionId } = await params;
-    const { optionId } = await req.json();
+    const body = await req.json();
+    const { optionId, userEmail, moduleTitle, batchId, totalSlides } = body;
 
     if (!optionId || typeof optionId !== "string") {
       return NextResponse.json(
@@ -35,6 +37,25 @@ export async function POST(
 
     const correctOptionId = rows[0].correct_option_id as string;
     const correct = optionId === correctOptionId;
+
+    if (userEmail && moduleTitle && batchId) {
+      const stats = await recordMcqAnswerDb(sql, {
+        userEmail,
+        moduleId,
+        moduleTitle,
+        batchId,
+        totalSlides: totalSlides ?? 1,
+        questionId,
+        wasCorrect: correct,
+      });
+      return NextResponse.json({
+        ok: true,
+        correct,
+        correctOptionId,
+        mcqCorrect: stats.mcqCorrect,
+        mcqTotal: stats.mcqTotal,
+      });
+    }
 
     return NextResponse.json({
       ok: true,

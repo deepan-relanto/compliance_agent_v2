@@ -48,7 +48,8 @@ function toEmployeeRows(
       p.totalSlides > 0
         ? Math.round(((p.currentSlide + 1) / p.totalSlides) * 100)
         : 0,
-    mcqPassRate: 0,
+    mcqPassRate: p.scorePercent ?? 0,
+    scorePercent: p.scorePercent ?? null,
     timeSpentMinutes: 0,
     status: p.status,
   }));
@@ -61,6 +62,7 @@ export default function BatchDetailPage() {
   const [batch, setBatch] = useState<BatchInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [progressTick, setProgressTick] = useState(0);
+  const [serverProgress, setServerProgress] = useState<EmployeeProgress[]>([]);
 
   useEffect(() => {
     if (!batchId) return;
@@ -80,15 +82,55 @@ export default function BatchDetailPage() {
     if (!loading && !batch) router.replace("/admin/batches");
   }, [loading, batch, router]);
 
+  useEffect(() => {
+    if (!batchId) return;
+    const load = () => {
+      fetch(`/api/progress/admin?batchId=${encodeURIComponent(batchId)}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.ok && Array.isArray(data.scores)) {
+            setServerProgress(
+              data.scores.map(
+                (s: {
+                  userEmail: string;
+                  moduleId: string;
+                  moduleTitle: string;
+                  batchId: string;
+                  status: string;
+                  scorePercent: number | null;
+                  mcqCorrect: number;
+                  mcqTotal: number;
+                }) => ({
+                  username: s.userEmail,
+                  batchId: s.batchId,
+                  moduleId: s.moduleId,
+                  moduleTitle: s.moduleTitle,
+                  progressPercent:
+                    s.scorePercent != null ? s.scorePercent : 0,
+                  mcqPassRate: s.scorePercent ?? 0,
+                  scorePercent: s.scorePercent,
+                  timeSpentMinutes: 0,
+                  status: s.status,
+                }),
+              ),
+            );
+          }
+        })
+        .catch(() => undefined);
+    };
+    load();
+    const id = window.setInterval(() => {
+      setProgressTick((t) => t + 1);
+      load();
+    }, 8000);
+    return () => window.clearInterval(id);
+  }, [batchId]);
+
   const progress = useMemo(() => {
     void progressTick;
+    if (serverProgress.length > 0) return serverProgress;
     return toEmployeeRows(getProgressForBatchLive(batchId));
-  }, [batchId, progressTick]);
-
-  useEffect(() => {
-    const id = window.setInterval(() => setProgressTick((t) => t + 1), 5000);
-    return () => window.clearInterval(id);
-  }, []);
+  }, [batchId, progressTick, serverProgress]);
 
   if (loading) {
     return (

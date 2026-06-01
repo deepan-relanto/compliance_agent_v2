@@ -106,8 +106,22 @@ export interface EmployeeProgress {
   moduleTitle: string;
   progressPercent: number;
   mcqPassRate: number;
+  scorePercent: number | null;
   timeSpentMinutes: number;
   status: ModuleStatus;
+}
+
+export interface LibraryModule {
+  id: string;
+  title: string;
+  description: string;
+  slideCount: number;
+  pdfUrl: string;
+  contentHash: string | null;
+  mcqCount: number;
+  mcqGenerationStatus: string;
+  batches: { id: string; label: string }[];
+  canReuse: boolean;
 }
 
 // Re-export store types so consumers can import from a single @/lib/types

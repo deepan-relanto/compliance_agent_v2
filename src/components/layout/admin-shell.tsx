@@ -13,7 +13,7 @@ import {
   MessageSquare,
   Settings,
   ShieldAlert,
-  Upload,
+  Library,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -34,8 +34,8 @@ const navItems = [
   },
   {
     href: "/admin/upload",
-    label: "Upload PDF",
-    icon: Upload,
+    label: "Content library",
+    icon: Library,
     isActive: (path: string) => path.startsWith("/admin/upload"),
   },
   {

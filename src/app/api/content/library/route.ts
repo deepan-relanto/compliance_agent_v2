@@ -1,0 +1,62 @@
+import { getSql } from "@/lib/db";
+import { NextResponse } from "next/server";
+
+export const dynamic = "force-dynamic";
+
+/** GET — published modules available for reuse (with MCQ counts) */
+export async function GET() {
+  try {
+    const sql = getSql();
+    const modules = await sql`
+      SELECT
+        tm.id,
+        tm.title,
+        tm.description,
+        tm.slide_count,
+        tm.pdf_url,
+        tm.content_hash,
+        tm.mcq_generation_status,
+        tm.created_at,
+        (SELECT COUNT(*)::int FROM mcq_questions mq WHERE mq.module_id = tm.id) AS mcq_count
+      FROM training_modules tm
+      WHERE tm.content_type = 'pdf' AND tm.pdf_url IS NOT NULL
+      ORDER BY tm.created_at DESC
+    `;
+
+    const batchRows = await sql`
+      SELECT mb.module_id, b.id AS batch_id, b.label
+      FROM module_batches mb
+      JOIN batches b ON b.id = mb.batch_id
+    `;
+    const batchesByModule: Record<string, { id: string; label: string }[]> = {};
+    for (const row of batchRows) {
+      const mid = row.module_id as string;
+      if (!batchesByModule[mid]) batchesByModule[mid] = [];
+      batchesByModule[mid].push({
+        id: row.batch_id as string,
+        label: row.label as string,
+      });
+    }
+
+    const library = modules.map((m) => ({
+      id: m.id as string,
+      title: m.title as string,
+      description: m.description as string,
+      slideCount: Number(m.slide_count),
+      pdfUrl: m.pdf_url as string,
+      contentHash: m.content_hash as string | null,
+      mcqGenerationStatus: m.mcq_generation_status as string,
+      mcqCount: Number(m.mcq_count ?? 0),
+      createdAt: m.created_at,
+      batches: batchesByModule[m.id as string] ?? [],
+      canReuse:
+        Number(m.mcq_count ?? 0) > 0 &&
+        m.mcq_generation_status === "completed",
+    }));
+
+    return NextResponse.json({ ok: true, library });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to load library";
+    return NextResponse.json({ ok: false, message }, { status: 500 });
+  }
+}

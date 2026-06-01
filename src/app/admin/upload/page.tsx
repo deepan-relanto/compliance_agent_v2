@@ -2,16 +2,16 @@
 
 import { RouteGuard } from "@/components/auth/route-guard";
 import { AdminShell } from "@/components/layout/admin-shell";
-import { UploadPanel } from "@/components/admin/upload-panel";
+import { ContentLibraryHub } from "@/components/admin/content-library-hub";
 
 export default function AdminUploadPage() {
   return (
     <RouteGuard allowedRoles={["admin"]}>
       <AdminShell
-        title="Upload content"
-        subtitle="Upload PowerPoint or PDF files, assign batches, and publish checkpoint MCQs."
+        title="Content library"
+        subtitle="Upload PDFs, reuse existing assessments with questions, assign batches, and review learner scores."
       >
-        <UploadPanel />
+        <ContentLibraryHub />
       </AdminShell>
     </RouteGuard>
   );

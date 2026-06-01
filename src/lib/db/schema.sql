@@ -63,6 +63,8 @@ CREATE TABLE IF NOT EXISTS upload_files (
   page_count      INTEGER NOT NULL DEFAULT 1,
   file_size_bytes BIGINT,
   uploaded_by     TEXT,
+  module_id       TEXT REFERENCES training_modules(id) ON DELETE SET NULL,
+  content_hash    TEXT,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -107,6 +109,10 @@ CREATE TABLE IF NOT EXISTS assessment_progress (
   last_failure_at     TIMESTAMPTZ,
   last_failure_reason TEXT,
   acknowledgement     JSONB,
+  mcq_correct         INTEGER NOT NULL DEFAULT 0,
+  mcq_total           INTEGER NOT NULL DEFAULT 0,
+  score_percent       INTEGER,
+  mcq_answers         JSONB NOT NULL DEFAULT '{}'::jsonb,
   last_accessed_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   completed_at        TIMESTAMPTZ,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
