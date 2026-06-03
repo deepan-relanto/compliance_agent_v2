@@ -8,8 +8,9 @@ export default function AdminFeedbackPage() {
   return (
     <RouteGuard allowedRoles={["admin"]}>
       <AdminShell
+        wide
         title="Feedback"
-        subtitle="All assessment feedback submitted by learners, newest first."
+        subtitle="Search, filter by batch, and export learner feedback from completed assessments."
       >
         <FeedbackTable />
       </AdminShell>

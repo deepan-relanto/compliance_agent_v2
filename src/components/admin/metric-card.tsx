@@ -42,7 +42,7 @@ export function MetricCard({
   return (
     <div
       className={cn(
-        "surface-card flex flex-col justify-between p-5 min-h-[120px]",
+        "surface-card flex flex-col justify-between p-5 min-h-[120px] transition-shadow duration-200 hover:shadow-[var(--shadow-elevated)]",
         className,
       )}
     >

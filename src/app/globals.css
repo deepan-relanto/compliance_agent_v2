@@ -4,7 +4,7 @@
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 
-  --color-background: #fafafa;
+  --color-background: #f8f9fb;
   --color-foreground: #18181b;
   --color-muted: #71717a;
   --color-muted-foreground: #a1a1aa;
@@ -19,22 +19,23 @@
   --color-danger: #dc2626;
 
   --shadow-crisp: 0 1px 2px rgba(24, 24, 27, 0.05), 0 0 0 1px rgba(24, 24, 27, 0.04);
-  --shadow-card: 0 1px 2px rgba(24, 24, 27, 0.04), 0 4px 16px rgba(24, 24, 27, 0.06);
-  --shadow-elevated: 0 12px 40px rgba(46, 49, 146, 0.1), 0 0 0 1px rgba(24, 24, 27, 0.04);
-  --radius-card: 0.625rem;
+  --shadow-card: 0 1px 2px rgba(24, 24, 27, 0.04), 0 4px 20px rgba(24, 24, 27, 0.06);
+  --shadow-elevated: 0 16px 48px rgba(46, 49, 146, 0.1), 0 0 0 1px rgba(24, 24, 27, 0.04);
+  --radius-card: 0.75rem;
 }
 
 @layer base {
   * {
     @apply border-zinc-200;
+    caret-color: transparent;
   }
 
   html {
-    @apply antialiased scroll-smooth;
+    @apply antialiased scroll-smooth cursor-default select-none;
   }
 
   body {
-    @apply bg-[#fafafa] text-zinc-900 font-sans text-[15px] leading-[1.55];
+    @apply bg-[#f8f9fb] text-zinc-900 font-sans text-[15px] leading-[1.55] cursor-default select-none;
     font-feature-settings: "rlig" 1, "calt" 1;
     letter-spacing: -0.011em;
   }
@@ -47,6 +48,68 @@
     @apply tracking-tight text-zinc-900;
     letter-spacing: -0.025em;
   }
+
+  :focus-visible {
+    outline: none;
+  }
+
+  /* Text entry: allow selection, caret, and I-beam cursor */
+  input:not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="image"]):not([type="hidden"]):not([disabled]),
+  textarea:not([disabled]),
+  [contenteditable="true"] {
+    cursor: text;
+    caret-color: auto;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
+  /* Optional copy-friendly blocks (emails, codes in admin tables) */
+  .select-text {
+    user-select: text;
+    -webkit-user-select: text;
+    cursor: text;
+    caret-color: auto;
+  }
+
+  /* Hand pointer on interactive controls and their labels */
+  button:not(:disabled),
+  button:not(:disabled) *,
+  a[href],
+  a[href] *,
+  [role="button"]:not([aria-disabled="true"]),
+  [role="button"]:not([aria-disabled="true"]) *,
+  label[for],
+  label[for] *,
+  select:not(:disabled),
+  summary,
+  .surface-card-interactive,
+  .surface-card-interactive * {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  button:disabled * {
+    cursor: not-allowed;
+  }
+
+  /* Filter pills, tab buttons, and other explicit click targets */
+  .cursor-pointer,
+  .cursor-pointer * {
+    cursor: pointer;
+  }
+
+  /* Clicking static UI must not leave a text caret or focus ring */
+  div:focus,
+  span:focus,
+  p:focus,
+  section:focus,
+  article:focus,
+  h1:focus,
+  h2:focus,
+  h3:focus,
+  h4:focus {
+    outline: none;
+  }
 }
 
 @layer utilities {
@@ -55,15 +118,30 @@
   }
 
   .page-bg {
-    background-color: #fafafa;
+    background-color: #f8f9fb;
     background-image:
-      radial-gradient(ellipse 80% 50% at 50% -20%, rgba(46, 49, 146, 0.06), transparent),
-      linear-gradient(to bottom, #fafafa, #f4f4f5);
+      radial-gradient(ellipse 90% 60% at 50% -15%, rgba(46, 49, 146, 0.07), transparent),
+      radial-gradient(ellipse 50% 40% at 100% 0%, rgba(241, 90, 36, 0.04), transparent),
+      linear-gradient(to bottom, #f8f9fb, #f4f4f5);
   }
 
   .surface-card {
-    @apply bg-white border border-zinc-200/90 rounded-[var(--radius-card)];
+    @apply bg-white border border-zinc-200/80 rounded-[var(--radius-card)];
     box-shadow: var(--shadow-card);
+  }
+
+  .surface-card-interactive {
+    @apply bg-white border border-zinc-200/80 rounded-[var(--radius-card)] transition-all duration-200 cursor-pointer;
+    box-shadow: var(--shadow-card);
+  }
+
+  .surface-card-interactive:hover {
+    @apply border-zinc-300/90;
+    box-shadow: var(--shadow-elevated);
+  }
+
+  .glass-header {
+    @apply border-b border-zinc-200/70 bg-white/85 backdrop-blur-xl backdrop-saturate-150;
   }
 
   .grid-pattern-light {
@@ -73,10 +151,40 @@
   }
 
   .icon-tile {
-    @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-100 bg-zinc-50;
+    @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-100 bg-zinc-50/90;
   }
 
   .icon-tile-brand {
-    @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#2e3192]/10 bg-[#2e3192]/5;
+    @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#2e3192]/12 bg-[#2e3192]/6;
+  }
+
+  .section-label {
+    @apply text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-400;
+  }
+
+  .empty-state {
+    @apply flex flex-col items-center justify-center rounded-[var(--radius-card)] border border-zinc-200/80 bg-white px-6 py-16 text-center;
+    box-shadow: var(--shadow-card);
+  }
+
+  .nav-item-active {
+    @apply relative bg-[#2e3192] text-white shadow-sm;
+  }
+
+  .nav-item-active::before {
+    content: "";
+    @apply absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r bg-[#f15a24];
+  }
+
+  .tab-nav {
+    @apply flex gap-1 border-b border-zinc-200;
+  }
+
+  .tab-nav-item {
+    @apply relative cursor-pointer border-b-2 border-transparent px-4 py-2.5 text-xs font-semibold tracking-wide text-zinc-500 transition-colors hover:text-zinc-700;
+  }
+
+  .tab-nav-item-active {
+    @apply border-[#2e3192] text-[#2e3192];
   }
 }

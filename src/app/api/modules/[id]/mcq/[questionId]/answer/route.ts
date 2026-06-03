@@ -35,8 +35,8 @@ export async function POST(
       );
     }
 
-    const correctOptionId = rows[0].correct_option_id as string;
-    const correct = optionId === correctOptionId;
+    const correctOptionId = String(rows[0].correct_option_id ?? "").trim().toLowerCase();
+    const correct = optionId.trim().toLowerCase() === correctOptionId;
 
     if (userEmail && moduleTitle && batchId) {
       const stats = await recordMcqAnswerDb(sql, {

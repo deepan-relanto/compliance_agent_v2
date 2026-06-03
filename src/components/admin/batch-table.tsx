@@ -23,6 +23,14 @@ export function BatchTable({
         </p>
       </CardHeader>
       <CardContent className="p-0">
+        {rows.length === 0 ? (
+          <div className="empty-state mx-6 my-8 border-dashed py-12">
+            <p className="text-sm font-medium text-zinc-600">No learner sessions yet</p>
+            <p className="mt-1 max-w-sm text-xs text-zinc-400">
+              Progress and scores appear here once learners start assigned training modules.
+            </p>
+          </div>
+        ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead>
@@ -65,6 +73,7 @@ export function BatchTable({
             </tbody>
           </table>
         </div>
+        )}
       </CardContent>
     </Card>
   );

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import type { McqQuestion } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertCircle, CheckCircle2, Loader2, Lock, XCircle } from "lucide-react";
+import { CheckCircle2, Loader2, Lock, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 
 interface McqModalProps {
@@ -147,7 +147,7 @@ export function McqModal({
                           disabled={submitted || validating}
                           onClick={() => setSelected(opt.id)}
                           className={cn(
-                            "flex w-full items-start gap-3 rounded-md border px-4 py-3 text-left text-sm transition-colors",
+                            "flex w-full cursor-pointer items-start gap-3 rounded-md border px-4 py-3 text-left text-sm transition-colors",
                             isSelected && !submitted
                               ? "border-[#2e3192]/40 bg-[#2e3192]/5 text-zinc-900"
                               : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300",
@@ -181,8 +181,8 @@ export function McqModal({
                 {submitted && (
                   <p
                     className={cn(
-                      "mt-3 flex items-center gap-2 text-sm",
-                      wasCorrect ? "text-emerald-700" : "text-amber-700",
+                      "mt-3 flex items-center gap-2 text-sm font-medium",
+                      wasCorrect ? "text-emerald-700" : "text-red-700",
                     )}
                   >
                     {wasCorrect ? (
@@ -192,8 +192,8 @@ export function McqModal({
                       </>
                     ) : (
                       <>
-                        <AlertCircle className="h-4 w-4" />
-                        Incorrect — review the material, then continue when ready.
+                        <XCircle className="h-4 w-4 text-red-600" />
+                        Incorrect
                       </>
                     )}
                   </p>
@@ -201,6 +201,7 @@ export function McqModal({
 
                 {!submitted ? (
                   <Button
+                    variant="primary"
                     className="mt-5 w-full"
                     onClick={handleSubmit}
                     disabled={!selected || validating}
@@ -215,7 +216,7 @@ export function McqModal({
                     )}
                   </Button>
                 ) : (
-                  <Button className="mt-5 w-full" onClick={handleContinue}>
+                  <Button variant="primary" className="mt-5 w-full" onClick={handleContinue}>
                     Continue to next slide
                   </Button>
                 )}

@@ -2,7 +2,7 @@
 
 import type { ReviewRequest } from "./types";
 import { readAll as readAllProgress, writeAll as writeAllProgress } from "./progress-store";
-import { logAudit, getAllAuditLogs } from "./audit-store";
+import { logAudit } from "./audit-store";
 
 const REVIEW_STORE_KEY = "compliance-reviews";
 

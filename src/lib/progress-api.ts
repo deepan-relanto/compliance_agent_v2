@@ -34,6 +34,7 @@ export async function syncProgressStart(params: {
   moduleTitle: string;
   batchId: string;
   totalSlides: number;
+  assignedMcqCount?: number;
 }): Promise<void> {
   await fetch("/api/progress", {
     method: "POST",
@@ -84,6 +85,34 @@ export async function finalizeAssessmentScore(
     mcqCorrect: data.mcqCorrect,
     mcqTotal: data.mcqTotal,
   };
+}
+
+export async function resetAttemptProgress(
+  userEmail: string,
+  moduleId: string,
+): Promise<boolean> {
+  const res = await fetch("/api/progress/reset-attempt", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userEmail, moduleId }),
+  });
+  const data = await res.json();
+  return Boolean(data.ok);
+}
+
+export async function syncAcknowledgement(params: {
+  userEmail: string;
+  moduleId: string;
+  moduleTitle: string;
+  feedbackRequired: boolean;
+}): Promise<boolean> {
+  const res = await fetch("/api/progress/acknowledge", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  const data = await res.json();
+  return Boolean(data.ok);
 }
 
 export async function requestScoreRetake(

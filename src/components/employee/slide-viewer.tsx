@@ -16,8 +16,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuthStore } from "@/lib/auth-store";
 import {
   markInProgress,
+  isProctorLocked,
   markCompleted,
-  saveSlideProgress,
   getProgress,
   addWarning,
   saveAcknowledgement,
@@ -25,13 +25,13 @@ import {
   resetForScoreRetake,
 } from "@/lib/progress-store";
 import {
+  syncAcknowledgement,
   syncProgressStart,
-  syncSlideProgress,
   finalizeAssessmentScore,
   requestScoreRetake,
 } from "@/lib/progress-api";
 import { PASS_THRESHOLD_PERCENT } from "@/lib/constants";
-import { getPendingRequest, submitReviewRequest, getAllReviewRequests } from "@/lib/review-store";
+import { submitReviewRequest, getAllReviewRequests } from "@/lib/review-store";
 import { updateUploadedAssessmentSlideCount } from "@/lib/mock-data";
 
 // Isolated client-only PDF renderer — dynamically imported so pdfjs-dist is
@@ -82,25 +82,15 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
       : [`${module.title} — content`];
   const totalSlides = slides.length;
   const moduleMcqs = mcqs;
+  const quizOnlyModeFromModule = module.viewerMode === "quiz_only_retake";
+  const reviewOnlyMode = module.viewerMode === "review_only";
+  const ackPendingMode = module.viewerMode === "acknowledgement_pending";
+  const autoStartSession = reviewOnlyMode || quizOnlyModeFromModule || ackPendingMode;
 
   // ── Fix: initialize from saved progress ──────────────────────────────────
   // useState lazy initializer runs once at mount. Reading localStorage here
   // is safe because SlideViewer is a client-only component (ssr:false import).
-  const [slideIndex, setSlideIndex] = useState<number>(() => {
-    if (!user?.username) return 0;
-    const saved = getProgress(user.username, module.id);
-    // Only restore if the assessment is in_progress (not completed)
-    if (saved && saved.status === "in_progress" && saved.currentSlide > 0) {
-      return saved.currentSlide;
-    }
-    return 0;
-  });
-
-  // ── Fix: first-render guard to prevent overwriting saved position ─────────
-  // saveSlideProgress must NOT fire on mount (slideIndex just initialized to
-  // the saved value — writing it back immediately would corrupt future saves
-  // if the effect ran before markInProgress had a chance to write the record).
-  const isMounted = useRef(false);
+  const [slideIndex, setSlideIndex] = useState(0);
 
   const [nextClickCount, setNextClickCount] = useState(0);
   const [mcqOpen, setMcqOpen] = useState(false);
@@ -127,7 +117,7 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
   const [isFailed, setIsFailed] = useState<boolean>(() => {
     if (!user?.username) return false;
     const progress = getProgress(user.username, module.id);
-    return progress?.status === "failed" || progress?.status === "permanently_failed";
+    return progress ? isProctorLocked(progress) : false;
   });
 
   const [activeWarningReason, setActiveWarningReason] = useState<string | null>(null);
@@ -139,10 +129,9 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [explanation, setExplanation] = useState("");
   const [reviewError, setReviewError] = useState("");
-  const [reviewSuccess, setReviewSuccess] = useState(false);
   const [showExitModal, setShowExitModal] = useState(false);
-  const [showProctorRules, setShowProctorRules] = useState(true);
-  const [sessionStarted, setSessionStarted] = useState(false);
+  const [showProctorRules, setShowProctorRules] = useState(!autoStartSession);
+  const [sessionStarted, setSessionStarted] = useState(autoStartSession);
   const [sessionStartMs, setSessionStartMs] = useState<number | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [showScoreResult, setShowScoreResult] = useState(false);
@@ -154,6 +143,8 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
     mcqTotal: number;
   } | null>(null);
   const [retakeLoading, setRetakeLoading] = useState(false);
+  const [quizOnlyIndex, setQuizOnlyIndex] = useState(0);
+  const [forceQuizOnlyRetake, setForceQuizOnlyRetake] = useState(false);
 
   const loadIntegrityState = useCallback(() => {
     if (user?.username) {
@@ -161,7 +152,7 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
       if (prog) {
         setRetakeCount(prog.retakeCount ?? 0);
         setDbStatus(prog.status);
-        setIsFailed(prog.status === "failed" || prog.status === "permanently_failed");
+        setIsFailed(isProctorLocked(prog));
       }
       const requests = getAllReviewRequests();
       const userReqs = requests.filter(
@@ -187,6 +178,8 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
     () => Math.floor(nextClickCount / SLIDES_BETWEEN_GATES),
     [nextClickCount],
   );
+  const quizOnlyMode = quizOnlyModeFromModule || forceQuizOnlyRetake;
+  const activeQuiz = quizOnlyMode ? moduleMcqs[quizOnlyIndex] : null;
 
   const enterFullscreen = useCallback(async () => {
     try {
@@ -205,14 +198,14 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
   }, []);
 
   useEffect(() => {
-    if (!sessionStarted) return;
+    if (!sessionStarted || reviewOnlyMode || quizOnlyModeFromModule) return;
     enterFullscreen();
     return () => {
       if (document.fullscreenElement) {
         document.exitFullscreen().catch(() => undefined);
       }
     };
-  }, [sessionStarted, enterFullscreen]);
+  }, [sessionStarted, reviewOnlyMode, quizOnlyModeFromModule, enterFullscreen]);
 
   useEffect(() => {
     if (!sessionStarted || sessionStartMs === null) return;
@@ -229,15 +222,32 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
     enterFullscreen();
   };
 
+  useEffect(() => {
+    if (!autoStartSession) return;
+    // Review / quiz-only retake: skip proctor rules and slide deck; go straight to content.
+    setShowProctorRules(false);
+    setSessionStarted(true);
+    if (sessionStartMs === null) {
+      setSessionStartMs(Date.now());
+    }
+  }, [autoStartSession, sessionStartMs]);
+
   const triggerWarning = useCallback((reason: string) => {
-    if (!sessionStarted || isExitingRef.current || !user?.username) return;
+    if (
+      !sessionStarted ||
+      isExitingRef.current ||
+      !user?.username ||
+      reviewOnlyMode ||
+      quizOnlyMode
+    ) {
+      return;
+    }
 
     // Check progress status before logging warning
     const currentProgress = getProgress(user.username, module.id);
     if (
-      currentProgress?.status === "completed" ||
-      currentProgress?.status === "failed" ||
-      currentProgress?.status === "permanently_failed"
+      currentProgress &&
+      (currentProgress.status === "completed" || isProctorLocked(currentProgress))
     ) {
       return;
     }
@@ -248,14 +258,22 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
     setLiveWarningCount(updated.warningCount);
     setLiveWarningHistory(updated.warningHistory);
 
-    if (updated.status === "failed" || updated.status === "permanently_failed") {
+    if (isProctorLocked(updated)) {
       setIsFailed(true);
       loadIntegrityState();
     } else if (updated.warningCount !== liveWarningCount) {
       // Show warning modal only if warning count was actually incremented (i.e. not on cooldown)
       setActiveWarningReason(reason);
     }
-  }, [sessionStarted, user?.username, module.id, liveWarningCount, loadIntegrityState]);
+  }, [
+    sessionStarted,
+    user?.username,
+    module.id,
+    liveWarningCount,
+    loadIntegrityState,
+    reviewOnlyMode,
+    quizOnlyMode,
+  ]);
 
   useEffect(() => {
     const onFsChange = () => {
@@ -312,9 +330,12 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
   // ── Navigation (Refresh / Leave page) Monitoring ─────────────────────────
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (isExitingRef.current || !user?.username) return;
+      if (reviewOnlyMode || isExitingRef.current || !user?.username) return;
       const currentProgress = getProgress(user.username, module.id);
-      if (currentProgress?.status === "completed" || currentProgress?.status === "failed") {
+      if (
+        currentProgress &&
+        (currentProgress.status === "completed" || isProctorLocked(currentProgress))
+      ) {
         return;
       }
 
@@ -328,7 +349,7 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
 
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [user?.username, module.id]);
+  }, [reviewOnlyMode, user?.username, module.id]);
 
   // ── Progress tracking ────────────────────────────────────────────────────
   // Mark in_progress when the viewer mounts (user opened the assessment).
@@ -347,31 +368,15 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
         moduleTitle: module.title,
         batchId: user.batchId,
         totalSlides,
+        assignedMcqCount: moduleMcqs.length,
       });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.username, module.id]);
+  }, [user?.username, module.id, moduleMcqs.length]);
 
-  // Persist slide position whenever the user navigates.
-  // Guard: skip the initial mount so we never overwrite the restored position
-  // (slideIndex starts at the saved value — writing it back immediately would
-  // defeat the restore if the progress record doesn't exist yet).
-  useEffect(() => {
-    if (!isMounted.current) {
-      isMounted.current = true;
-      return; // skip mount — position was just loaded, not navigated
-    }
-    if (user?.username) {
-      saveSlideProgress(user.username, module.id, slideIndex);
-      void syncSlideProgress(user.username, module.id, slideIndex, {
-        moduleTitle: module.title,
-        batchId: user.batchId,
-        totalSlides,
-      });
-    }
-  }, [user?.username, module.id, slideIndex, module.title, user?.batchId, totalSlides]);
+  // Assessments are one-time: do not persist slide position for resume.
 
-  const openGate = () => {
+  const openGate = useCallback(() => {
     const mcq =
       moduleMcqs.find((q) => q.slideIndex === slideIndex + 1) ??
       getMcqForSlide() ??
@@ -379,25 +384,19 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
       FALLBACK_MCQ;
     setGateMcq(mcq);
     setMcqOpen(true);
-  };
+  }, [moduleMcqs, slideIndex, gateIndex]);
 
-  const tryAdvance = () => {
-    if (isLastSlide) {
+  const handleFinishAttempt = useCallback(async () => {
+    if (reviewOnlyMode) {
+      isExitingRef.current = true;
+      window.location.href = "/dashboard";
+      return;
+    }
+    if (!user?.username) {
       setShowAcknowledgement(true);
       return;
     }
-    const upcoming = nextClickCount + 1;
-    if (upcoming % SLIDES_BETWEEN_GATES === 0) {
-      setNextClickCount(upcoming);
-      openGate();
-      return;
-    }
-    setNextClickCount(upcoming);
-    setSlideIndex((i) => Math.min(i + 1, totalSlides - 1));
-  };
 
-  const handleAcknowledgementSubmit = async () => {
-    if (!user?.username) return;
     const result = await finalizeAssessmentScore(user.username, module.id);
     if (result) {
       setScoreResult(result);
@@ -411,13 +410,61 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
           : `Score ${result.scorePercent}% is at or below the passing threshold (${PASS_THRESHOLD_PERCENT}%).`,
       });
       if (!result.passed) {
+        setMcqOpen(false);
         setShowAcknowledgement(false);
         setShowScoreResult(true);
         return;
       }
     }
+    setMcqOpen(false);
+    setIsAcknowledged(false);
+    setShowAcknowledgement(true);
+  }, [reviewOnlyMode, user?.username, module.id]);
+
+  const tryAdvance = useCallback(() => {
+    if (quizOnlyMode) {
+      if (!moduleMcqs.length) {
+        void handleFinishAttempt();
+        return;
+      }
+      setGateMcq(activeQuiz ?? moduleMcqs[0] ?? FALLBACK_MCQ);
+      setMcqOpen(true);
+      return;
+    }
+    if (isLastSlide) {
+      void handleFinishAttempt();
+      return;
+    }
+    const upcoming = nextClickCount + 1;
+    if (!reviewOnlyMode && upcoming % SLIDES_BETWEEN_GATES === 0) {
+      setNextClickCount(upcoming);
+      openGate();
+      return;
+    }
+    setNextClickCount(upcoming);
+    setSlideIndex((i) => Math.min(i + 1, totalSlides - 1));
+  }, [
+    quizOnlyMode,
+    moduleMcqs,
+    activeQuiz,
+    isLastSlide,
+    reviewOnlyMode,
+    nextClickCount,
+    openGate,
+    handleFinishAttempt,
+    totalSlides,
+  ]);
+
+  const handleAcknowledgementSubmit = async () => {
+    if (!user?.username) return;
     const feedbackRequired = !!module.feedbackRequired;
     saveAcknowledgement(user.username, module.id, feedbackRequired);
+    await syncAcknowledgement({
+      userEmail: user.username,
+      moduleId: module.id,
+      moduleTitle: module.title,
+      feedbackRequired,
+    });
     setShowAcknowledgement(false);
     setShowFinalQa(true);
   };
@@ -432,19 +479,90 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
       setShowScoreResult(false);
       setScoreResult(null);
       setSlideIndex(0);
+      setQuizOnlyIndex(0);
       setNextClickCount(0);
       setShowFinalQa(false);
       setFeedbackSubmitted(false);
-      isMounted.current = false;
+      setIsAcknowledged(false);
+      setShowAcknowledgement(false);
+      setForceQuizOnlyRetake(true);
+      if (moduleMcqs.length) {
+        setGateMcq(moduleMcqs[0]);
+        setMcqOpen(true);
+      }
     }
   };
 
   const handleMcqContinue = () => {
     setMcqOpen(false);
+    if (quizOnlyMode) {
+      const next = quizOnlyIndex + 1;
+      if (next < moduleMcqs.length) {
+        setQuizOnlyIndex(next);
+      } else {
+        void handleFinishAttempt();
+      }
+      return;
+    }
     if (!isLastSlide) {
       setSlideIndex((i) => Math.min(i + 1, totalSlides - 1));
     }
   };
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!sessionStarted) return;
+      if (quizOnlyMode) return;
+      if (mcqOpen || showAcknowledgement || showFinalQa || showScoreResult) return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return;
+
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        tryAdvance();
+      } else if (e.key === "ArrowLeft" && slideIndex > 0) {
+        e.preventDefault();
+        setSlideIndex((i) => Math.max(0, i - 1));
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    sessionStarted,
+    mcqOpen,
+    showAcknowledgement,
+    showFinalQa,
+    showScoreResult,
+    slideIndex,
+    tryAdvance,
+    quizOnlyMode,
+  ]);
+
+  useEffect(() => {
+    if (!sessionStarted || !ackPendingMode) return;
+    setMcqOpen(false);
+    setIsAcknowledged(false);
+    setShowAcknowledgement(true);
+  }, [sessionStarted, ackPendingMode]);
+
+  useEffect(() => {
+    if (!sessionStarted || !quizOnlyMode || showAcknowledgement || showFinalQa || showScoreResult) {
+      return;
+    }
+    if (!moduleMcqs.length) return;
+    setGateMcq(moduleMcqs[quizOnlyIndex] ?? moduleMcqs[0] ?? FALLBACK_MCQ);
+    setMcqOpen(true);
+  }, [
+    sessionStarted,
+    quizOnlyMode,
+    quizOnlyIndex,
+    moduleMcqs,
+    showAcknowledgement,
+    showFinalQa,
+    showScoreResult,
+  ]);
 
   if (!sessionStarted) {
     return (
@@ -489,16 +607,18 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
               <Maximize2 className="h-3.5 w-3.5" />
             )}
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setShowExitModal(true);
-            }}
-            className="h-8 border-zinc-700 bg-transparent text-zinc-300 hover:bg-zinc-800 hover:text-white px-3 text-xs"
-          >
-            Exit
-          </Button>
+          {!reviewOnlyMode && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => {
+                setShowExitModal(true);
+              }}
+              className="h-8 px-3 text-xs"
+            >
+              Exit
+            </Button>
+          )}
         </div>
       </header>
 
@@ -526,7 +646,7 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
 
                 <div className="rounded-md bg-zinc-50 border border-zinc-200/60 p-4 space-y-3">
                   <p className="text-xs font-bold text-zinc-700 uppercase tracking-wider">I acknowledge that:</p>
-                  <ul className="space-y-2.5 text-xs text-zinc-650 leading-relaxed pl-1">
+                  <ul className="space-y-2.5 text-xs text-zinc-600 leading-relaxed pl-1">
                     <li className="flex items-start gap-2">
                       <span className="text-[#f15a24] font-bold mt-0.5">•</span>
                       <span>I have completed this training material.</span>
@@ -596,8 +716,28 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
               transition={{ duration: 0.2 }}
               className="flex min-h-0 flex-1 flex-col p-4 sm:p-6"
             >
-              {module.contentType === "pdf" && module.pdfUrl ? (
-                <div className="mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-zinc-700/80 bg-zinc-950 shadow-2xl">
+              {quizOnlyMode ? (
+                <div className="mx-auto flex h-full w-full max-w-3xl items-center justify-center p-4">
+                  {!mcqOpen && (
+                    <div className="w-full rounded-lg border border-zinc-200 bg-white p-8 text-center shadow-[var(--shadow-card)]">
+                      <p className="text-xs font-semibold uppercase tracking-widest text-[#f15a24]">
+                        Quiz retake
+                      </p>
+                      <h2 className="mt-2 text-2xl font-semibold text-zinc-900">
+                        Checkpoint questions only
+                      </h2>
+                      <p className="mt-2 text-sm text-zinc-500">
+                        Slides are skipped. Answer each question to finish this retake.
+                      </p>
+                      <p className="mt-5 text-sm font-medium text-zinc-700">
+                        Question {Math.min(quizOnlyIndex + 1, Math.max(moduleMcqs.length, 1))} of{" "}
+                        {Math.max(moduleMcqs.length, 1)}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : module.contentType === "pdf" && module.pdfUrl ? (
+                <div className="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col overflow-hidden rounded-lg border border-zinc-700/80 bg-zinc-950 shadow-2xl">
                   <div className="flex shrink-0 items-center justify-between border-b border-zinc-800 px-4 py-2.5">
                     <p className="text-xs font-semibold uppercase tracking-widest text-[#f15a24]">
                       Page {slideIndex + 1} of {numPages}
@@ -608,7 +748,7 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
                     </div>
                   </div>
                   <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-zinc-800/50 p-6">
-                    <div className="w-full max-w-3xl rounded-sm bg-white shadow-xl ring-1 ring-black/20">
+                    <div className="w-full max-w-4xl rounded-sm bg-white shadow-xl ring-1 ring-black/20">
                       <PdfPageViewer
                         pdfUrl={module.pdfUrl!}
                         pageNumber={slideIndex + 1}
@@ -630,7 +770,9 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
                     {slides[slideIndex]}
                   </h2>
                   <p className="mt-4 text-sm leading-relaxed text-zinc-500">
-                    Checkpoint every three slides. Answer each question to continue.
+                    {reviewOnlyMode
+                      ? "Review mode: question checkpoints are disabled because this module is already completed."
+                      : "Checkpoint every three slides. Answer each question to continue."}
                   </p>
                 </div>
               )}
@@ -642,7 +784,7 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
               animate={{ opacity: 1 }}
               className="flex flex-1 items-center justify-center p-6"
             >
-              <div className="w-full max-w-md space-y-4">
+              <div className="w-full max-w-2xl space-y-5 px-2 sm:px-0">
                 {module.feedbackRequired && (
                   <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 flex gap-2 text-xs text-amber-800">
                     <ShieldAlert className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
@@ -655,6 +797,7 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
                   </div>
                 )}
                 <FinalQaForm
+                  size="large"
                   moduleTitle={module.title}
                   moduleId={module.id}
                   userId={user?.username ?? ""}
@@ -671,7 +814,7 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
                     isExitingRef.current = true;
                   }}
                   className={cn(
-                    "flex h-10 w-full items-center justify-center rounded-md text-sm font-medium transition-colors",
+                    "flex h-12 w-full items-center justify-center rounded-lg text-base font-medium transition-colors",
                     (module.feedbackRequired && !feedbackSubmitted)
                       ? "border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
                       : "bg-[#2e3192] text-white hover:bg-[#3d42a8]"
@@ -685,7 +828,7 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
         </AnimatePresence>
       </div>
 
-      {!showFinalQa && !showAcknowledgement && (
+      {!showFinalQa && !showAcknowledgement && !quizOnlyMode && (
         <footer className="flex h-12 shrink-0 items-center justify-between border-t border-zinc-800 bg-zinc-950 px-4">
           <Button
             variant="ghost"
@@ -713,7 +856,7 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
             onClick={tryAdvance}
             className="bg-[#f15a24] hover:bg-[#d94e1f] text-white"
           >
-            {isLastSlide ? "Finish" : "Next"}
+            {reviewOnlyMode && isLastSlide ? "Back to dashboard" : isLastSlide ? "Finish" : "Next"}
             <ChevronRight className="h-4 w-4" />
           </Button>
         </footer>
@@ -722,7 +865,7 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
       <McqModal
         moduleId={module.id}
         question={gateMcq}
-        open={mcqOpen}
+        open={mcqOpen && !showAcknowledgement && !showFinalQa && !showScoreResult}
         userEmail={user?.username}
         moduleTitle={module.title}
         batchId={user?.batchId}
@@ -732,60 +875,76 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
 
       {showScoreResult && scoreResult && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-lg border border-zinc-200 bg-white p-8 text-center shadow-xl">
+          <div className="w-full max-w-md overflow-hidden rounded-[var(--radius-card)] border border-zinc-200/90 bg-white text-center shadow-[var(--shadow-elevated)]">
             <div
               className={cn(
-                "mx-auto flex h-14 w-14 items-center justify-center rounded-full",
-                scoreResult.passed ? "bg-emerald-100" : "bg-amber-100",
+                "px-8 pb-2 pt-8",
+                scoreResult.passed
+                  ? "bg-gradient-to-b from-emerald-50/80 to-white"
+                  : "bg-gradient-to-b from-red-50/60 to-white",
               )}
             >
-              <span
+              <div
                 className={cn(
-                  "text-2xl font-bold",
-                  scoreResult.passed ? "text-emerald-600" : "text-amber-600",
+                  "mx-auto flex h-16 w-16 items-center justify-center rounded-full border-4",
+                  scoreResult.passed
+                    ? "border-emerald-200 bg-emerald-50"
+                    : "border-red-200 bg-red-50",
                 )}
               >
-                {scoreResult.scorePercent}%
-              </span>
-            </div>
-            <h3 className="mt-5 text-xl font-semibold text-zinc-900">
-              {scoreResult.passed ? "Assessment passed" : "Below passing score"}
-            </h3>
-            <p className="mt-2 text-sm text-zinc-500">
-              You answered {scoreResult.mcqCorrect} of {scoreResult.mcqTotal} checkpoint
-              questions correctly. Passing score is above {PASS_THRESHOLD_PERCENT}%.
-            </p>
-            {scoreResult.canRetake ? (
-              <div className="mt-6 flex flex-col gap-2">
-                <Button
-                  variant="primary"
-                  className="w-full"
-                  disabled={retakeLoading}
-                  onClick={handleScoreRetake}
+                <span
+                  className={cn(
+                    "text-2xl font-bold tabular-nums",
+                    scoreResult.passed ? "text-emerald-700" : "text-red-600",
+                  )}
                 >
-                  {retakeLoading ? "Preparing retake…" : "Retake assessment"}
-                </Button>
+                  {scoreResult.scorePercent}%
+                </span>
+              </div>
+              <h3 className="mt-5 text-xl font-semibold tracking-tight text-zinc-900">
+                {scoreResult.passed ? "Assessment passed" : "Below passing score"}
+              </h3>
+              <p className="mt-2 text-sm leading-relaxed text-zinc-600">
+                You answered {scoreResult.mcqCorrect} of {scoreResult.mcqTotal} checkpoint
+                questions correctly.
+              </p>
+              <p className="mt-1 text-xs text-zinc-500">
+                Passing score is above {PASS_THRESHOLD_PERCENT}%.
+              </p>
+            </div>
+            <div className="border-t border-zinc-100 px-8 py-6">
+              {scoreResult.canRetake ? (
+                <div className="flex flex-col gap-3">
+                  <Button
+                    variant="primary"
+                    className="w-full"
+                    disabled={retakeLoading}
+                    onClick={handleScoreRetake}
+                  >
+                    {retakeLoading ? "Preparing retake…" : "Retake quiz only"}
+                  </Button>
+                  <Link
+                    href="/dashboard"
+                    className="text-sm font-medium text-zinc-500 transition-colors hover:text-[#2e3192]"
+                    onClick={() => {
+                      isExitingRef.current = true;
+                    }}
+                  >
+                    Return to dashboard
+                  </Link>
+                </div>
+              ) : (
                 <Link
                   href="/dashboard"
-                  className="text-sm text-zinc-500 hover:text-[#2e3192]"
+                  className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-[#2e3192] text-sm font-semibold text-white transition-colors hover:bg-[#3d42a8]"
                   onClick={() => {
                     isExitingRef.current = true;
                   }}
                 >
                   Return to dashboard
                 </Link>
-              </div>
-            ) : (
-              <Link
-                href="/dashboard"
-                className="mt-6 inline-flex h-10 w-full items-center justify-center rounded-md bg-[#2e3192] text-sm font-medium text-white"
-                onClick={() => {
-                  isExitingRef.current = true;
-                }}
-              >
-                Return to dashboard
-              </Link>
-            )}
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -842,9 +1001,8 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
               <p>You are about to leave this assessment.</p>
               <p className="font-semibold text-zinc-600">If you exit now:</p>
               <ul className="list-disc pl-4 space-y-1">
-                <li>Your current progress will be saved.</li>
                 <li>The assessment session will end.</li>
-                <li>You can return later and continue from where you left off (if not failed).</li>
+                <li>If you leave before finishing, you must start again from the beginning.</li>
               </ul>
               <p className="mt-2 font-medium">Do you want to proceed?</p>
             </div>
@@ -858,13 +1016,11 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
                 Cancel
               </Button>
               <Button
+                variant="destructive"
                 size="sm"
-                className="bg-red-650 text-white hover:bg-red-700 text-xs"
+                className="text-xs"
                 onClick={() => {
                   isExitingRef.current = true;
-                  if (user?.username) {
-                    saveSlideProgress(user.username, module.id, slideIndex);
-                  }
                   if (document.fullscreenElement) {
                     document.exitFullscreen().catch(() => undefined);
                   }
@@ -904,7 +1060,6 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
               Date.now(),
               explanation.trim()
             );
-            setReviewSuccess(true);
             setExplanation("");
             setReviewError("");
             loadIntegrityState();
@@ -981,7 +1136,7 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
               {/* Case C: Rejected Review details */}
               {isRejectedReview && !isPendingReview && !isPermanentlyFailed && (
                 <div className="rounded-md bg-red-50 border border-red-100 p-3 text-left space-y-1 text-xs text-red-900">
-                  <p className="font-bold text-red-850">Review Request Rejected</p>
+                  <p className="font-bold text-red-800">Review Request Rejected</p>
                   <p className="text-[11px] text-red-700 leading-relaxed">
                     Admin Comment: &ldquo;{reviewRequest?.adminComment || "No comments provided."}&rdquo;
                   </p>
@@ -996,7 +1151,8 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
                 <div className="space-y-4 pt-1">
                   {!showReviewForm ? (
                     <Button
-                      className="w-full bg-blue-600 text-white hover:bg-blue-700 text-xs font-semibold"
+                      variant="primary"
+                      className="w-full text-xs font-semibold"
                       onClick={() => setShowReviewForm(true)}
                     >
                       Request Review
@@ -1032,8 +1188,9 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
                         </Button>
                         <Button
                           type="submit"
+                          variant="primary"
                           size="sm"
-                          className="flex-1 bg-blue-600 text-white hover:bg-blue-700 text-xs"
+                          className="flex-1 text-xs"
                         >
                           Submit Request
                         </Button>

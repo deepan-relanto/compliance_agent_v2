@@ -1,25 +1,20 @@
 /**
- * feedback-store.ts
- *
- * Lightweight localStorage-backed feedback persistence.
- * Follows the same pattern as the uploaded-assessment store in mock-data.ts.
- * Key: "compliance-feedback"
- * Shape: FeedbackEntry[] (newest-first)
+ * feedback-store.ts — client-side feedback with DB sync
  */
 
 export interface FeedbackEntry {
-  id: string;           // nanoid-style: timestamp + random suffix
-  userId: string;       // username (e.g. "user1@relnto.com")
-  userName: string;     // same — kept for display without re-joining
+  id: string;
+  userId: string;
+  userName: string;
   assessmentId: string;
   assessmentName: string;
   feedbackText: string;
-  createdAt: number;    // Unix ms
+  createdAt: number;
+  batchId?: string | null;
+  batchLabel?: string | null;
 }
 
 const STORE_KEY = "compliance-feedback";
-
-// ── Low-level helpers ─────────────────────────────────────────────────────────
 
 function readAll(): FeedbackEntry[] {
   if (typeof window === "undefined") return [];
@@ -40,43 +35,58 @@ function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-// ── Public API ────────────────────────────────────────────────────────────────
-
-/**
- * Persists a new feedback entry. Returns the saved entry.
- */
 export function submitFeedback(
   userId: string,
   assessmentId: string,
   assessmentName: string,
   feedbackText: string,
+  batchId?: string,
 ): FeedbackEntry {
   const entry: FeedbackEntry = {
     id: generateId(),
     userId,
-    userName: userId, // username IS the display name in this project
+    userName: userId,
     assessmentId,
     assessmentName,
     feedbackText: feedbackText.trim(),
     createdAt: Date.now(),
+    batchId: batchId ?? null,
   };
 
   const existing = readAll();
-  // Prepend so newest is always first
   writeAll([entry, ...existing]);
+
+  // Fire-and-forget DB sync
+  fetch("/api/feedback", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: entry.id,
+      userId: entry.userId,
+      userName: entry.userName,
+      assessmentId: entry.assessmentId,
+      assessmentName: entry.assessmentName,
+      feedbackText: entry.feedbackText,
+    }),
+  }).catch(() => undefined);
+
   return entry;
 }
 
-/**
- * Returns all feedback entries, newest-first.
- */
 export function getAllFeedback(): FeedbackEntry[] {
   return readAll();
 }
 
-/**
- * Returns feedback entries for a specific assessment.
- */
 export function getFeedbackForAssessment(assessmentId: string): FeedbackEntry[] {
   return readAll().filter((e) => e.assessmentId === assessmentId);
+}
+
+/** Parse optional [Rating: X/5] prefix from feedback text */
+export function parseRating(text: string): { rating: number | null; body: string } {
+  const match = text.match(/^\[Rating:\s*(\d)\/5\]\s*/);
+  if (!match) return { rating: null, body: text };
+  return {
+    rating: Number(match[1]),
+    body: text.slice(match[0].length),
+  };
 }

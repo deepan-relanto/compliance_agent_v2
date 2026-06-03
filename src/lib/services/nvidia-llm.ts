@@ -17,8 +17,11 @@ export function getNvidiaConfig() {
 export async function nvidiaChatJson(
   system: string,
   user: string,
+  options?: { maxTokens?: number; temperature?: number },
 ): Promise<string> {
   const { apiKey, model } = getNvidiaConfig();
+  const maxTokens = options?.maxTokens ?? 1200;
+  const temperature = options?.temperature ?? 0.25;
 
   const res = await fetch(`${NVIDIA_BASE}/chat/completions`, {
     method: "POST",
@@ -32,8 +35,8 @@ export async function nvidiaChatJson(
         { role: "system", content: system },
         { role: "user", content: user },
       ],
-      temperature: 0.25,
-      max_tokens: 1200,
+      temperature,
+      max_tokens: maxTokens,
       response_format: { type: "json_object" },
     }),
   });

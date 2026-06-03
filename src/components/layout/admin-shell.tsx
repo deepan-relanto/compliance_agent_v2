@@ -30,7 +30,8 @@ const navItems = [
     label: "Batches",
     icon: LayoutGrid,
     isActive: (path: string) =>
-      path === "/admin/batches" || path.startsWith("/admin/batch/"),
+      path === "/admin/batches" ||
+      (path.startsWith("/admin/batch/") && !path.startsWith("/admin/analytics/")),
   },
   {
     href: "/admin/upload",
@@ -70,6 +71,7 @@ interface AdminShellProps {
   subtitle?: string;
   backHref?: string;
   backLabel?: string;
+  wide?: boolean;
 }
 
 export function AdminShell({
@@ -78,6 +80,7 @@ export function AdminShell({
   subtitle,
   backHref,
   backLabel = "All batches",
+  wide = false,
 }: AdminShellProps) {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
@@ -86,17 +89,15 @@ export function AdminShell({
 
   return (
     <div className="flex min-h-screen page-bg">
-      <aside className="fixed inset-y-0 left-0 z-40 flex w-[248px] flex-col border-r border-zinc-200/90 bg-white">
-        <div className="border-b border-zinc-100 px-5 py-5">
-          <Link href="/admin">
+      <aside className="fixed inset-y-0 left-0 z-40 flex w-[260px] flex-col border-r border-zinc-200/70 bg-gradient-to-b from-white to-zinc-50/40 shadow-[var(--shadow-crisp)]">
+        <div className="border-b border-zinc-100 px-5 py-6">
+          <Link href="/admin" className="rounded-lg outline-offset-2 focus-visible:ring-2 focus-visible:ring-[#2e3192]/30">
             <RelantoLogo size="sm" showTagline className="justify-start" />
           </Link>
-          <p className="mt-3 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
-            Admin console
-          </p>
+          <p className="section-label mt-4">Admin console</p>
         </div>
 
-        <nav className="flex-1 space-y-0.5 px-3 py-4">
+        <nav className="flex-1 space-y-0.5 px-3 py-5">
           {navItems.map((item) => {
             const active = item.isActive(pathname);
             return (
@@ -104,9 +105,9 @@ export function AdminShell({
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-colors",
+                  "relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-all duration-150",
                   active
-                    ? "bg-[#2e3192] text-white shadow-sm"
+                    ? "nav-item-active"
                     : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900",
                 )}
               >
@@ -147,9 +148,9 @@ export function AdminShell({
         </div>
       </aside>
 
-      <div className="flex min-h-screen flex-1 flex-col pl-[248px]">
-        <header className="sticky top-0 z-30 border-b border-zinc-200/80 bg-white/90 backdrop-blur-md">
-          <div className="flex min-h-[68px] items-center px-6 sm:px-8">
+      <div className="flex min-h-screen flex-1 flex-col pl-[260px]">
+        <header className="sticky top-0 z-30 glass-header">
+          <div className="flex min-h-[76px] items-center justify-between px-6 sm:px-10">
             <div>
               {backHref && (
                 <Link
@@ -169,11 +170,22 @@ export function AdminShell({
                 <p className="mt-1 text-sm text-zinc-500">{subtitle}</p>
               )}
             </div>
+            <div className="hidden items-center gap-3 lg:flex">
+              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200/70 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700">
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                </span>
+                All systems operational
+              </div>
+            </div>
           </div>
         </header>
 
-        <main className="flex-1 px-6 py-8 sm:px-8">
-          <div className="mx-auto w-full max-w-5xl">{children}</div>
+        <main className="flex-1 px-6 py-8 sm:px-10">
+          <div className={cn("mx-auto w-full", wide ? "max-w-7xl" : "max-w-6xl")}>
+            {children}
+          </div>
         </main>
       </div>
     </div>

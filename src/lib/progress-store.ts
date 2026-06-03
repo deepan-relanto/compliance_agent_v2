@@ -9,6 +9,7 @@
 
 import type { ModuleStatus, WarningHistoryEntry, AssessmentAcknowledgement } from "./types";
 import { logAudit } from "./audit-store";
+import { PASS_THRESHOLD_PERCENT } from "./constants";
 
 export interface AssessmentProgress {
   username: string;
@@ -61,9 +62,34 @@ function key(username: string, moduleId: string): string {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
+/** Proctor/warning lock — not the same as a below-passing quiz score. */
+export function isProctorLocked(entry: {
+  status: ModuleStatus;
+  scorePercent?: number | null;
+}): boolean {
+  return (
+    entry.status === "permanently_failed" ||
+    (entry.status === "failed" && entry.scorePercent == null)
+  );
+}
+
+/** Map legacy score failures stored as `failed` to learner-facing in progress. */
+export function normalizeLearnerStatus(
+  status: ModuleStatus,
+  scorePercent?: number | null,
+  completedAt?: number | null,
+): ModuleStatus {
+  if (status === "permanently_failed" || status === "completed") return status;
+  if (completedAt) return "completed";
+  if (scorePercent != null && scorePercent > PASS_THRESHOLD_PERCENT) return "completed";
+  if (status === "failed" && scorePercent != null) return "in_progress";
+  if (scorePercent != null && status === "not_started") return "in_progress";
+  return status;
+}
+
 /**
  * Called when the assessment viewer mounts (user opens the assessment).
- * Creates an "in_progress" record if none exists; leaves "completed" / "failed" alone.
+ * Creates an "in_progress" record if none exists; leaves completed / proctor-locked alone.
  */
 export function markInProgress(
   username: string,
@@ -76,12 +102,7 @@ export function markInProgress(
   const k = key(username, moduleId);
   const existing = all[k];
 
-  // Never downgrade a completed, failed, or permanently_failed assessment
-  if (
-    existing?.status === "completed" ||
-    existing?.status === "failed" ||
-    existing?.status === "permanently_failed"
-  ) {
+  if (existing && (existing.status === "completed" || isProctorLocked(existing))) {
     return;
   }
 
@@ -399,7 +420,11 @@ export function mergeServerProgress(
       batchId: e.batchId,
       currentSlide: e.currentSlide,
       totalSlides: e.totalSlides,
-      status: e.status,
+      status: normalizeLearnerStatus(
+        e.status,
+        e.scorePercent,
+        e.completedAt ? new Date(e.completedAt).getTime() : undefined,
+      ),
       lastAccessedAt: existing?.lastAccessedAt ?? Date.now(),
       completedAt: e.completedAt
         ? new Date(e.completedAt).getTime()
@@ -438,9 +463,30 @@ export function applyScoreResult(
     mcqCorrect: result.mcqCorrect,
     mcqTotal: result.mcqTotal,
     scorePercent: result.scorePercent,
-    status: result.passed ? "completed" : "failed",
+    status: "in_progress",
     failedReason: result.passed ? undefined : result.failedReason,
-    completedAt: result.passed ? Date.now() : undefined,
+    completedAt: undefined,
+    acknowledgement: result.passed ? undefined : existing.acknowledgement,
+    lastAccessedAt: Date.now(),
+  };
+  writeAll(all);
+}
+
+/** Reset local progress when starting a fresh attempt (no resume). */
+export function resetLocalAttempt(username: string, moduleId: string): void {
+  const all = readAll();
+  const k = key(username, moduleId);
+  const existing = all[k];
+  if (!existing) return;
+
+  all[k] = {
+    ...existing,
+    status: "in_progress",
+    currentSlide: 0,
+    mcqCorrect: 0,
+    scorePercent: null,
+    failedReason: undefined,
+    completedAt: undefined,
     lastAccessedAt: Date.now(),
   };
   writeAll(all);
@@ -455,13 +501,14 @@ export function resetForScoreRetake(username: string, moduleId: string): void {
 
   all[k] = {
     ...existing,
-    status: "not_started",
+    status: "in_progress",
     currentSlide: 0,
     mcqCorrect: 0,
     mcqTotal: existing.mcqTotal ?? 0,
     scorePercent: null,
     failedReason: undefined,
     completedAt: undefined,
+    acknowledgement: undefined,
     retakeCount: (existing.retakeCount ?? 0) + 1,
     lastAccessedAt: Date.now(),
   };

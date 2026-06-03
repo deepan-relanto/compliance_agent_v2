@@ -47,12 +47,16 @@ export default function DashboardPage() {
     }
     setLoading(true);
     try {
-      const res = await fetch(`/api/modules?batchId=${encodeURIComponent(user.batchId)}`);
-      const data = await res.json();
+      const modulesPromise = fetch(`/api/modules?batchId=${encodeURIComponent(user.batchId)}`).then(
+        (r) => r.json(),
+      );
+      const progressPromise = user.username
+        ? fetchUserProgress(user.username)
+        : Promise.resolve([]);
+      const [data, serverEntries] = await Promise.all([modulesPromise, progressPromise]);
       if (data.ok && Array.isArray(data.modules)) {
         setModules(data.modules);
         if (user.username) {
-          const serverEntries = await fetchUserProgress(user.username);
           if (serverEntries.length > 0) {
             mergeServerProgress(
               user.username,
@@ -80,10 +84,16 @@ export default function DashboardPage() {
           let completed = 0;
           let inProgress = 0;
           for (const m of data.modules) {
+            const entry = progressEntries.find((p) => p.moduleId === m.id);
             const s = progressMap[m.id] ?? m.status ?? "not_started";
-            statusMap[m.id] = s;
+            const attempted =
+              s === "in_progress" ||
+              s === "failed" ||
+              (entry?.scorePercent != null && s !== "permanently_failed");
+            statusMap[m.id] =
+              s === "failed" && entry?.scorePercent != null ? "in_progress" : s;
             if (s === "completed") completed++;
-            else if (s === "in_progress") inProgress++;
+            else if (attempted) inProgress++;
           }
           setStatusByModule(statusMap);
           setCompletedCount(completed);
@@ -118,6 +128,15 @@ export default function DashboardPage() {
     () =>
       modules.filter(
         (m) => resolveStatus(m, statusByModule) === "not_started",
+      ).length,
+    [modules, statusByModule],
+  );
+
+  /** Outstanding mandatory work — drops to 0 when everything is completed. */
+  const assignedCount = useMemo(
+    () =>
+      modules.filter(
+        (m) => resolveStatus(m, statusByModule) !== "completed",
       ).length,
     [modules, statusByModule],
   );
@@ -208,7 +227,14 @@ export default function DashboardPage() {
         <section className="mb-8 grid gap-4 sm:grid-cols-3">
           <StatCard
             label="Assigned"
-            value={modules.length}
+            value={assignedCount}
+            hint={
+              assignedCount === 0 && modules.length > 0
+                ? "All done"
+                : modules.length > 0
+                  ? `${modules.length} total in batch`
+                  : undefined
+            }
             icon={BookOpen}
             accent="brand"
           />
@@ -267,12 +293,12 @@ export default function DashboardPage() {
           }
         >
           {loading ? (
-            <div className="surface-card flex items-center justify-center gap-2 py-16 text-sm text-zinc-500">
-              <Loader2 className="h-5 w-5 animate-spin text-[#2e3192]" />
-              Loading assessments…
+            <div className="empty-state py-16">
+              <Loader2 className="h-6 w-6 animate-spin text-[#2e3192]" />
+              <p className="mt-3 text-sm text-zinc-500">Loading assessments…</p>
             </div>
           ) : modules.length === 0 ? (
-            <div className="surface-card flex flex-col items-center px-6 py-16 text-center">
+            <div className="empty-state">
               <div className="icon-tile h-12 w-12">
                 <BookOpen className="h-6 w-6 text-zinc-400" strokeWidth={1.5} />
               </div>
@@ -285,7 +311,7 @@ export default function DashboardPage() {
               </p>
             </div>
           ) : filteredModules.length === 0 ? (
-            <div className="surface-card flex flex-col items-center px-6 py-12 text-center">
+            <div className="empty-state py-12">
               <p className="text-sm font-medium text-zinc-700">
                 No assessments match this filter
               </p>

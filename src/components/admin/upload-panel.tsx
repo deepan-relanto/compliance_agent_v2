@@ -5,7 +5,7 @@
  *
  * Admin workflow:
  *   1. idle       — drop-zone / file picker
- *   2. processing — converting PPT → PDF via /api/convert
+ *   2. processing — storing PDF via /api/convert
  *   3. naming     — PDF ready; admin enters an assessment name
  *   4. done       — assessment saved to Neon; shown on user dashboard
  *   error         — any step failure
@@ -43,12 +43,9 @@ interface ConversionResult {
   pageCount: number;
 }
 
+type QuestionMode = "ai" | "hybrid";
+
 const MAX_MB = 50;
-const PPT_EXTS = [".ppt", ".pptx"];
-const PPT_MIME = [
-  "application/vnd.ms-powerpoint",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-];
 const PDF_EXTS = [".pdf"];
 const PDF_MIME = ["application/pdf"];
 
@@ -69,14 +66,9 @@ function isPdfFile(file: File): boolean {
   return PDF_EXTS.includes(ext) || PDF_MIME.includes(file.type);
 }
 
-function isPptFile(file: File): boolean {
-  const ext = fileExtension(file);
-  return PPT_EXTS.includes(ext) || PPT_MIME.includes(file.type);
-}
-
 function validateFile(file: File): string | null {
-  if (!isPdfFile(file) && !isPptFile(file)) {
-    return "Only .ppt, .pptx, and .pdf files are accepted.";
+  if (!isPdfFile(file)) {
+    return "Only .pdf files are accepted.";
   }
   if (file.size > MAX_MB * 1024 * 1024) {
     return `File exceeds the ${MAX_MB} MB limit (${formatBytes(file.size)}).`;
@@ -85,11 +77,11 @@ function validateFile(file: File): string | null {
 }
 
 function displayPdfName(originalName: string): string {
-  return originalName.replace(/\.(pptx?|pdf)$/i, ".pdf");
+  return originalName.replace(/\.pdf$/i, ".pdf");
 }
 
 function guessAssessmentName(originalName: string): string {
-  return originalName.replace(/\.(pptx?|pdf)$/i, "").replace(/[-_]/g, " ");
+  return originalName.replace(/\.pdf$/i, "").replace(/[-_]/g, " ");
 }
 
 /** Generates a URL-safe id from an assessment name + timestamp */
@@ -128,7 +120,7 @@ function DropZone({
     <div
       role="button"
       tabIndex={0}
-      aria-label="Upload PPT, PPTX, or PDF file"
+      aria-label="Upload PDF file"
       onClick={() => !disabled && inputRef.current?.click()}
       onKeyDown={(e) => e.key === "Enter" && !disabled && inputRef.current?.click()}
       onDragOver={(e) => { e.preventDefault(); if (!disabled) setDragging(true); }}
@@ -139,7 +131,7 @@ function DropZone({
         if (!disabled) handleFiles(e.dataTransfer.files);
       }}
       className={cn(
-        "flex flex-col items-center justify-center gap-3 rounded-md border-2 border-dashed px-8 py-14 text-center transition-colors",
+        "flex cursor-pointer flex-col items-center justify-center gap-3 rounded-md border-2 border-dashed px-8 py-14 text-center transition-colors",
         dragging
           ? "border-[#2e3192] bg-[#2e3192]/5"
           : "border-zinc-200 bg-zinc-50 hover:border-zinc-300 hover:bg-zinc-100/60",
@@ -155,17 +147,17 @@ function DropZone({
           <span className="text-[#2e3192] underline underline-offset-2">browse</span>
         </p>
         <p className="mt-1 text-xs text-zinc-400">
-          Accepted: .ppt, .pptx, .pdf · Max {MAX_MB} MB
+          Accepted: .pdf · Max {MAX_MB} MB
         </p>
         <p className="mt-0.5 text-[11px] text-zinc-400">
-          PDF files are stored directly — no conversion step.
+          PDF files are stored directly.
         </p>
       </div>
       <input
         ref={inputRef}
-        id="ppt-file-input"
+        id="pdf-file-input"
         type="file"
-        accept=".ppt,.pptx,.pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/pdf"
+        accept=".pdf,application/pdf"
         className="sr-only"
         onChange={(e) => handleFiles(e.target.files)}
         disabled={disabled}
@@ -236,7 +228,7 @@ function InlineAlert({
 
 // ─── Step indicator ────────────────────────────────────────────────────────────
 
-const STEPS = ["Upload file", "Prepare PDF", "Create assessment"] as const;
+const STEPS = ["Upload PDF", "Review", "Create assessment"] as const;
 
 function StepIndicator({ current }: { current: 0 | 1 | 2 }) {
   return (
@@ -313,13 +305,14 @@ export function UploadPanel() {
   const [batchError, setBatchError] = useState<string | null>(null);
   const [publishError, setPublishError] = useState<string | null>(null);
   const [assignedBatches, setAssignedBatches] = useState<string[]>([]);
-  const [skippedConversion, setSkippedConversion] = useState(false);
   const [publishing, setPublishing] = useState(false);
-  const [mcqCountCreated, setMcqCountCreated] = useState(0);
-  const [questionsReused, setQuestionsReused] = useState(false);
+  const [questionMode] = useState<QuestionMode>("ai");
+  const [createdModuleId, setCreatedModuleId] = useState<string | null>(null);
+  const [generationProgress, setGenerationProgress] = useState(0);
+  const [generationStatus, setGenerationStatus] = useState<"pending" | "generating" | "completed" | "failed">("pending");
+  const [generatedCount, setGeneratedCount] = useState(0);
 
   const isProcessing = state === "processing";
-  const fileIsPdf = file ? isPdfFile(file) : false;
 
   useEffect(() => {
     fetch("/api/batches")
@@ -331,6 +324,39 @@ export function UploadPanel() {
       })
       .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (state !== "done" || !createdModuleId) return;
+
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch(
+          `/api/modules/${encodeURIComponent(createdModuleId)}/generation-status`,
+        );
+        const json = await res.json();
+        if (!res.ok || !json.ok || cancelled) return;
+        const status = String(json.status ?? "pending");
+        const progress = Number(json.progress ?? 0);
+        setGenerationProgress(progress);
+        setGeneratedCount(Number(json.questionCount ?? 0));
+
+        if (status === "completed" || status === "failed") {
+          setGenerationStatus(status);
+          return;
+        }
+        setGenerationStatus("generating");
+        window.setTimeout(poll, 1200);
+      } catch {
+        if (!cancelled) window.setTimeout(poll, 2000);
+      }
+    };
+
+    poll();
+    return () => {
+      cancelled = true;
+    };
+  }, [state, createdModuleId]);
 
   const toggleBatch = (batchId: string) => {
     setSelectedBatchIds((prev) =>
@@ -357,7 +383,6 @@ export function UploadPanel() {
     setFile(selected);
     setState("idle");
     setConversionResult(null);
-    setSkippedConversion(false);
   }
 
   function handleReset() {
@@ -368,7 +393,10 @@ export function UploadPanel() {
     setAssessmentName("");
     setNameError(null);
     setState("idle");
-    setSkippedConversion(false);
+    setCreatedModuleId(null);
+    setGenerationProgress(0);
+    setGenerationStatus("pending");
+    setGeneratedCount(0);
   }
 
   async function handleConvert() {
@@ -392,7 +420,6 @@ export function UploadPanel() {
       }
 
       setAssessmentName(guessAssessmentName(json.originalName));
-      setSkippedConversion(Boolean(json.skippedConversion));
       setConversionResult({
         pdfUrl: json.pdfUrl,
         originalName: json.originalName,
@@ -444,6 +471,7 @@ export function UploadPanel() {
           pdfUrl: conversionResult.pdfUrl,
           batchIds: selectedBatchIds,
           uploadedBy: user?.username ?? "admin@relnto.com",
+          questionMode,
         }),
       });
       const json = await res.json();
@@ -457,8 +485,10 @@ export function UploadPanel() {
         .map((b) => b.label);
       setAssignedBatches(labels);
       setCreatedTitle(trimmedName);
-      setMcqCountCreated(json.mcqCount ?? 0);
-      setQuestionsReused(Boolean(json.reused));
+      setCreatedModuleId(id);
+      setGenerationStatus("pending");
+      setGenerationProgress(0);
+      setGeneratedCount(0);
       setState("done");
     } catch {
       setPublishError("Could not reach the server. Check DATABASE_URL and NVIDIA_API_KEY.");
@@ -467,11 +497,32 @@ export function UploadPanel() {
     }
   }
 
+  async function handleRetryGeneration() {
+    if (!createdModuleId) return;
+    setPublishError(null);
+    setGenerationStatus("pending");
+    setGenerationProgress(0);
+    try {
+      const res = await fetch(
+        `/api/modules/${encodeURIComponent(createdModuleId)}/generation-status`,
+        { method: "POST" },
+      );
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        setPublishError(json.message ?? "Could not retry question generation.");
+        setGenerationStatus("failed");
+        return;
+      }
+      setGenerationStatus("generating");
+    } catch {
+      setPublishError("Could not reach the server to retry generation.");
+      setGenerationStatus("failed");
+    }
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="mx-auto w-full max-w-5xl">
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start">
-        <div className="space-y-6">
+    <div className="mx-auto w-full max-w-5xl space-y-6">
       {/* ── Step indicator (hidden in final done state) ─────────────────── */}
       {state !== "done" && <StepIndicator current={stepIndex} />}
 
@@ -482,16 +533,16 @@ export function UploadPanel() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-widest text-zinc-400">
-                  Content Pipeline
+                  Content upload
                 </p>
                 <h2 className="mt-1 text-base font-semibold text-zinc-900">
-                  Upload training file
+                  Upload training PDF
                 </h2>
               </div>
               {isProcessing && (
                 <div className="flex items-center gap-2 text-xs text-zinc-500">
                   <Loader2 className="h-3.5 w-3.5 animate-spin text-[#2e3192]" />
-                  {fileIsPdf ? "Uploading PDF…" : "Converting…"}
+                  Uploading PDF…
                 </div>
               )}
             </div>
@@ -525,12 +576,10 @@ export function UploadPanel() {
                   {isProcessing ? (
                     <>
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      {fileIsPdf ? "Uploading PDF…" : "Convert to PDF…"}
+                      Uploading PDF…
                     </>
-                  ) : fileIsPdf ? (
-                    "Continue with PDF"
                   ) : (
-                    "Convert to PDF"
+                    "Continue"
                   )}
                 </Button>
                 {!isProcessing && (
@@ -554,7 +603,7 @@ export function UploadPanel() {
               </div>
               <div>
                 <p className="text-xs font-semibold uppercase tracking-widest text-emerald-600">
-                  Conversion complete
+                  Upload complete
                 </p>
                 <h2 className="text-base font-semibold text-zinc-900">
                   Name your assessment
@@ -573,7 +622,7 @@ export function UploadPanel() {
                 </p>
                 <p className="text-xs text-zinc-400">
                   {conversionResult.pageCount} page{conversionResult.pageCount === 1 ? "" : "s"}
-                  {skippedConversion ? " · uploaded as-is" : " · converted from PowerPoint"}
+                  {" · uploaded as-is"}
                 </p>
               </div>
               <a
@@ -712,16 +761,47 @@ export function UploadPanel() {
               {createdTitle}
             </h2>
             <p className="mt-2 max-w-sm text-sm leading-relaxed text-zinc-500">
-              Published to:{" "}
-              <span className="font-medium text-zinc-700">
-                {assignedBatches.length > 0 ? assignedBatches.join(", ") : "selected batches"}
-              </span>
-              . {mcqCountCreated} checkpoint
-              {mcqCountCreated === 1 ? "" : "s"}
-              {questionsReused
-                ? " reused from matching PDF (no new LLM run)."
-                : " generated via NVIDIA LLM."}
+              {generationStatus === "completed" ? (
+                <>
+                  Published to:{" "}
+                  <span className="font-medium text-zinc-700">
+                    {assignedBatches.length > 0 ? assignedBatches.join(", ") : "selected batches"}
+                  </span>
+                  . Assessment is now live for users.
+                </>
+              ) : generationStatus === "failed" ? (
+                "Question generation failed. This assessment will not be available to learners until generation succeeds."
+              ) : (
+                "Preparing question pool in the background. This assessment becomes visible to learners only after generation completes."
+              )}
             </p>
+            <div className="mt-5 w-full max-w-xl rounded-md border border-zinc-200 bg-zinc-50 p-4 text-left">
+              <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                Question generation progress
+              </p>
+              <div className="mt-2 flex items-center justify-between text-xs text-zinc-600">
+                <span>
+                  {generationStatus === "completed"
+                    ? "Completed"
+                    : generationStatus === "failed"
+                      ? "Failed"
+                      : "Generating in background..."}
+                </span>
+                <span className="font-medium">{generationProgress}%</span>
+              </div>
+              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-zinc-200">
+                <div
+                  className={cn(
+                    "h-full rounded-full transition-all duration-700 ease-out",
+                    generationStatus === "failed" ? "bg-red-500" : "bg-[#2e3192]",
+                  )}
+                  style={{ width: `${Math.max(0, Math.min(100, generationProgress))}%` }}
+                />
+              </div>
+              <p className="mt-2 text-xs text-zinc-500">
+                Questions available in pool: <span className="font-semibold text-zinc-700">{generatedCount}</span>
+              </p>
+            </div>
             <Button
               id="upload-another-btn"
               variant="secondary"
@@ -732,47 +812,29 @@ export function UploadPanel() {
               <RefreshCcw className="h-4 w-4" />
               Upload another file
             </Button>
+            {generationStatus === "failed" && (
+              <Button
+                id="retry-generation-btn"
+                variant="primary"
+                size="lg"
+                className="mt-3"
+                onClick={handleRetryGeneration}
+              >
+                <RefreshCcw className="h-4 w-4" />
+                Retry question generation
+              </Button>
+            )}
+            {publishError && <div className="mt-4 w-full max-w-xl"><InlineAlert type="error" message={publishError} /></div>}
           </CardContent>
         </Card>
       )}
 
-      {/* ── Info note (mobile) ───────────────────────────────────────────── */}
       {state !== "done" && (
-        <p className="text-xs text-zinc-400 lg:hidden">
-          PPT/PPTX uses LibreOffice; PDF uploads skip conversion. Files live in{" "}
+        <p className="text-center text-xs text-zinc-400">
+          PDF uploads are stored directly. Files live in{" "}
           <code className="text-zinc-500">public/uploads/</code>.
         </p>
       )}
-        </div>
-
-        {/* ── Sidebar help ───────────────────────────────────────────────── */}
-        <aside className="hidden lg:block">
-          <div className="sticky top-24 space-y-4 rounded-md border border-zinc-200 bg-white p-5 shadow-[var(--shadow-card)]">
-            <p className="text-xs font-semibold uppercase tracking-widest text-zinc-400">
-              Pipeline guide
-            </p>
-            <ul className="space-y-3 text-sm text-zinc-600">
-              <li className="flex gap-2">
-                <span className="font-semibold text-[#2e3192]">1.</span>
-                Upload .ppt, .pptx, or .pdf (max {MAX_MB} MB).
-              </li>
-              <li className="flex gap-2">
-                <span className="font-semibold text-[#2e3192]">2.</span>
-                PPT converts via LibreOffice; PDF is stored as-is.
-              </li>
-              <li className="flex gap-2">
-                <span className="font-semibold text-[#2e3192]">3.</span>
-                Name the assessment — NVIDIA generates one MCQ per 3 slides.
-              </li>
-            </ul>
-            <div className="border-t border-zinc-100 pt-4 text-xs leading-relaxed text-zinc-500">
-              Files live in <code className="text-zinc-600">public/uploads/</code>.
-              Choose one or more batches before publishing. Metadata and MCQ gates
-              are stored in Neon.
-            </div>
-          </div>
-        </aside>
-      </div>
     </div>
   );
 }

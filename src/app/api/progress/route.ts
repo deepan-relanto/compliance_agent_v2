@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
       batchId,
       totalSlides,
       currentSlide,
+      assignedMcqCount,
     } = body;
 
     if (!userEmail || !moduleId || !moduleTitle || !batchId) {
@@ -55,6 +56,10 @@ export async function POST(req: NextRequest) {
       moduleTitle,
       batchId,
       totalSlides: totalSlides ?? 1,
+      assignedMcqCount:
+        typeof assignedMcqCount === "number" && assignedMcqCount > 0
+          ? assignedMcqCount
+          : undefined,
     });
 
     if (typeof currentSlide === "number") {

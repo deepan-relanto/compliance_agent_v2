@@ -2,6 +2,7 @@
 
 import { RouteGuard } from "@/components/auth/route-guard";
 import type { McqQuestion, TrainingModule } from "@/lib/types";
+import { useAuthStore } from "@/lib/auth-store";
 import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -15,6 +16,7 @@ const SlideViewer = dynamic(
 export default function TrainingPage() {
   const params = useParams();
   const router = useRouter();
+  const user = useAuthStore((s) => s.user);
   const id = typeof params.id === "string" ? params.id : "";
 
   const [trainingModule, setTrainingModule] = useState<TrainingModule | undefined>();
@@ -23,7 +25,10 @@ export default function TrainingPage() {
 
   useEffect(() => {
     if (!id) return;
-    fetch(`/api/modules/${encodeURIComponent(id)}`)
+    const query = user?.username
+      ? `?userEmail=${encodeURIComponent(user.username)}`
+      : "";
+    fetch(`/api/modules/${encodeURIComponent(id)}${query}`)
       .then((r) => r.json())
       .then((data) => {
         if (data.ok) {
@@ -38,7 +43,7 @@ export default function TrainingPage() {
         setTrainingModule(undefined);
         setReady(true);
       });
-  }, [id]);
+  }, [id, user?.username]);
 
   useEffect(() => {
     if (ready && !trainingModule) router.replace("/dashboard");

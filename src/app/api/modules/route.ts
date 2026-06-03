@@ -33,23 +33,20 @@ export async function GET(req: NextRequest) {
 
     const sql = getSql();
     const rows = await sql`
-      SELECT DISTINCT m.*
+      SELECT
+        m.*,
+        ARRAY_AGG(DISTINCT mb_all.batch_id) FILTER (WHERE mb_all.batch_id IS NOT NULL) AS batch_ids
       FROM training_modules m
-      INNER JOIN module_batches mb ON mb.module_id = m.id
-      WHERE mb.batch_id = ${batchId}
+      INNER JOIN module_batches mb_filter ON mb_filter.module_id = m.id
+      LEFT JOIN module_batches mb_all ON mb_all.module_id = m.id
+      WHERE mb_filter.batch_id = ${batchId}
+        AND m.mcq_generation_status = 'completed'
+      GROUP BY m.id
       ORDER BY m.created_at DESC
     `;
 
-    const modules = await Promise.all(
-      rows.map(async (row) => {
-        const batchRows = await sql`
-          SELECT batch_id FROM module_batches WHERE module_id = ${row.id}
-        `;
-        return mapModule(
-          row,
-          batchRows.map((b) => b.batch_id as string),
-        );
-      }),
+    const modules = rows.map((row) =>
+      mapModule(row, ((row.batch_ids as string[] | null) ?? []).filter(Boolean)),
     );
 
     return NextResponse.json({ ok: true, modules });

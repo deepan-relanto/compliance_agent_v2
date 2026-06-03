@@ -2,10 +2,10 @@ import { createHash } from "crypto";
 import fs from "fs";
 import path from "path";
 import { MCQ_SYSTEM_PROMPT, buildMcqUserPrompt } from "@/lib/prompts/mcq-checkpoint";
-import { chunkPagesForGate, extractPdfPagesText } from "@/lib/services/pdf-text-service";
+import { extractPdfPagesText } from "@/lib/services/pdf-text-service";
 import { nvidiaChatJson } from "@/lib/services/nvidia-llm";
 
-const SLIDES_BETWEEN_GATES = 3;
+const TARGET_POOL_SIZE = 10;
 
 export interface GeneratedMcq {
   id: string;
@@ -16,10 +16,17 @@ export interface GeneratedMcq {
 }
 
 interface LlmMcqPayload {
+  questions?: Array<{
+    prompt?: string;
+    options?: { id: string; label: string }[];
+    correctOptionId?: string;
+  }>;
+}
+
+interface SingleLlmPayload {
   prompt?: string;
   options?: { id: string; label: string }[];
   correctOptionId?: string;
-  error?: string | null;
 }
 
 export function hashPdfFile(pdfUrl: string): string {
@@ -29,58 +36,129 @@ export function hashPdfFile(pdfUrl: string): string {
   return createHash("sha256").update(buf).digest("hex");
 }
 
-async function generateOneMcq(
-  moduleTitle: string,
-  gateSlide: number,
-  pages: string[],
-): Promise<GeneratedMcq | null> {
-  const { slideFrom, slideTo, excerpt } = chunkPagesForGate(pages, gateSlide);
-
-  const userPrompt = buildMcqUserPrompt({
-    moduleTitle,
-    slideFrom,
-    slideTo,
-    gateSlide,
-    excerpt,
-  });
-
-  const raw = await nvidiaChatJson(MCQ_SYSTEM_PROMPT, userPrompt);
-  let payload: LlmMcqPayload;
+function parseJsonObject(raw: string): Record<string, unknown> | null {
   try {
-    payload = JSON.parse(raw) as LlmMcqPayload;
+    return JSON.parse(raw) as Record<string, unknown>;
   } catch {
-    console.error("[mcq-generation] Invalid JSON from LLM:", raw.slice(0, 200));
+    const start = raw.indexOf("{");
+    const end = raw.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      const sliced = raw.slice(start, end + 1);
+      try {
+        return JSON.parse(sliced) as Record<string, unknown>;
+      } catch {
+        return null;
+      }
+    }
     return null;
   }
+}
 
-  if (payload.error === "insufficient_content") {
-    return null;
+async function generateMcqPool(
+  moduleTitle: string,
+  fullText: string,
+): Promise<GeneratedMcq[]> {
+  const userPrompt = buildMcqUserPrompt({ moduleTitle, fullText });
+  let payload: LlmMcqPayload = {};
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const raw = await nvidiaChatJson(MCQ_SYSTEM_PROMPT, userPrompt, {
+      maxTokens: 3000,
+      temperature: 0.2,
+    });
+    const parsed = parseJsonObject(raw);
+    if (parsed) {
+      payload = parsed as unknown as LlmMcqPayload;
+      break;
+    }
+    console.error(`[mcq-generation] Invalid pool JSON attempt ${attempt}:`, raw.slice(0, 200));
   }
 
-  const options = payload.options ?? [];
-  const ids = new Set(options.map((o) => o.id));
-  const correct = payload.correctOptionId;
-  if (
-    !payload.prompt ||
-    options.length !== 4 ||
-    !correct ||
-    !ids.has(correct) ||
-    ids.size !== 4
-  ) {
-    console.error("[mcq-generation] Schema validation failed for gate", gateSlide);
-    return null;
+  const questions = payload.questions ?? [];
+  const accepted: GeneratedMcq[] = [];
+  for (let i = 0; i < questions.length; i++) {
+    const q = questions[i];
+    const options = q.options ?? [];
+    const ids = new Set(options.map((o) => o.id));
+    const correct = q.correctOptionId;
+    if (
+      !q.prompt ||
+      options.length !== 4 ||
+      !correct ||
+      !ids.has(correct) ||
+      ids.size !== 4
+    ) {
+      continue;
+    }
+    accepted.push({
+      id: `pool-${i + 1}`,
+      slideIndex: (i + 1) * 3,
+      prompt: q.prompt.trim(),
+      correctOptionId: correct,
+      options: options.map((o) => ({
+        id: String(o.id).trim(),
+        label: String(o.label).trim(),
+      })),
+    });
+    if (accepted.length >= TARGET_POOL_SIZE) break;
   }
+  return accepted;
+}
 
-  return {
-    id: `gate-${gateSlide}`,
-    slideIndex: gateSlide,
-    prompt: payload.prompt.trim(),
-    correctOptionId: correct,
-    options: options.map((o) => ({
-      id: o.id,
-      label: String(o.label).trim(),
-    })),
-  };
+async function generateSingleFallback(
+  moduleTitle: string,
+  fullText: string,
+  index: number,
+): Promise<GeneratedMcq | null> {
+  const prompt = `Create exactly ONE scenario question for "${moduleTitle}" using this content.
+
+Question number target: ${index + 1}
+
+Content:
+---
+${fullText.slice(0, 38000)}
+---
+
+Return strict JSON:
+{
+  "prompt":"...",
+  "options":[
+    {"id":"a","label":"..."},
+    {"id":"b","label":"..."},
+    {"id":"c","label":"..."},
+    {"id":"d","label":"..."}
+  ],
+  "correctOptionId":"a|b|c|d"
+}`;
+
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const raw = await nvidiaChatJson(MCQ_SYSTEM_PROMPT, prompt, {
+      maxTokens: 800,
+      temperature: 0.2,
+    });
+    const parsed = parseJsonObject(raw) as SingleLlmPayload | null;
+    if (!parsed) continue;
+    const options = parsed.options ?? [];
+    const ids = new Set(options.map((o) => o.id));
+    const correct = parsed.correctOptionId;
+    if (
+      !parsed.prompt ||
+      options.length !== 4 ||
+      !correct ||
+      !ids.has(correct) ||
+      ids.size !== 4
+    ) {
+      continue;
+    }
+    return {
+      id: `fallback-${index + 1}`,
+      slideIndex: (index + 1) * 3,
+      prompt: parsed.prompt.trim(),
+      correctOptionId: correct,
+      options: options.map((o) => ({ id: String(o.id).trim(), label: String(o.label).trim() })),
+    };
+  }
+  return null;
 }
 
 /**
@@ -97,7 +175,7 @@ export async function generateAndStoreModuleMcqs(
     contentHash: string;
   },
 ): Promise<{ generated: number; skipped: boolean }> {
-  const { moduleId, moduleTitle, pdfUrl, pageCount, contentHash } = params;
+  const { moduleId, moduleTitle, pdfUrl, contentHash } = params;
 
   const existing = await sql`
     SELECT content_hash, mcq_generation_status
@@ -120,7 +198,7 @@ export async function generateAndStoreModuleMcqs(
 
   await sql`
     UPDATE training_modules
-    SET mcq_generation_status = 'generating', content_hash = ${contentHash}, updated_at = NOW()
+    SET mcq_generation_status = 'generating_5', content_hash = ${contentHash}, updated_at = NOW()
     WHERE id = ${moduleId}
   `;
 
@@ -129,22 +207,40 @@ export async function generateAndStoreModuleMcqs(
   )`;
   await sql`DELETE FROM mcq_questions WHERE module_id = ${moduleId}`;
 
+  await sql`
+    UPDATE training_modules
+    SET mcq_generation_status = 'generating_15', updated_at = NOW()
+    WHERE id = ${moduleId}
+  `;
+
   const pages = await extractPdfPagesText(pdfUrl);
-  const pagesToUse = Math.max(pageCount, pages.length);
-  const gateSlides: number[] = [];
-  for (let slide = SLIDES_BETWEEN_GATES; slide <= pagesToUse; slide += SLIDES_BETWEEN_GATES) {
-    gateSlides.push(slide);
+  const fullText = pages.join("\n\n").slice(0, 45000);
+  await sql`
+    UPDATE training_modules
+    SET mcq_generation_status = 'generating_35', updated_at = NOW()
+    WHERE id = ${moduleId}
+  `;
+
+  const pool = await generateMcqPool(moduleTitle, fullText);
+  if (pool.length < TARGET_POOL_SIZE) {
+    for (let i = pool.length; i < TARGET_POOL_SIZE; i++) {
+      const single = await generateSingleFallback(moduleTitle, fullText, i);
+      if (single) pool.push(single);
+    }
   }
+  await sql`
+    UPDATE training_modules
+    SET mcq_generation_status = 'generating_60', updated_at = NOW()
+    WHERE id = ${moduleId}
+  `;
 
   let generated = 0;
-  for (const gateSlide of gateSlides) {
-    const mcq = await generateOneMcq(moduleTitle, gateSlide, pages);
-    if (!mcq) continue;
-
-    const qId = `${moduleId}-gate-${gateSlide}`;
+  for (let i = 0; i < pool.length; i++) {
+    const mcq = pool[i];
+    const qId = `${moduleId}-pool-${i + 1}`;
     await sql`
       INSERT INTO mcq_questions (id, module_id, slide_index, prompt, correct_option_id)
-      VALUES (${qId}, ${moduleId}, ${gateSlide}, ${mcq.prompt}, ${mcq.correctOptionId})
+      VALUES (${qId}, ${moduleId}, ${mcq.slideIndex}, ${mcq.prompt}, ${mcq.correctOptionId})
     `;
     for (const opt of mcq.options) {
       await sql`
@@ -153,6 +249,12 @@ export async function generateAndStoreModuleMcqs(
       `;
     }
     generated++;
+    const writeProgress = Math.min(95, 60 + Math.round(((i + 1) / Math.max(pool.length, 1)) * 35));
+    await sql`
+      UPDATE training_modules
+      SET mcq_generation_status = ${`generating_${writeProgress}`}, updated_at = NOW()
+      WHERE id = ${moduleId}
+    `;
   }
 
   const status = generated > 0 ? "completed" : "failed";

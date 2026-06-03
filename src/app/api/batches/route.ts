@@ -1,7 +1,7 @@
 import { getSql } from "@/lib/db";
 import { NextResponse } from "next/server";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 120;
 
 export async function GET() {
   try {

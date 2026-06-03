@@ -11,6 +11,11 @@
     "db:migrate:alter": "node scripts/db-migrate-alter.mjs",
     "db:seed": "node scripts/db-seed.mjs",
     "db:clear-modules": "node scripts/db-clear-modules.mjs",
+    "db:clear-progress": "node scripts/db-clear-progress.mjs",
+    "db:fix-failed-scores": "node scripts/db-fix-failed-scores.mjs",
+    "db:clear-feedback": "node scripts/db-clear-feedback.mjs",
+    "db:clear-monitoring": "node scripts/db-clear-monitoring.mjs",
+    "db:clear-all": "node scripts/db-clear-all.mjs",
     "db:reset": "node scripts/db-reset.mjs",
     "db:setup": "npm run db:migrate && npm run db:migrate:alter && npm run db:seed"
   },

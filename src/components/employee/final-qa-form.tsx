@@ -2,6 +2,8 @@
 
 import { Button } from "@/components/ui/button";
 import { submitFeedback } from "@/lib/feedback-store";
+import { useAuthStore } from "@/lib/auth-store";
+import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 import { Check, MessageSquare, Star } from "lucide-react";
 import { useState } from "react";
@@ -11,9 +13,18 @@ interface FinalQaFormProps {
   moduleId: string;
   userId: string;
   onSuccess?: () => void;
+  size?: "default" | "large";
 }
 
-export function FinalQaForm({ moduleTitle, moduleId, userId, onSuccess }: FinalQaFormProps) {
+export function FinalQaForm({
+  moduleTitle,
+  moduleId,
+  userId,
+  onSuccess,
+  size = "default",
+}: FinalQaFormProps) {
+  const large = size === "large";
+  const batchId = useAuthStore((s) => s.user?.batchId);
   const [message, setMessage] = useState("");
   const [rating, setRating] = useState<number>(0);
   const [hoveredStar, setHoveredStar] = useState<number>(0);
@@ -24,7 +35,7 @@ export function FinalQaForm({ moduleTitle, moduleId, userId, onSuccess }: FinalQ
     if (!message.trim()) return;
 
     const ratingPrefix = rating > 0 ? `[Rating: ${rating}/5] ` : "";
-    submitFeedback(userId, moduleId, moduleTitle, ratingPrefix + message.trim());
+    submitFeedback(userId, moduleId, moduleTitle, ratingPrefix + message.trim(), batchId);
     setSubmitted(true);
     if (onSuccess) {
       onSuccess();
@@ -36,10 +47,18 @@ export function FinalQaForm({ moduleTitle, moduleId, userId, onSuccess }: FinalQ
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        className="rounded-md border border-emerald-200 bg-emerald-50 px-6 py-12 text-center"
+        className={cn(
+          "rounded-xl border border-emerald-200 bg-emerald-50 text-center",
+          large ? "px-10 py-16" : "px-6 py-12",
+        )}
       >
-        <Check className="mx-auto h-8 w-8 text-emerald-600" strokeWidth={1.5} />
-        <p className="mt-4 text-lg font-semibold text-zinc-900">Feedback submitted</p>
+        <Check
+          className={cn("mx-auto text-emerald-600", large ? "h-12 w-12" : "h-8 w-8")}
+          strokeWidth={1.5}
+        />
+        <p className={cn("font-semibold text-zinc-900", large ? "mt-6 text-2xl" : "mt-4 text-lg")}>
+          Feedback submitted
+        </p>
         <p className="mt-2 text-sm text-zinc-600">
           Routed to administrators for{" "}
           <span className="font-medium">{moduleTitle}</span>.
@@ -49,22 +68,41 @@ export function FinalQaForm({ moduleTitle, moduleId, userId, onSuccess }: FinalQ
   }
 
   return (
-    <div className="rounded-md border border-zinc-200 bg-white p-6 shadow-sm">
-      <div className="flex items-center gap-2">
-        <MessageSquare className="h-4 w-4 text-[#2e3192]" strokeWidth={1.75} />
-        <h3 className="text-sm font-semibold text-zinc-900">Questions for administration</h3>
+    <div
+      className={cn(
+        "rounded-xl border border-zinc-200 bg-white shadow-[var(--shadow-card)]",
+        large ? "p-8 sm:p-10" : "p-6 shadow-sm",
+      )}
+    >
+      <div className={cn("flex items-center", large ? "gap-3" : "gap-2")}>
+        <MessageSquare
+          className={cn("text-[#2e3192]", large ? "h-6 w-6" : "h-4 w-4")}
+          strokeWidth={1.75}
+        />
+        <h3
+          className={cn(
+            "font-semibold text-zinc-900",
+            large ? "text-xl tracking-tight" : "text-sm",
+          )}
+        >
+          Questions for administration
+        </h3>
       </div>
-      <p className="mt-1 text-sm text-zinc-500">
+      <p className={cn("text-zinc-500", large ? "mt-2 text-base leading-relaxed" : "mt-1 text-sm")}>
         Submit clarifications or feedback before completing this module.
       </p>
 
-      <form onSubmit={handleSubmit} className="mt-4 space-y-3">
-        {/* Optional star rating */}
+      <form onSubmit={handleSubmit} className={cn(large ? "mt-8 space-y-6" : "mt-4 space-y-3")}>
         <div>
-          <p className="mb-1.5 text-xs font-medium text-zinc-500">
+          <p
+            className={cn(
+              "font-medium text-zinc-500",
+              large ? "mb-3 text-sm" : "mb-1.5 text-xs",
+            )}
+          >
             Rating <span className="text-zinc-400">(optional)</span>
           </p>
-          <div className="flex gap-1">
+          <div className={cn("flex", large ? "gap-2" : "gap-1")}>
             {[1, 2, 3, 4, 5].map((star) => (
               <button
                 key={star}
@@ -72,11 +110,14 @@ export function FinalQaForm({ moduleTitle, moduleId, userId, onSuccess }: FinalQ
                 onClick={() => setRating(star === rating ? 0 : star)}
                 onMouseEnter={() => setHoveredStar(star)}
                 onMouseLeave={() => setHoveredStar(0)}
-                className="rounded p-0.5 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2e3192]/30"
+                className={cn(
+                  "rounded transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2e3192]/30",
+                  large ? "p-1" : "p-0.5",
+                )}
                 aria-label={`Rate ${star} out of 5`}
               >
                 <Star
-                  className="h-5 w-5 transition-colors"
+                  className={cn("transition-colors", large ? "h-9 w-9" : "h-5 w-5")}
                   fill={(hoveredStar || rating) >= star ? "#f15a24" : "none"}
                   stroke={(hoveredStar || rating) >= star ? "#f15a24" : "#d4d4d8"}
                   strokeWidth={1.5}
@@ -90,11 +131,14 @@ export function FinalQaForm({ moduleTitle, moduleId, userId, onSuccess }: FinalQ
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           placeholder="Your question or feedback…"
-          rows={4}
+          rows={large ? 6 : 4}
           required
-          className="flex w-full resize-none rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2e3192]/25"
+          className={cn(
+            "flex w-full cursor-text resize-none rounded-lg border border-zinc-200 bg-white text-zinc-900 placeholder:text-zinc-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2e3192]/25",
+            large ? "px-4 py-3 text-base" : "px-3 py-2 text-sm",
+          )}
         />
-        <Button type="submit" variant="secondary">
+        <Button type="submit" variant="secondary" size={large ? "lg" : "md"} className={large ? "w-full sm:w-auto" : undefined}>
           Submit to admin
         </Button>
       </form>

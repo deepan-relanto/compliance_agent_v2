@@ -25,8 +25,8 @@ export function EmployeeShell({ children, title, subtitle }: EmployeeShellProps)
 
   return (
     <div className="min-h-screen page-bg">
-      <header className="sticky top-0 z-30 w-full border-b border-zinc-200/80 bg-white/90 backdrop-blur-md">
-        <div className="flex h-[60px] w-full items-center justify-between px-5 sm:px-8 lg:px-10">
+      <header className="sticky top-0 z-30 w-full glass-header">
+        <div className="flex h-[64px] w-full items-center justify-between px-5 sm:px-8 lg:px-10">
           <Link href="/dashboard" className="rounded-lg outline-offset-2 focus-visible:ring-2 focus-visible:ring-[#2e3192]/30">
             <RelantoLogo size="sm" showTagline className="justify-start" />
           </Link>
@@ -65,10 +65,10 @@ export function EmployeeShell({ children, title, subtitle }: EmployeeShellProps)
       </header>
 
       {(title || subtitle) && (
-        <div className="border-b border-zinc-200/60 bg-white/60">
-          <div className="mx-auto w-full max-w-7xl px-5 py-8 sm:px-8 lg:px-10">
+        <div className="border-b border-zinc-200/50 bg-white/50">
+          <div className="mx-auto w-full max-w-7xl px-5 py-9 sm:px-8 lg:px-10">
             {title && (
-              <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 sm:text-[1.65rem]">
+              <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 sm:text-[1.75rem]">
                 {title}
               </h1>
             )}

@@ -1,68 +1,28 @@
 "use client";
 
-import { AiReportPanel } from "@/components/admin/ai-report-panel";
-import { BatchPassChart } from "@/components/admin/batch-pass-chart";
-import { BatchTable } from "@/components/admin/batch-table";
-import { LiveControlPanel } from "@/components/admin/live-control-panel";
-import { MetricCard } from "@/components/admin/metric-card";
+import { BatchMembersList, type BatchMember } from "@/components/admin/batch-members-list";
 import { RouteGuard } from "@/components/auth/route-guard";
 import { AdminShell } from "@/components/layout/admin-shell";
 import { Button } from "@/components/ui/button";
-import { getAiReportForBatch, type BatchInfo } from "@/lib/mock-data";
-import { getProgressForBatchLive } from "@/lib/progress-store";
-import type { EmployeeProgress } from "@/lib/types";
-import {
-  Activity,
-  CheckCircle2,
-  Download,
-  FileSpreadsheet,
-  Loader2,
-  Users,
-  XCircle,
-} from "lucide-react";
+import { BarChart3, Loader2, Users } from "lucide-react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
-function mapBatch(row: Record<string, unknown>): BatchInfo {
-  return {
-    id: row.id as string,
-    label: row.label as string,
-    description: (row.description as string) ?? "",
-    memberCount: Number(row.member_count ?? row.memberCount ?? 0),
-    compliance: Number(row.compliance ?? 0),
-    passRate: Number(row.pass_rate ?? row.passRate ?? 0),
-    failRate: Number(row.fail_rate ?? row.failRate ?? 0),
-    activeSessions: Number(row.active_sessions ?? row.activeSessions ?? 0),
-  };
-}
-
-function toEmployeeRows(
-  records: ReturnType<typeof getProgressForBatchLive>,
-): EmployeeProgress[] {
-  return records.map((p) => ({
-    username: p.username,
-    batchId: p.batchId,
-    moduleId: p.moduleId,
-    moduleTitle: p.moduleTitle,
-    progressPercent:
-      p.totalSlides > 0
-        ? Math.round(((p.currentSlide + 1) / p.totalSlides) * 100)
-        : 0,
-    mcqPassRate: p.scorePercent ?? 0,
-    scorePercent: p.scorePercent ?? null,
-    timeSpentMinutes: 0,
-    status: p.status,
-  }));
+interface BatchMeta {
+  id: string;
+  label: string;
+  description: string;
+  memberCount: number;
 }
 
 export default function BatchDetailPage() {
   const params = useParams();
   const router = useRouter();
   const batchId = typeof params.batchId === "string" ? params.batchId : "";
-  const [batch, setBatch] = useState<BatchInfo | null>(null);
+  const [batch, setBatch] = useState<BatchMeta | null>(null);
+  const [members, setMembers] = useState<BatchMember[]>([]);
   const [loading, setLoading] = useState(true);
-  const [progressTick, setProgressTick] = useState(0);
-  const [serverProgress, setServerProgress] = useState<EmployeeProgress[]>([]);
 
   useEffect(() => {
     if (!batchId) return;
@@ -70,7 +30,13 @@ export default function BatchDetailPage() {
       .then((r) => r.json())
       .then((data) => {
         if (data.ok && data.batch) {
-          setBatch(mapBatch(data.batch));
+          setBatch({
+            id: data.batch.id,
+            label: data.batch.label,
+            description: data.batch.description ?? "",
+            memberCount: Number(data.batch.memberCount ?? 0),
+          });
+          setMembers(Array.isArray(data.users) ? data.users : []);
         } else {
           setBatch(null);
         }
@@ -81,56 +47,6 @@ export default function BatchDetailPage() {
   useEffect(() => {
     if (!loading && !batch) router.replace("/admin/batches");
   }, [loading, batch, router]);
-
-  useEffect(() => {
-    if (!batchId) return;
-    const load = () => {
-      fetch(`/api/progress/admin?batchId=${encodeURIComponent(batchId)}`)
-        .then((r) => r.json())
-        .then((data) => {
-          if (data.ok && Array.isArray(data.scores)) {
-            setServerProgress(
-              data.scores.map(
-                (s: {
-                  userEmail: string;
-                  moduleId: string;
-                  moduleTitle: string;
-                  batchId: string;
-                  status: string;
-                  scorePercent: number | null;
-                  mcqCorrect: number;
-                  mcqTotal: number;
-                }) => ({
-                  username: s.userEmail,
-                  batchId: s.batchId,
-                  moduleId: s.moduleId,
-                  moduleTitle: s.moduleTitle,
-                  progressPercent:
-                    s.scorePercent != null ? s.scorePercent : 0,
-                  mcqPassRate: s.scorePercent ?? 0,
-                  scorePercent: s.scorePercent,
-                  timeSpentMinutes: 0,
-                  status: s.status,
-                }),
-              ),
-            );
-          }
-        })
-        .catch(() => undefined);
-    };
-    load();
-    const id = window.setInterval(() => {
-      setProgressTick((t) => t + 1);
-      load();
-    }, 8000);
-    return () => window.clearInterval(id);
-  }, [batchId]);
-
-  const progress = useMemo(() => {
-    void progressTick;
-    if (serverProgress.length > 0) return serverProgress;
-    return toEmployeeRows(getProgressForBatchLive(batchId));
-  }, [batchId, progressTick, serverProgress]);
 
   if (loading) {
     return (
@@ -147,74 +63,28 @@ export default function BatchDetailPage() {
     <RouteGuard allowedRoles={["admin"]}>
       <AdminShell
         title={batch.label}
-        subtitle={batch.description}
+        subtitle={batch.description || "Learners assigned to this training batch."}
         backHref="/admin/batches"
         backLabel="All batches"
       >
-        <div className="mb-6 flex flex-wrap gap-2">
-          <Button variant="outline" size="sm">
-            <FileSpreadsheet className="h-3.5 w-3.5" strokeWidth={1.5} />
-            Export CSV
-          </Button>
-          <Button variant="outline" size="sm">
-            <Download className="h-3.5 w-3.5" strokeWidth={1.5} />
-            Export PDF
-          </Button>
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 shadow-sm">
+            <Users className="h-3.5 w-3.5 text-[#2e3192]" />
+            {members.length} member{members.length !== 1 ? "s" : ""}
+          </div>
+          <Link href={`/admin/analytics/batch/${encodeURIComponent(batchId)}`}>
+            <Button variant="outline" size="sm">
+              <BarChart3 className="h-3.5 w-3.5" />
+              View marks & export
+            </Button>
+          </Link>
         </div>
 
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <MetricCard
-            label="Batch compliance"
-            value={batch.compliance}
-            suffix="%"
-            icon={CheckCircle2}
-            accent="success"
-          />
-          <MetricCard
-            label="Active sessions"
-            value={batch.activeSessions}
-            icon={Activity}
-            accent="accent"
-            trend="Learners in training now"
-          />
-          <MetricCard
-            label="MCQ pass rate"
-            value={batch.passRate}
-            suffix="%"
-            icon={Users}
-            accent="brand"
-          />
-          <MetricCard
-            label="MCQ fail rate"
-            value={batch.failRate}
-            suffix="%"
-            icon={XCircle}
-            accent="danger"
-          />
-        </section>
-
-        <section className="mt-6 grid gap-5 lg:grid-cols-3">
-          <div className="lg:col-span-2 space-y-5">
-            <BatchPassChart
-              label={batch.label}
-              pass={batch.passRate}
-              fail={batch.failRate}
-              compliance={batch.compliance}
-            />
-            <BatchTable
-              rows={progress}
-              title={
-                progress.length === 0
-                  ? "Learner progress (no sessions yet)"
-                  : "Learner progress"
-              }
-            />
-          </div>
-          <div className="space-y-5">
-            <LiveControlPanel />
-            <AiReportPanel content={getAiReportForBatch(batchId)} />
-          </div>
-        </section>
+        <BatchMembersList
+          members={members}
+          batchLabel={batch.label}
+          analyticsHref={`/admin/analytics/batch/${encodeURIComponent(batchId)}`}
+        />
       </AdminShell>
     </RouteGuard>
   );

@@ -13,7 +13,13 @@ export async function extractPdfPagesText(pdfUrl: string): Promise<string[]> {
   const data = new Uint8Array(fs.readFileSync(filePath));
 
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const doc = await pdfjs.getDocument({ data, useSystemFonts: true }).promise;
+  const doc = await pdfjs
+    .getDocument({
+      data,
+      useSystemFonts: true,
+      verbosity: (pdfjs as { VerbosityLevel?: { ERRORS?: number } }).VerbosityLevel?.ERRORS ?? 0,
+    })
+    .promise;
 
   const pages: string[] = [];
   for (let i = 1; i <= doc.numPages; i++) {

@@ -65,6 +65,8 @@ export interface TrainingModule {
   createdAt?: number;
   /** If feedback is required to mark the assessment fully completed. */
   feedbackRequired?: boolean;
+  /** Controls learner experience mode in viewer. */
+  viewerMode?: "standard" | "quiz_only_retake" | "review_only" | "acknowledgement_pending";
 }
 
 export interface AssessmentAcknowledgement {

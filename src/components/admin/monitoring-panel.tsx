@@ -3,24 +3,22 @@
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { getAllProgressRecords } from "@/lib/progress-store";
-import { getAllReviewRequests, approveReviewRequest, rejectReviewRequest } from "@/lib/review-store";
-import { getAllAuditLogs } from "@/lib/audit-store";
-import type { AssessmentProgress, ReviewRequest, AuditLogEntry, ModuleStatus } from "@/lib/types";
+import { approveReviewRequest, rejectReviewRequest } from "@/lib/review-store";
+import type { AssessmentProgress, ReviewRequest, AuditLogEntry } from "@/lib/types";
 import {
   ShieldAlert,
   Users,
   AlertOctagon,
-  BarChart3,
   Eye,
   ShieldCheck,
   X,
   FileClock,
   CheckCircle,
   XCircle,
-  HelpCircle,
   CornerDownRight,
-  ClipboardList
+  ClipboardList,
+  Loader2,
+  RefreshCw,
 } from "lucide-react";
 import { useEffect, useState, useCallback } from "react";
 import { useAuthStore } from "@/lib/auth-store";
@@ -32,6 +30,7 @@ export function MonitoringPanel() {
   const [records, setRecords] = useState<AssessmentProgress[]>([]);
   const [reviews, setReviews] = useState<ReviewRequest[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const [selectedRecord, setSelectedRecord] = useState<AssessmentProgress | null>(null);
   const [selectedReview, setSelectedReview] = useState<ReviewRequest | null>(null);
@@ -42,15 +41,41 @@ export function MonitoringPanel() {
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [actionError, setActionError] = useState("");
 
-  const refreshData = useCallback(() => {
-    setRecords(getAllProgressRecords());
-    setReviews(getAllReviewRequests());
-    setAuditLogs(getAllAuditLogs());
+  const refreshData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/monitoring");
+      const data = await res.json();
+      if (data.ok) {
+        setRecords(Array.isArray(data.records) ? data.records : []);
+        setReviews(Array.isArray(data.reviews) ? data.reviews : []);
+        setAuditLogs(Array.isArray(data.auditLogs) ? data.auditLogs : []);
+      } else {
+        setRecords([]);
+        setReviews([]);
+        setAuditLogs([]);
+      }
+    } catch {
+      setRecords([]);
+      setReviews([]);
+      setAuditLogs([]);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    refreshData();
+    void refreshData();
   }, [refreshData]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center gap-2 py-24 text-sm text-zinc-500">
+        <Loader2 className="h-5 w-5 animate-spin text-[#2e3192]" />
+        Loading monitoring…
+      </div>
+    );
+  }
 
   // Summary Metrics calculations
   const activeAssessments = records.filter((r) => r.status === "in_progress").length;
@@ -60,8 +85,6 @@ export function MonitoringPanel() {
   const pendingReviewsCount = reviews.filter((r) => r.status === "Pending").length;
 
   const totalWarnings = records.reduce((acc, r) => acc + (r.warningCount || 0), 0);
-  const avgWarnings =
-    records.length > 0 ? (totalWarnings / records.length).toFixed(1) : "0.0";
 
   // Sort violations: 1) Highest warning count, 2) Most recent activity
   const sortedRecords = [...records].sort((a, b) => {
@@ -106,6 +129,12 @@ export function MonitoringPanel() {
 
   return (
     <div className="space-y-6">
+      <div className="flex justify-end">
+        <Button variant="ghost" size="sm" onClick={() => void refreshData()}>
+          <RefreshCw className="h-3.5 w-3.5" />
+          Refresh
+        </Button>
+      </div>
       {/* ── Summary Cards Grid ────────────────────────────────────────────── */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Card className="shadow-[var(--shadow-card)]">
@@ -125,8 +154,8 @@ export function MonitoringPanel() {
           <CardContent className="p-4 flex items-center justify-between">
             <div className="space-y-0.5">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Warnings</p>
-              <h3 className="text-xl font-bold text-zinc-900">{usersWithWarnings}</h3>
-              <p className="text-[9px] text-zinc-400">Users with 1+ warnings</p>
+              <h3 className="text-xl font-bold text-zinc-900">{totalWarnings}</h3>
+              <p className="text-[9px] text-zinc-400">{usersWithWarnings} user{usersWithWarnings !== 1 ? "s" : ""} flagged</p>
             </div>
             <div className="h-8 w-8 rounded-full bg-amber-50 flex items-center justify-center text-amber-600">
               <ShieldAlert className="h-4 w-4" />
@@ -154,7 +183,7 @@ export function MonitoringPanel() {
               <h3 className="text-xl font-bold text-zinc-900">{pendingReviewsCount}</h3>
               <p className="text-[9px] text-zinc-400">Review requests waiting</p>
             </div>
-            <div className="h-8 w-8 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-650">
+            <div className="h-8 w-8 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600">
               <FileClock className="h-4 w-4" />
             </div>
           </CardContent>
@@ -175,39 +204,27 @@ export function MonitoringPanel() {
       </div>
 
       {/* ── Tabs Switcher ────────────────────────────────────────────────── */}
-      <div className="flex border-b border-zinc-200 gap-2">
+      <div className="tab-nav">
         <button
           onClick={() => setActiveTab("violations")}
-          className={`border-b-2 px-4 py-2.5 text-xs font-semibold tracking-wide transition-all ${
-            activeTab === "violations"
-              ? "border-[#2e3192] text-[#2e3192]"
-              : "border-transparent text-zinc-500 hover:text-zinc-700"
-          }`}
+          className={`tab-nav-item ${activeTab === "violations" ? "tab-nav-item-active" : ""}`}
         >
           Violations & Activity
         </button>
         <button
           onClick={() => setActiveTab("reviews")}
-          className={`border-b-2 px-4 py-2.5 text-xs font-semibold tracking-wide transition-all flex items-center gap-1.5 ${
-            activeTab === "reviews"
-              ? "border-[#2e3192] text-[#2e3192]"
-              : "border-transparent text-zinc-500 hover:text-zinc-700"
-          }`}
+          className={`tab-nav-item flex items-center gap-1.5 ${activeTab === "reviews" ? "tab-nav-item-active" : ""}`}
         >
           Review Requests
           {pendingReviewsCount > 0 && (
-            <span className="inline-flex h-4.5 w-4.5 items-center justify-center rounded-full bg-red-100 text-[9px] font-bold text-red-600 px-1">
+            <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-100 px-1 text-[9px] font-bold text-red-600">
               {pendingReviewsCount}
             </span>
           )}
         </button>
         <button
           onClick={() => setActiveTab("audit")}
-          className={`border-b-2 px-4 py-2.5 text-xs font-semibold tracking-wide transition-all ${
-            activeTab === "audit"
-              ? "border-[#2e3192] text-[#2e3192]"
-              : "border-transparent text-zinc-500 hover:text-zinc-700"
-          }`}
+          className={`tab-nav-item ${activeTab === "audit" ? "tab-nav-item-active" : ""}`}
         >
           Audit Trail Logs
         </button>
@@ -307,7 +324,7 @@ export function MonitoringPanel() {
                           <Button
                             variant="outline"
                             size="sm"
-                            className="h-7 gap-1 px-2.5 text-xs text-zinc-650 border-zinc-200 hover:bg-zinc-50"
+                            className="h-7 gap-1 px-2.5 text-xs text-zinc-600 border-zinc-200 hover:bg-zinc-50"
                             onClick={() => setSelectedRecord(record)}
                           >
                             <Eye className="h-3 w-3" />
@@ -370,7 +387,7 @@ export function MonitoringPanel() {
                           <p className="font-medium text-zinc-800 text-xs">{req.moduleTitle}</p>
                           <p className="font-mono text-[9px] text-zinc-400">ID: {req.moduleId}</p>
                         </td>
-                        <td className="px-6 py-4 align-middle text-center font-semibold text-xs text-red-650">
+                        <td className="px-6 py-4 align-middle text-center font-semibold text-xs text-red-600">
                           {req.warningCount}
                         </td>
                         <td className="px-6 py-4 align-middle text-xs text-zinc-500 tabular-nums">
@@ -472,7 +489,7 @@ export function MonitoringPanel() {
                         <td className="px-6 py-4 align-middle text-xs font-semibold text-zinc-700">
                           {log.admin}
                         </td>
-                        <td className="px-6 py-4 align-middle text-xs text-zinc-650 max-w-md break-words">
+                        <td className="px-6 py-4 align-middle text-xs text-zinc-600 max-w-md break-words">
                           {log.details || "—"}
                         </td>
                       </tr>
@@ -557,7 +574,7 @@ export function MonitoringPanel() {
                   <div className="space-y-3 max-h-36 overflow-y-auto pr-1">
                     {selectedRecord.archivedWarnings.map((archive, archIdx) => (
                       <div key={archIdx} className="bg-zinc-50 rounded-md p-2.5 border border-zinc-100 space-y-1.5">
-                        <p className="text-[10px] font-bold text-zinc-650 flex items-center gap-1">
+                        <p className="text-[10px] font-bold text-zinc-600 flex items-center gap-1">
                           <CornerDownRight className="h-3 w-3 text-zinc-400" />
                           Retake Attempt #{archive.attempt} warnings
                         </p>
@@ -681,7 +698,7 @@ export function MonitoringPanel() {
               {/* Employee Explanation */}
               <div className="rounded-md bg-zinc-50 border border-zinc-200 p-3 space-y-1 text-xs">
                 <p className="font-bold text-zinc-700">User&apos;s Explanation for Violations:</p>
-                <p className="text-zinc-650 italic leading-relaxed">
+                <p className="text-zinc-600 italic leading-relaxed">
                   &ldquo;{selectedReview.userExplanation || "No comments provided."}&rdquo;
                 </p>
                 <p className="text-[9px] text-zinc-400 pt-1 text-right">

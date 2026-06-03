@@ -23,6 +23,7 @@ export async function POST(req: NextRequest) {
       batchIds = ["all"],
       feedbackRequired = false,
       uploadedBy,
+      questionMode = "ai",
       reuseModuleId,
     } = body;
 
@@ -35,33 +36,16 @@ export async function POST(req: NextRequest) {
 
     const sql = getSql();
     let contentHash: string;
-    let resolvedPdfUrl = pdfUrl as string;
-    let resolvedSlideCount = slideCount ?? 1;
+    const resolvedPdfUrl = pdfUrl as string;
+    const resolvedSlideCount = slideCount ?? 1;
 
-    if (reuseModuleId) {
-      const sourceRows = await sql`
-        SELECT pdf_url, content_hash, slide_count, mcq_generation_status
-        FROM training_modules WHERE id = ${reuseModuleId} LIMIT 1
-      `;
-      if (sourceRows.length === 0) {
-        return NextResponse.json(
-          { ok: false, message: "Source module not found for reuse." },
-          { status: 400 },
-        );
-      }
-      const source = sourceRows[0];
-      resolvedPdfUrl = source.pdf_url as string;
-      contentHash = (source.content_hash as string) ?? hashPdfFile(resolvedPdfUrl);
-      resolvedSlideCount = Number(source.slide_count ?? slideCount ?? 1);
-    } else {
-      try {
-        contentHash = hashPdfFile(pdfUrl);
-      } catch {
-        return NextResponse.json(
-          { ok: false, message: "PDF file not found on server. Upload again." },
-          { status: 400 },
-        );
-      }
+    try {
+      contentHash = hashPdfFile(pdfUrl);
+    } catch {
+      return NextResponse.json(
+        { ok: false, message: "PDF file not found on server. Upload again." },
+        { status: 400 },
+      );
     }
 
     await sql`
@@ -116,63 +100,78 @@ export async function POST(req: NextRequest) {
       VALUES (${title}, ${resolvedPdfUrl}, ${resolvedSlideCount}, ${uploadedBy ?? null}, ${id}, ${contentHash})
     `;
 
-    let mcqCount = 0;
-    let mcqSkipped = false;
-    let reused = false;
-
+    // Reuse flow: copy existing MCQs from a published source module and complete instantly.
     if (reuseModuleId) {
-      mcqCount = await copyMcqsFromModule(sql, reuseModuleId as string, id);
-      reused = true;
-      if (mcqCount === 0) {
-        const mcqResult = await generateAndStoreModuleMcqs(sql, {
-          moduleId: id,
-          moduleTitle: title,
-          pdfUrl: resolvedPdfUrl,
-          pageCount: resolvedSlideCount,
-          contentHash,
-        });
-        mcqCount = mcqResult.generated;
-        mcqSkipped = mcqResult.skipped;
-        reused = false;
-      }
-    } else {
-      const existingByHash = await sql`
-        SELECT tm.id, (SELECT COUNT(*)::int FROM mcq_questions q WHERE q.module_id = tm.id) AS mcq_count
-        FROM training_modules tm
-        WHERE tm.content_hash = ${contentHash}
-          AND tm.mcq_generation_status = 'completed'
-          AND tm.id != ${id}
-        ORDER BY tm.created_at DESC
-        LIMIT 1
+      const sourceRows = await sql`
+        SELECT id FROM training_modules WHERE id = ${String(reuseModuleId)} LIMIT 1
       `;
-      if (existingByHash.length > 0 && Number(existingByHash[0].mcq_count) > 0) {
-        mcqCount = await copyMcqsFromModule(
-          sql,
-          existingByHash[0].id as string,
-          id,
+      if (sourceRows.length === 0) {
+        return NextResponse.json(
+          { ok: false, message: "Source module for reuse was not found." },
+          { status: 400 },
         );
-        reused = true;
-        mcqSkipped = true;
-      } else {
-        const mcqResult = await generateAndStoreModuleMcqs(sql, {
-          moduleId: id,
-          moduleTitle: title,
-          pdfUrl: resolvedPdfUrl,
-          pageCount: resolvedSlideCount,
-          contentHash,
-        });
-        mcqCount = mcqResult.generated;
-        mcqSkipped = mcqResult.skipped;
       }
+
+      const copied = await copyMcqsFromModule(sql, String(reuseModuleId), id);
+      if (copied === 0) {
+        return NextResponse.json(
+          { ok: false, message: "Source module has no reusable questions yet." },
+          { status: 400 },
+        );
+      }
+
+      await sql`
+        UPDATE training_modules
+        SET mcq_generation_status = 'completed', updated_at = NOW()
+        WHERE id = ${id}
+      `;
+
+      return NextResponse.json({
+        ok: true,
+        id,
+        pdfUrl: resolvedPdfUrl,
+        queued: false,
+        reused: true,
+        mcqCount: copied,
+        generationStatus: "completed",
+      });
     }
+
+    const mode = String(questionMode ?? "ai").toLowerCase();
+    if (mode !== "ai") {
+      return NextResponse.json(
+        { ok: false, message: "Only AI mode is supported." },
+        { status: 400 },
+      );
+    }
+
+    await sql`
+      UPDATE training_modules
+      SET mcq_generation_status = 'pending', updated_at = NOW()
+      WHERE id = ${id}
+    `;
+
+    void generateAndStoreModuleMcqs(sql, {
+      moduleId: id,
+      moduleTitle: title,
+      pdfUrl: resolvedPdfUrl,
+      pageCount: resolvedSlideCount,
+      contentHash,
+    }).catch(async (err) => {
+      console.error("[assessments POST background generation]", err);
+      await sql`
+        UPDATE training_modules
+        SET mcq_generation_status = 'failed', updated_at = NOW()
+        WHERE id = ${id}
+      `;
+    });
 
     return NextResponse.json({
       ok: true,
       id,
-      mcqCount,
-      mcqSkipped,
-      reused,
       pdfUrl: resolvedPdfUrl,
+      queued: true,
+      generationStatus: "pending",
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Database error";

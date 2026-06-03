@@ -51,8 +51,8 @@ export default function LoginPage() {
             </div>
           </div>
         </div>
-        <div className="flex items-center justify-center bg-[#fafafa] px-6 py-12 sm:px-14">
-          <div className="w-full max-w-[400px] rounded-[var(--radius-card)] border border-zinc-200/80 bg-white p-8 shadow-[var(--shadow-card)] sm:p-10">
+        <div className="flex items-center justify-center bg-[#f8f9fb] px-6 py-12 sm:px-14">
+          <div className="w-full max-w-[400px] rounded-[var(--radius-card)] border border-zinc-200/80 bg-white p-8 shadow-[var(--shadow-elevated)] sm:p-10">
             <LoginForm />
           </div>
         </div>

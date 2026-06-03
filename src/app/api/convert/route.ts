@@ -9,7 +9,6 @@
  */
 
 import {
-  convertPptToPdf,
   isPdfUpload,
   MAX_FILE_SIZE_BYTES,
   storePdfUpload,
@@ -19,7 +18,7 @@ import { NextRequest, NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 
 // Allow Next.js to receive large file uploads up to 55 MB (service enforces 50 MB)
-export const maxDuration = 120; // seconds — LibreOffice can be slow on first run
+export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
   let formData: FormData;
@@ -55,9 +54,14 @@ export async function POST(req: NextRequest) {
 
   const buffer = Buffer.from(await file.arrayBuffer());
 
-  const result = isPdfUpload(file.name, file.type)
-    ? await storePdfUpload(buffer, file.name, file.type, sizeBytes)
-    : await convertPptToPdf(buffer, file.name, file.type, sizeBytes);
+  if (!isPdfUpload(file.name, file.type)) {
+    return NextResponse.json(
+      { ok: false, message: "Only PDF uploads are supported." },
+      { status: 415 },
+    );
+  }
+
+  const result = await storePdfUpload(buffer, file.name, file.type, sizeBytes);
 
   if (!result.ok) {
     const statusMap: Record<string, number> = {
@@ -78,6 +82,6 @@ export async function POST(req: NextRequest) {
     pdfUrl: result.pdfUrl,
     originalName: result.originalName,
     pageCount: result.pageCount,
-    skippedConversion: isPdfUpload(file.name, file.type),
+    skippedConversion: true,
   });
 }

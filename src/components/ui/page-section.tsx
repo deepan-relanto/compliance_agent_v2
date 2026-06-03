@@ -17,12 +17,16 @@ export function PageSection({
   className,
 }: PageSectionProps) {
   return (
-    <section className={cn("space-y-4", className)}>
-      <div className="flex flex-wrap items-end justify-between gap-3">
+    <section className={cn("space-y-5", className)}>
+      <div className="flex flex-wrap items-end justify-between gap-4 border-b border-zinc-200/60 pb-4">
         <div>
-          <h2 className="text-[15px] font-semibold text-zinc-900">{title}</h2>
+          <h2 className="text-base font-semibold tracking-tight text-zinc-900">
+            {title}
+          </h2>
           {description && (
-            <p className="mt-0.5 text-sm text-zinc-500">{description}</p>
+            <p className="mt-1 max-w-2xl text-sm leading-relaxed text-zinc-500">
+              {description}
+            </p>
           )}
         </div>
         {action}

@@ -1,46 +1,53 @@
 /**
- * Prompt templates for scenario-based checkpoint MCQs (direct context method).
+ * Prompt templates for generating a full question pool from the complete PDF text.
  */
 
 export const MCQ_SYSTEM_PROMPT = `You are a compliance training assessment designer for Relanto.
-You create ONE scenario-based multiple-choice question per request.
+Generate a pool of EXACTLY 10 scenario-based multiple-choice questions.
 
 Rules:
-- Use ONLY facts from the provided slide excerpt. Do not invent policies, numbers, or names not in the text.
-- Write a realistic workplace scenario (2-4 sentences) that tests understanding of that excerpt.
-- Provide exactly 4 options (ids: a, b, c, d). Exactly one is clearly correct.
-- Distractors must be plausible but wrong according to the excerpt.
-- Professional tone. No trick questions, no "all of the above", no negative phrasing like "which is NOT".
-- If the excerpt is empty or too thin to write a fair question, set "error" to "insufficient_content" and omit other fields.
+- Base every question only on the provided training content.
+- Use practical workplace scenarios similar to policy-violation situations.
+- Each question must have exactly 4 options with ids: a, b, c, d.
+- Exactly one option is correct.
+- No duplicate questions.
+- Avoid "all of the above" and "none of the above".
+- Keep language clear and professional.
 
-Respond with valid JSON only, no markdown fences.`;
+Output must be valid JSON only (no markdown) with this shape:
+{
+  "questions": [
+    {
+      "prompt": "...",
+      "options": [
+        {"id":"a","label":"..."},
+        {"id":"b","label":"..."},
+        {"id":"c","label":"..."},
+        {"id":"d","label":"..."}
+      ],
+      "correctOptionId":"a"
+    }
+  ]
+}`;
+
+const STYLE_REFERENCE = `Style reference examples (for tone and complexity only):
+1) "Ravi installs freeware on client laptop without authorization." Correct answer emphasizes prior IT/client approval.
+2) "Priya copies confidential data to personal cloud for weekend work." Correct answer emphasizes approved VPN/client systems only.
+3) "Ananya pastes client code into external LLM without written authorization." Correct answer prohibits this without explicit written client approval.`;
 
 export function buildMcqUserPrompt(params: {
   moduleTitle: string;
-  slideFrom: number;
-  slideTo: number;
-  gateSlide: number;
-  excerpt: string;
+  fullText: string;
 }): string {
-  const { moduleTitle, slideFrom, slideTo, gateSlide, excerpt } = params;
+  const { moduleTitle, fullText } = params;
   return `Training module: "${moduleTitle}"
-Checkpoint after slide ${gateSlide} (learner has viewed slides ${slideFrom} through ${slideTo}).
 
-Slide content excerpt:
+${STYLE_REFERENCE}
+
+Full training content:
 ---
-${excerpt.slice(0, 12000) || "(no extractable text on these slides)"}
+${fullText.slice(0, 45000) || "(no extractable text)"}
 ---
 
-Return JSON:
-{
-  "prompt": "scenario question text",
-  "options": [
-    { "id": "a", "label": "..." },
-    { "id": "b", "label": "..." },
-    { "id": "c", "label": "..." },
-    { "id": "d", "label": "..." }
-  ],
-  "correctOptionId": "a|b|c|d",
-  "error": null
-}`;
+Return exactly 10 questions in the required JSON shape.`;
 }
