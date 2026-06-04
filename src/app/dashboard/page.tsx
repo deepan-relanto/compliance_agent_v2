@@ -6,7 +6,7 @@ import { EmployeeShell } from "@/components/layout/employee-shell";
 import { PageSection } from "@/components/ui/page-section";
 import { StatCard } from "@/components/ui/stat-card";
 import { useAuthStore } from "@/lib/auth-store";
-import { fetchUserProgress } from "@/lib/progress-api";
+import type { ServerProgressEntry } from "@/lib/progress-api";
 import { getProgressForUser, mergeServerProgress } from "@/lib/progress-store";
 import type { ModuleStatus, TrainingModule } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -47,20 +47,18 @@ export default function DashboardPage() {
     }
     setLoading(true);
     try {
-      const modulesPromise = fetch(`/api/modules?batchId=${encodeURIComponent(user.batchId)}`).then(
-        (r) => r.json(),
-      );
-      const progressPromise = user.username
-        ? fetchUserProgress(user.username)
-        : Promise.resolve([]);
-      const [data, serverEntries] = await Promise.all([modulesPromise, progressPromise]);
+      const qs = new URLSearchParams({ batchId: user.batchId });
+      if (user.username) qs.set("userEmail", user.username);
+      const data = await fetch(`/api/learner/dashboard?${qs}`).then((r) => r.json());
+      const serverEntries = Array.isArray(data.progress) ? data.progress : [];
+
       if (data.ok && Array.isArray(data.modules)) {
         setModules(data.modules);
         if (user.username) {
           if (serverEntries.length > 0) {
             mergeServerProgress(
               user.username,
-              serverEntries.map((e) => ({
+              (serverEntries as ServerProgressEntry[]).map((e) => ({
                 moduleId: e.moduleId,
                 moduleTitle: e.moduleTitle,
                 batchId: e.batchId,
@@ -156,10 +154,7 @@ export default function DashboardPage() {
     { key: "completed", label: "Completed", count: completedCount },
   ];
 
-  const displayName = (() => {
-    const local = user?.username?.split("@")[0] ?? "Learner";
-    return local.charAt(0).toUpperCase() + local.slice(1);
-  })();
+  const displayName = user?.displayName ?? "Learner";
 
   return (
     <RouteGuard allowedRoles={["user"]}>

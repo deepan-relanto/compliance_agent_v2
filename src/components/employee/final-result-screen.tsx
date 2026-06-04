@@ -14,7 +14,6 @@ import {
   TrendingUp,
   XCircle,
 } from "lucide-react";
-import Link from "next/link";
 
 interface FinalResultScreenProps {
   moduleTitle: string;
@@ -28,7 +27,6 @@ interface FinalResultScreenProps {
   retakeLoading?: boolean;
   onContinuePassed: () => void;
   onRetake: () => void;
-  onDashboard: () => void;
 }
 
 function motivationalMessage(scorePercent: number): string {
@@ -105,14 +103,13 @@ export function FinalResultScreen({
   retakeLoading = false,
   onContinuePassed,
   onRetake,
-  onDashboard,
 }: FinalResultScreenProps) {
   const finalScore = mcqCorrect * POINTS_PER_MCQ;
   const totalScore = mcqTotal * POINTS_PER_MCQ;
   const wrongAnswers = Math.max(0, mcqTotal - mcqCorrect);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-zinc-950/80 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[75] flex items-center justify-center overflow-y-auto bg-zinc-950/80 p-4 backdrop-blur-sm">
       <motion.div
         initial={{ opacity: 0, scale: 0.98, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -231,11 +228,11 @@ export function FinalResultScreen({
           </div>
         </div>
 
-        <div className="flex flex-col gap-3 border-t border-zinc-100 px-6 py-5 sm:flex-row sm:px-8">
+        <div className="border-t border-zinc-100 px-6 py-5 sm:px-8">
           {passed ? (
             <Button
               variant="primary"
-              className="h-11 flex-1"
+              className="h-11 w-full cursor-pointer"
               onClick={onContinuePassed}
             >
               <ShieldCheck className="h-4 w-4" />
@@ -244,7 +241,7 @@ export function FinalResultScreen({
           ) : canRetake ? (
             <Button
               variant="primary"
-              className="h-11 flex-1"
+              className="h-11 w-full cursor-pointer"
               disabled={retakeLoading}
               onClick={onRetake}
             >
@@ -252,19 +249,10 @@ export function FinalResultScreen({
               {retakeLoading ? "Preparing retake..." : "Retake quiz only"}
             </Button>
           ) : (
-            <Button variant="danger" className="h-11 flex-1" disabled>
-              <XCircle className="h-4 w-4" />
-              Retake unavailable
-            </Button>
+            <p className="text-center text-sm text-zinc-600">
+              Retake unavailable. Please contact your administrator for assistance.
+            </p>
           )}
-
-          <Link
-            href="/dashboard"
-            onClick={onDashboard}
-            className="inline-flex h-11 flex-1 items-center justify-center rounded-lg border border-zinc-200 bg-white px-5 text-sm font-medium tracking-tight text-zinc-700 transition-colors hover:border-zinc-300 hover:bg-zinc-50"
-          >
-            Return to dashboard
-          </Link>
         </div>
       </motion.div>
     </div>

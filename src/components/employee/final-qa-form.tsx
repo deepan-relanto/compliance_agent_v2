@@ -14,6 +14,10 @@ interface FinalQaFormProps {
   userId: string;
   onSuccess?: () => void;
   size?: "default" | "large";
+  /** When true, parent shows the completion notice instead of inline success UI. */
+  deferSuccessToParent?: boolean;
+  /** When false, feedback message is optional (learner may skip on parent screen). */
+  messageRequired?: boolean;
 }
 
 export function FinalQaForm({
@@ -22,6 +26,8 @@ export function FinalQaForm({
   userId,
   onSuccess,
   size = "default",
+  deferSuccessToParent = false,
+  messageRequired = true,
 }: FinalQaFormProps) {
   const large = size === "large";
   const batchId = useAuthStore((s) => s.user?.batchId);
@@ -42,7 +48,7 @@ export function FinalQaForm({
     }
   };
 
-  if (submitted) {
+  if (submitted && !deferSuccessToParent) {
     return (
       <motion.div
         initial={{ opacity: 0 }}
@@ -67,13 +73,28 @@ export function FinalQaForm({
     );
   }
 
+  if (submitted && deferSuccessToParent) {
+    return (
+      <div
+        className={cn(
+          "rounded-xl border border-zinc-200 bg-zinc-50 text-center text-sm text-zinc-500",
+          large ? "px-8 py-10" : "px-6 py-8",
+        )}
+      >
+        Feedback received. Please confirm completion in the dialog.
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(
-        "rounded-xl border border-zinc-200 bg-white shadow-[var(--shadow-card)]",
-        large ? "p-8 sm:p-10" : "p-6 shadow-sm",
+        "overflow-hidden rounded-xl border border-zinc-200/90 bg-white shadow-[var(--shadow-card)]",
+        large ? "p-0" : "p-0 shadow-sm",
       )}
     >
+      <div className="h-1 w-full bg-gradient-to-r from-[#2e3192] via-[#3d42a8] to-[#f15a24]" />
+      <div className={cn(large ? "p-8 sm:p-10" : "p-6")}>
       <div className={cn("flex items-center", large ? "gap-3" : "gap-2")}>
         <MessageSquare
           className={cn("text-[#2e3192]", large ? "h-6 w-6" : "h-4 w-4")}
@@ -85,11 +106,13 @@ export function FinalQaForm({
             large ? "text-xl tracking-tight" : "text-sm",
           )}
         >
-          Questions for administration
+          Training feedback
         </h3>
       </div>
       <p className={cn("text-zinc-500", large ? "mt-2 text-base leading-relaxed" : "mt-1 text-sm")}>
-        Submit clarifications or feedback before completing this module.
+        {messageRequired
+          ? "Share your experience or questions before your completion is finalized."
+          : "Optional — help us improve this module with a quick rating or comment."}
       </p>
 
       <form onSubmit={handleSubmit} className={cn(large ? "mt-8 space-y-6" : "mt-4 space-y-3")}>
@@ -132,16 +155,24 @@ export function FinalQaForm({
           onChange={(e) => setMessage(e.target.value)}
           placeholder="Your question or feedback…"
           rows={large ? 6 : 4}
-          required
+          required={messageRequired}
           className={cn(
-            "flex w-full cursor-text resize-none rounded-lg border border-zinc-200 bg-white text-zinc-900 placeholder:text-zinc-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2e3192]/25",
+            "training-form-input flex w-full cursor-text select-text resize-none rounded-lg border border-zinc-200 bg-white text-zinc-900 placeholder:text-zinc-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2e3192]/25",
             large ? "px-4 py-3 text-base" : "px-3 py-2 text-sm",
           )}
         />
-        <Button type="submit" variant="secondary" size={large ? "lg" : "md"} className={large ? "w-full sm:w-auto" : undefined}>
-          Submit to admin
+        <Button
+          type="submit"
+          size={large ? "lg" : "md"}
+          className={cn(
+            "cursor-pointer bg-gradient-to-r from-[#2e3192] to-[#3d42a8] text-white hover:opacity-95",
+            large ? "w-full" : undefined,
+          )}
+        >
+          Submit feedback & complete training
         </Button>
       </form>
+      </div>
     </div>
   );
 }

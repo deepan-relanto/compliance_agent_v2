@@ -84,6 +84,7 @@ export async function POST(
       pdfUrl: row.pdf_url,
       pageCount: Number(row.slide_count ?? 1),
       contentHash,
+      force: true,
     }).catch(async (err) => {
       console.error("[generation-status POST retry]", err);
       await sql`

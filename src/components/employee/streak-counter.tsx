@@ -8,6 +8,8 @@ interface StreakCounterProps {
   currentStreak: number;
   bestStreak?: number;
   compact?: boolean;
+  /** Dark = training header bar; light = white checkpoint card */
+  tone?: "dark" | "light";
   className?: string;
 }
 
@@ -21,12 +23,18 @@ export function StreakCounter({
   currentStreak,
   bestStreak = 0,
   compact = false,
+  tone = "dark",
   className,
 }: StreakCounterProps) {
+  const isLight = tone === "light";
+
   return (
     <div
       className={cn(
-        "flex min-w-[132px] items-center gap-2 rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-white",
+        "flex min-w-[132px] items-center gap-2 rounded-md border px-3 py-2",
+        isLight
+          ? "border-zinc-200 bg-white text-zinc-900"
+          : "border-zinc-700 bg-zinc-900 text-white",
         className,
       )}
     >
@@ -42,10 +50,20 @@ export function StreakCounter({
         />
       </motion.div>
       <div className="min-w-0">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+        <p
+          className={cn(
+            "text-[10px] font-semibold uppercase tracking-wider",
+            isLight ? "text-zinc-500" : "text-zinc-500",
+          )}
+        >
           Streak
         </p>
-        <p className="truncate text-xs font-semibold text-zinc-100">
+        <p
+          className={cn(
+            "truncate text-xs font-semibold",
+            isLight ? "text-zinc-900" : "text-zinc-100",
+          )}
+        >
           {compact ? `${currentStreak} now / ${bestStreak} best` : streakMessage(currentStreak)}
         </p>
       </div>

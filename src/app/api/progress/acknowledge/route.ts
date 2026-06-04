@@ -7,10 +7,23 @@ export const dynamic = "force-dynamic";
 /** POST — save learner training acknowledgement attestation */
 export async function POST(req: NextRequest) {
   try {
-    const { userEmail, moduleId, moduleTitle, feedbackRequired } = await req.json();
+    const {
+      userEmail,
+      moduleId,
+      moduleTitle,
+      feedbackRequired,
+      signatureName,
+      digitalSignature,
+    } = await req.json();
     if (!userEmail || !moduleId || !moduleTitle) {
       return NextResponse.json(
         { ok: false, message: "userEmail, moduleId, and moduleTitle are required." },
+        { status: 400 },
+      );
+    }
+    if (!signatureName || !digitalSignature) {
+      return NextResponse.json(
+        { ok: false, message: "signatureName and digitalSignature are required." },
         { status: 400 },
       );
     }
@@ -21,6 +34,8 @@ export async function POST(req: NextRequest) {
       moduleId,
       moduleTitle,
       feedbackRequired: Boolean(feedbackRequired),
+      signatureName: String(signatureName),
+      digitalSignature: String(digitalSignature),
     });
 
     return NextResponse.json({ ok: true });

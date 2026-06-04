@@ -5,8 +5,8 @@ import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/lib/auth-store";
 import { cn } from "@/lib/utils";
 import { LogOut } from "lucide-react";
+import { signOut } from "next-auth/react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 
 interface EmployeeShellProps {
   children: React.ReactNode;
@@ -17,7 +17,6 @@ interface EmployeeShellProps {
 export function EmployeeShell({ children, title, subtitle }: EmployeeShellProps) {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
-  const router = useRouter();
 
   const batchLabel = user?.batchId
     ? user.batchId.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
@@ -34,11 +33,11 @@ export function EmployeeShell({ children, title, subtitle }: EmployeeShellProps)
             {user && (
               <div className="hidden items-center gap-3 rounded-lg border border-zinc-200/80 bg-zinc-50/80 px-3 py-1.5 sm:flex">
                 <div className="flex h-7 w-7 items-center justify-center rounded-md bg-[#2e3192] text-[11px] font-semibold text-white">
-                  {user.username.charAt(0).toUpperCase()}
+                  {(user.displayName || user.username).charAt(0).toUpperCase()}
                 </div>
                 <div className="text-left leading-tight">
                   <p className="max-w-[180px] truncate text-xs font-medium text-zinc-800">
-                    {user.username}
+                    {user.displayName || user.username}
                   </p>
                   {batchLabel && (
                     <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
@@ -54,7 +53,7 @@ export function EmployeeShell({ children, title, subtitle }: EmployeeShellProps)
               className="text-zinc-600"
               onClick={() => {
                 logout();
-                router.push("/login");
+                void signOut({ callbackUrl: "/login" });
               }}
             >
               <LogOut className="h-3.5 w-3.5" strokeWidth={1.75} />

@@ -1,17 +1,3 @@
-import type { McqQuestion } from "./types";
-
-/** Batch shape used by admin UI (loaded from /api/batches). */
-export interface BatchInfo {
-  id: string;
-  label: string;
-  description: string;
-  memberCount: number;
-  compliance: number;
-  passRate: number;
-  failRate: number;
-  activeSessions: number;
-}
-
 /** Placeholder AI insight copy per batch until Gemini reports are wired. */
 export function getAiReportForBatch(batchId: string): string {
   if (batchId === "batch_a") {
@@ -33,14 +19,4 @@ export function getAiReportForBatch(batchId: string): string {
 **Customer-facing teams** — keep modules short and scenario-based at each checkpoint.
 
 **Recommended:** Export progress CSV before quarterly compliance reviews.`;
-}
-
-/** Legacy fallback when a module has no DB MCQs yet. */
-export function getMcqForSlide(): McqQuestion | undefined {
-  return undefined;
-}
-
-/** No-op: slide counts are stored in Neon via the assessments API. */
-export function updateUploadedAssessmentSlideCount(): void {
-  /* persisted in training_modules.slide_count */
 }

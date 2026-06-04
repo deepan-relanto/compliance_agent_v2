@@ -49,6 +49,12 @@
     letter-spacing: -0.025em;
   }
 
+  /* Brand gradient headers — override global heading color */
+  .brand-panel-header h2 {
+    @apply text-white;
+    letter-spacing: -0.02em;
+  }
+
   :focus-visible {
     outline: none;
   }
@@ -89,7 +95,32 @@
 
   button:disabled,
   button:disabled * {
-    cursor: not-allowed;
+    cursor: not-allowed !important;
+  }
+
+  /* Training / proctor shell — keep hand cursor on enabled controls */
+  .training-interactive button:not(:disabled),
+  .training-interactive a[href],
+  .training-interactive [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer !important;
+  }
+
+  /* Acknowledgement + feedback forms inside proctored shell */
+  .training-form-zone input:not([disabled]),
+  .training-form-zone textarea:not([disabled]) {
+    cursor: text !important;
+    caret-color: auto !important;
+    user-select: text !important;
+    -webkit-user-select: text !important;
+    pointer-events: auto !important;
+  }
+
+  .training-form-input:not([disabled]) {
+    cursor: text !important;
+    caret-color: auto !important;
+    user-select: text !important;
+    -webkit-user-select: text !important;
+    pointer-events: auto !important;
   }
 
   /* Filter pills, tab buttons, and other explicit click targets */

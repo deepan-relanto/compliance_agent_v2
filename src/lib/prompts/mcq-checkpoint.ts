@@ -10,7 +10,9 @@ Rules:
 - Use practical workplace scenarios similar to policy-violation situations.
 - Each question must have exactly 4 options with ids: a, b, c, d.
 - Exactly one option is correct.
-- Include a one-sentence explanation that explains the reasoning, not a repeat of the option text.
+- Include an "explanation" with exactly TWO short sentences (max 220 characters total):
+  sentence 1 = why the correct option is right; sentence 2 = why the main wrong options are unsafe.
+  Do not repeat option text verbatim.
 - No duplicate questions.
 - Avoid "all of the above" and "none of the above".
 - Keep language clear and professional.
@@ -51,5 +53,5 @@ Full training content:
 ${fullText.slice(0, 45000) || "(no extractable text)"}
 ---
 
-Return exactly 10 questions in the required JSON shape.`;
+Return exactly 10 questions in the required JSON shape. Every explanation must be two sentences.`;
 }

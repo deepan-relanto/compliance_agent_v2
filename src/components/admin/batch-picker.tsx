@@ -1,6 +1,6 @@
 "use client";
 
-import type { BatchInfo } from "@/lib/mock-data";
+import type { BatchInfo } from "@/lib/types";
 import { ArrowRight, Loader2, Users } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";

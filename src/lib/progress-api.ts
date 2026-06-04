@@ -100,11 +100,26 @@ export async function resetAttemptProgress(
   return Boolean(data.ok);
 }
 
+export async function syncProgressComplete(
+  userEmail: string,
+  moduleId: string,
+): Promise<boolean> {
+  const res = await fetch("/api/progress/complete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userEmail, moduleId }),
+  });
+  const data = await res.json();
+  return Boolean(data.ok);
+}
+
 export async function syncAcknowledgement(params: {
   userEmail: string;
   moduleId: string;
   moduleTitle: string;
   feedbackRequired: boolean;
+  signatureName?: string;
+  digitalSignature?: string;
 }): Promise<boolean> {
   const res = await fetch("/api/progress/acknowledge", {
     method: "POST",

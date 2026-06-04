@@ -2,6 +2,9 @@ import { LoginForm } from "@/components/auth/login-form";
 import { LoginRedirect } from "@/components/auth/login-redirect";
 import { RelantoLogo } from "@/components/brand/relanto-logo";
 import { CheckCircle2, Shield } from "lucide-react";
+import { Suspense } from "react";
+
+export const dynamic = "force-dynamic";
 
 const highlights = [
   "Gated slide pathways with validated MCQs",
@@ -14,6 +17,7 @@ export default function LoginPage() {
     <div className="min-h-screen bg-white">
       <LoginRedirect />
       <div className="grid min-h-screen lg:grid-cols-[1.05fr_1fr]">
+        {/* Left — original light brand panel */}
         <div className="relative hidden overflow-hidden border-r border-zinc-200/80 bg-zinc-50 lg:block">
           <div className="grid-pattern-light absolute inset-0 opacity-60" />
           <div className="absolute inset-0 bg-gradient-to-br from-[#2e3192]/[0.04] via-transparent to-[#f15a24]/[0.03]" />
@@ -21,14 +25,15 @@ export default function LoginPage() {
             <RelantoLogo size="lg" showTagline />
             <div>
               <p className="text-xs font-semibold uppercase tracking-widest text-[#f15a24]">
-                Compliance Agent V2
+                Compliance Agent
               </p>
               <h2 className="mt-4 max-w-md text-[1.75rem] font-semibold leading-snug tracking-tight text-zinc-900 text-balance">
                 Enforce engagement. Validate understanding.
               </h2>
               <p className="mt-4 max-w-sm text-sm leading-relaxed text-zinc-500">
                 Mandatory training with checkpoint gates, integrity monitoring, and
-                administrative oversight — built for enterprise compliance teams.
+                administrative oversight — for the{" "}
+                <span className="font-medium text-zinc-700">relanto.ai</span> organization.
               </p>
               <ul className="mt-8 space-y-3">
                 {highlights.map((item) => (
@@ -51,9 +56,17 @@ export default function LoginPage() {
             </div>
           </div>
         </div>
+
+        {/* Right — sign-in card */}
         <div className="flex items-center justify-center bg-[#f8f9fb] px-6 py-12 sm:px-14">
-          <div className="w-full max-w-[400px] rounded-[var(--radius-card)] border border-zinc-200/80 bg-white p-8 shadow-[var(--shadow-elevated)] sm:p-10">
-            <LoginForm />
+          <div className="w-full max-w-[400px]">
+            <Suspense
+              fallback={
+                <div className="h-48 animate-pulse rounded-xl bg-zinc-100" />
+              }
+            >
+              <LoginForm />
+            </Suspense>
           </div>
         </div>
       </div>

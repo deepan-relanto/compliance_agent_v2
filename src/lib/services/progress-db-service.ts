@@ -302,7 +302,8 @@ export async function finalizeAssessmentDb(
     row.mcq_total,
   );
   const passed = isPassingScore(scorePercent);
-  const canRetake = !passed;
+  const retakeCount = Number(row.retake_count ?? 0);
+  const canRetake = !passed && retakeCount < 2;
 
   // Pass/fail score is saved here; status stays in_progress until acknowledgement (and feedback if required).
   const status = "in_progress";
@@ -331,6 +332,8 @@ export async function finalizeAssessmentDb(
           mcq_correct = ${mcqCorrect},
           mcq_total = ${mcqTotal},
           failed_reason = ${failedReason},
+          last_failure_at = NOW(),
+          last_failure_reason = ${failedReason},
           completed_at = NULL,
           last_accessed_at = NOW(),
           updated_at = NOW()
@@ -349,15 +352,19 @@ export async function saveAcknowledgementDb(
     moduleId: string;
     moduleTitle: string;
     feedbackRequired: boolean;
+    signatureName: string;
+    digitalSignature: string;
   },
 ): Promise<void> {
   const ack = {
     userId: params.userEmail,
-    userName: params.userEmail,
+    userName: params.signatureName,
+    signerEmail: params.userEmail,
     assessmentId: params.moduleId,
     assessmentName: params.moduleTitle,
     accepted: true,
     timestamp: Date.now(),
+    digitalSignature: params.digitalSignature,
   };
 
   const ackJson = JSON.stringify(ack);
@@ -381,6 +388,24 @@ export async function saveAcknowledgementDb(
       WHERE user_email = ${params.userEmail} AND module_id = ${params.moduleId}
     `;
   }
+}
+
+/** Mark assessment completed after required feedback is submitted. */
+export async function markAssessmentCompletedDb(
+  sql: Sql,
+  userEmail: string,
+  moduleId: string,
+): Promise<void> {
+  await sql`
+    UPDATE assessment_progress
+    SET status = 'completed',
+        completed_at = COALESCE(completed_at, NOW()),
+        last_accessed_at = NOW(),
+        updated_at = NOW()
+    WHERE user_email = ${userEmail}
+      AND module_id = ${moduleId}
+      AND acknowledgement IS NOT NULL
+  `;
 }
 
 /** Clear slide + quiz answers so learner must start fresh (no resume). */
@@ -425,6 +450,13 @@ export async function startScoreRetakeDb(
 
   if (row.status === "permanently_failed") {
     return { ok: false, message: "Maximum retakes reached." };
+  }
+
+  if (Number(row.retake_count ?? 0) >= 2) {
+    return {
+      ok: false,
+      message: "Maximum score retakes reached. Please contact your administrator.",
+    };
   }
 
   await sql`

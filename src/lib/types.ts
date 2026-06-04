@@ -1,9 +1,23 @@
 export type UserRole = "admin" | "user";
 
+/** Batch shape from /api/batches */
+export interface BatchInfo {
+  id: string;
+  label: string;
+  description: string;
+  memberCount: number;
+  compliance: number;
+  passRate: number;
+  failRate: number;
+  activeSessions: number;
+}
+
 export interface AuthUser {
   username: string;
   role: UserRole;
   batchId: string;
+  /** Friendly name — segment before first dot in email, e.g. gudivaka from gudivaka.vennela@relanto.ai */
+  displayName: string;
 }
 
 export interface CsvUserRow {
@@ -76,8 +90,10 @@ export interface AssessmentAcknowledgement {
   assessmentName: string;
   accepted: boolean;
   timestamp: number;
-  // Future compatibility fields
+  /** PNG data URL of the rendered typed signature, when captured. */
   digitalSignature?: string;
+  /** Account email / id of the signer (distinct from display name on signature). */
+  signerEmail?: string;
   employeeIdConfirm?: string;
   managerApproval?: {
     approved: boolean;

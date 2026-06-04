@@ -17,29 +17,44 @@ export function getNvidiaConfig() {
 export async function nvidiaChatJson(
   system: string,
   user: string,
-  options?: { maxTokens?: number; temperature?: number },
+  options?: { maxTokens?: number; temperature?: number; timeoutMs?: number },
 ): Promise<string> {
   const { apiKey, model } = getNvidiaConfig();
   const maxTokens = options?.maxTokens ?? 1200;
   const temperature = options?.temperature ?? 0.25;
+  const timeoutMs = options?.timeoutMs ?? 90_000;
 
-  const res = await fetch(`${NVIDIA_BASE}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-      temperature,
-      max_tokens: maxTokens,
-      response_format: { type: "json_object" },
-    }),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  let res: Response;
+  try {
+    res = await fetch(`${NVIDIA_BASE}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+        temperature,
+        max_tokens: maxTokens,
+        response_format: { type: "json_object" },
+      }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error(`NVIDIA API timed out after ${timeoutMs}ms`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   const raw = await res.text();
   if (!res.ok) {

@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useAuthStore } from "@/lib/auth-store";
-import type { BatchInfo } from "@/lib/mock-data";
+import type { BatchInfo } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
   AlertCircle,

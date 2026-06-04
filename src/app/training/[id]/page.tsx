@@ -28,21 +28,34 @@ export default function TrainingPage() {
     const query = user?.username
       ? `?userEmail=${encodeURIComponent(user.username)}`
       : "";
-    fetch(`/api/modules/${encodeURIComponent(id)}${query}`)
+    const controller = new AbortController();
+    fetch(`/api/modules/${encodeURIComponent(id)}${query}`, {
+      signal: controller.signal,
+    })
       .then((r) => r.json())
       .then((data) => {
         if (data.ok) {
           setTrainingModule(data.module);
           setMcqs(data.mcqs ?? []);
+          const pdf = data.module?.pdfUrl as string | undefined;
+          if (pdf && typeof window !== "undefined") {
+            const link = document.createElement("link");
+            link.rel = "prefetch";
+            link.href = pdf;
+            document.head.appendChild(link);
+          }
         } else {
           setTrainingModule(undefined);
         }
         setReady(true);
       })
       .catch(() => {
-        setTrainingModule(undefined);
-        setReady(true);
+        if (!controller.signal.aborted) {
+          setTrainingModule(undefined);
+          setReady(true);
+        }
       });
+    return () => controller.abort();
   }, [id, user?.username]);
 
   useEffect(() => {

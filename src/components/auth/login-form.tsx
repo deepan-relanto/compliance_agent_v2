@@ -2,120 +2,180 @@
 
 import { RelantoLogo } from "@/components/brand/relanto-logo";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useAuthStore } from "@/lib/auth-store";
 import { motion } from "framer-motion";
-import { ArrowRight, Lock, Mail } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { signIn } from "next-auth/react";
+import { ShieldCheck } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+
+function MicrosoftIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 21 21" aria-hidden>
+      <rect x="1" y="1" width="9" height="9" fill="#f25022" />
+      <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
+      <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
+      <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
+    </svg>
+  );
+}
+
+const ERROR_MESSAGES: Record<string, string> = {
+  AccessDenied:
+    "Your account is not enrolled yet. Use your @relanto.ai Microsoft account or contact your administrator.",
+  Configuration: "Microsoft sign-in is not available. See the setup message below.",
+  OAuthSignin: "Could not start Microsoft sign-in. Please try again.",
+  OAuthCallback:
+    "Microsoft sign-in failed. Confirm the Web redirect URI in Azure matches the URL below.",
+  Default: "Sign-in failed. Please try again with your @relanto.ai work account.",
+};
+
+type AuthStatus = {
+  configured: boolean;
+  callbackUrl: string;
+  issues: string[];
+  hints: string[];
+};
 
 export function LoginForm() {
-  const login = useAuthStore((s) => s.login);
-  const router = useRouter();
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const searchParams = useSearchParams();
+  const user = useAuthStore((s) => s.user);
   const [loading, setLoading] = useState(false);
+  const [statusLoading, setStatusLoading] = useState(true);
+  const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/status", { cache: "no-store" });
+        const data = await res.json();
+        if (!cancelled) {
+          setAuthStatus({
+            configured: Boolean(data.configured),
+            callbackUrl: data.callbackUrl ?? "",
+            issues: data.issues ?? [],
+            hints: data.hints ?? [],
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          setAuthStatus({
+            configured: false,
+            callbackUrl:
+              "http://localhost:3000/api/auth/callback/microsoft-entra-id",
+            issues: ["SERVER_UNREACHABLE"],
+            hints: ["Start the dev server: npm run dev"],
+          });
+        }
+      } finally {
+        if (!cancelled) setStatusLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const errorCode = searchParams.get("error");
+  const authConfigured = authStatus?.configured ?? false;
+  const callbackUrl = authStatus?.callbackUrl ?? "";
+
+  const setupMessage = authStatus?.issues.includes(
+    "AUTH_AZURE_AD_CLIENT_SECRET_IS_SECRET_ID_NOT_VALUE",
+  )
+    ? "Wrong Azure secret in .env: you pasted the Secret ID (GUID). Create a new client secret in Azure and paste the Value (starts with letters like 3C~…), not the Secret ID."
+    : !authConfigured && authStatus
+      ? authStatus.hints[0] ??
+        "Add AUTH_SECRET and Azure AD keys to .env, then restart npm run dev."
+      : "";
+
+  const error =
+    !statusLoading && !authConfigured
+      ? setupMessage
+      : errorCode != null
+        ? (ERROR_MESSAGES[errorCode] ?? ERROR_MESSAGES.Default)
+        : "";
+
+  const handleMicrosoftSignIn = useCallback(async () => {
+    if (!authConfigured) return;
     setLoading(true);
-    const result = await login(username, password);
+    await signIn("microsoft-entra-id", {
+      callbackUrl: user?.role === "admin" ? "/admin" : "/dashboard",
+    });
     setLoading(false);
-
-    if (!result.ok) {
-      setError(result.error ?? "Login failed.");
-      return;
-    }
-
-    const user = useAuthStore.getState().user;
-    router.push(user?.role === "admin" ? "/admin" : "/dashboard");
-  };
+  }, [user?.role, authConfigured]);
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-      className="w-full"
+      transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+      className="w-full overflow-hidden rounded-[var(--radius-card)] border border-zinc-200/90 bg-white shadow-[var(--shadow-elevated)]"
     >
-      <div className="mb-7 lg:hidden">
-        <RelantoLogo size="md" showTagline />
-      </div>
+      <div className="h-1.5 w-full bg-gradient-to-r from-[#2e3192] via-[#3d42a8] to-[#f15a24]" />
 
-      <h1 className="text-xl font-semibold tracking-tight text-zinc-900">
-        Sign in
-      </h1>
-      <p className="mt-1.5 text-sm text-zinc-500">
-        Mandatory training portal for Relanto employees.
-      </p>
-
-      <form onSubmit={handleSubmit} className="mt-7 space-y-4">
-        <div className="space-y-1.5">
-          <label htmlFor="email" className="text-sm font-medium text-zinc-700">
-            Work email
-          </label>
-          <div className="relative">
-            <Mail
-              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400"
-              strokeWidth={1.5}
-            />
-            <Input
-              id="email"
-              type="email"
-              autoComplete="username"
-              placeholder="user1@relnto.com"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="pl-10"
-              required
-            />
-          </div>
+      <div className="px-8 pb-8 pt-7 sm:px-10 sm:pb-10 sm:pt-8">
+        <div className="mb-7 lg:hidden">
+          <RelantoLogo size="md" showTagline />
         </div>
 
-        <div className="space-y-1.5">
-          <label htmlFor="password" className="text-sm font-medium text-zinc-700">
-            Password
-          </label>
-          <div className="relative">
-            <Lock
-              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400"
-              strokeWidth={1.5}
-            />
-            <Input
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="pl-10"
-              required
-            />
+        <div className="flex flex-col items-center text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-[#2e3192] to-[#3d42a8] text-white shadow-md shadow-[#2e3192]/20">
+            <ShieldCheck className="h-6 w-6" strokeWidth={1.75} />
           </div>
-        </div>
-
-        {error && (
-          <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
-            {error}
+          <p className="mt-4 text-[11px] font-bold uppercase tracking-[0.2em] text-[#f15a24]">
+            Relanto
           </p>
+          <h1 className="mt-1 text-xl font-semibold tracking-tight text-zinc-900 sm:text-[1.35rem]">
+            Compliance Agent
+          </h1>
+          <p className="mt-3 max-w-[280px] text-sm leading-relaxed text-zinc-500">
+            Sign in with your{" "}
+            <span className="font-semibold text-[#2e3192]">@relanto.ai</span> Microsoft
+            work account.
+          </p>
+        </div>
+
+        {statusLoading && (
+          <p className="mt-6 text-center text-sm text-zinc-400">Checking sign-in…</p>
         )}
 
-        <Button type="submit" className="mt-1 w-full" size="lg" disabled={loading}>
-          {loading ? "Signing in…" : "Continue"}
-          {!loading && <ArrowRight className="h-4 w-4" strokeWidth={1.75} />}
-        </Button>
-      </form>
+        {error && !statusLoading && (
+          <div className="mt-6 space-y-3">
+            <p className="rounded-lg border border-red-200/90 bg-red-50 px-3.5 py-3 text-center text-sm leading-relaxed text-red-800">
+              {error}
+            </p>
+            {callbackUrl && (
+              <p className="rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2.5 text-center font-mono text-[10px] leading-relaxed text-zinc-500 break-all">
+                Azure Web redirect URI:
+                <br />
+                <span className="text-zinc-700">{callbackUrl}</span>
+              </p>
+            )}
+          </div>
+        )}
 
-      <div className="mt-6 rounded-lg border border-zinc-100 bg-zinc-50/80 p-4">
-        <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-          Demo accounts
+        <div className="mt-7">
+          <Button
+            type="button"
+            size="lg"
+            className="h-12 w-full cursor-pointer gap-3 border border-zinc-200 bg-white text-[15px] font-semibold text-zinc-800 shadow-sm transition-all hover:border-[#2e3192]/30 hover:bg-zinc-50 hover:shadow-md disabled:opacity-50"
+            disabled={loading || statusLoading || !authConfigured}
+            onClick={() => void handleMicrosoftSignIn()}
+          >
+            <MicrosoftIcon className="h-5 w-5 shrink-0" />
+            {loading
+              ? "Redirecting…"
+              : statusLoading
+                ? "Please wait…"
+                : "Continue with Microsoft"}
+          </Button>
+        </div>
+
+        <p className="mt-6 text-center text-[11px] leading-relaxed text-zinc-400">
+          Authorized @relanto.ai users only
         </p>
-        <ul className="mt-2 space-y-1 font-mono text-[11px] leading-relaxed text-zinc-600">
-          <li>admin@relnto.com / admin123</li>
-          <li>user1@relnto.com / user123</li>
-        </ul>
       </div>
     </motion.div>
   );

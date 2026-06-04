@@ -4,6 +4,7 @@ import { StreakCounter } from "@/components/employee/streak-counter";
 import { CheckpointSignal } from "@/components/employee/checkpoint-signal";
 import { Button } from "@/components/ui/button";
 import { POINTS_PER_MCQ } from "@/lib/constants";
+import { formatExplanationLines } from "@/lib/mcq-explanation";
 import type { McqQuestion } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
@@ -28,10 +29,12 @@ interface MCQCheckpointProps {
   batchId?: string;
   totalSlides?: number;
   currentStreak: number;
+  bestStreak?: number;
   score: number;
   totalScore: number;
   checkpointNumber: number;
   totalCheckpoints: number;
+  variant?: "modal" | "panel";
   onAnswered: (wasCorrect: boolean) => void;
   onContinue: (wasCorrect: boolean) => void;
 }
@@ -42,10 +45,19 @@ function stripGeneratedCheckpointPrefix(prompt: string): string {
     .trim();
 }
 
-function buildExplanation(explanation?: string | null): string {
-  const cleaned = explanation?.trim();
-  if (cleaned) return `Explanation: ${cleaned}`;
-  return "Explanation: This checks whether the learner applies the approved compliance process instead of taking an unsafe shortcut.";
+function ExplanationLines({ explanation }: { explanation: string }) {
+  const lines = formatExplanationLines(explanation);
+  if (!lines.length) return null;
+
+  return (
+    <div className="space-y-1">
+      {lines.map((line) => (
+        <p key={line} className="text-xs leading-relaxed text-inherit">
+          {line}
+        </p>
+      ))}
+    </div>
+  );
 }
 
 export function MCQCheckpoint({
@@ -57,10 +69,12 @@ export function MCQCheckpoint({
   batchId,
   totalSlides,
   currentStreak,
+  bestStreak = 0,
   score,
   totalScore,
   checkpointNumber,
   totalCheckpoints,
+  variant = "modal",
   onAnswered,
   onContinue,
 }: MCQCheckpointProps) {
@@ -156,15 +170,234 @@ export function MCQCheckpoint({
     setAnswerExplanation(null);
   };
 
+  const panelMode = variant === "panel";
+
+  const card = (
+    <div
+      className={cn(
+        "w-full overflow-hidden rounded-[var(--radius-card)] border border-zinc-200/90 bg-white shadow-[var(--shadow-elevated)]",
+        panelMode ? "max-w-none" : "max-w-2xl",
+      )}
+    >
+      <div className="h-1 bg-zinc-100">
+        <motion.div
+          initial={{ width: 0 }}
+          animate={{ width: `${checkpointProgress}%` }}
+          transition={{ duration: 0.45, ease: "easeOut" }}
+          className="h-full bg-[#f15a24]"
+        />
+      </div>
+      <div className="flex flex-col gap-3 border-b border-zinc-100 bg-zinc-50/90 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-md border border-[#f15a24]/20 bg-white text-[#f15a24]">
+            <Lock className="h-4 w-4" strokeWidth={1.75} />
+          </div>
+          <span className="text-xs font-semibold uppercase tracking-wider text-[#f15a24]">
+            Checkpoint {Math.min(checkpointNumber, Math.max(totalCheckpoints, 1))} of{" "}
+            {Math.max(totalCheckpoints, 1)}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs font-semibold text-zinc-700">
+            <BarChart3 className="h-3.5 w-3.5 text-zinc-400" />
+            Score{" "}
+            <span className="font-mono tabular-nums">
+              {score}/{totalScore}
+            </span>
+          </div>
+          <div className="rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+            <Plus className="mr-1 inline h-3 w-3" />
+            {POINTS_PER_MCQ}
+          </div>
+        </div>
+      </div>
+
+      <div className="p-6">
+        <div className="mb-5 grid gap-3 sm:grid-cols-[1fr_220px] sm:items-stretch">
+          <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-[#2e3192]" strokeWidth={1.75} />
+              <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                Secure checkpoint
+              </p>
+            </div>
+            <p className="mt-2 text-sm leading-relaxed text-zinc-600">
+              Choose the response that best follows the training policy and required approval path.
+            </p>
+            <div className="mt-4 max-w-[180px]">
+              <StreakCounter
+                currentStreak={currentStreak}
+                bestStreak={bestStreak}
+                compact
+                tone="light"
+              />
+            </div>
+          </div>
+          <CheckpointSignal state={signalState} progress={checkpointProgress} />
+        </div>
+
+        <h2 className="text-lg font-semibold tracking-tight text-zinc-900">
+          {displayPrompt}
+        </h2>
+        <p className="mt-1 text-xs text-zinc-500">
+          Answer this checkpoint to unlock the next step.
+        </p>
+
+        <ul className="mt-5 space-y-2">
+          {question.options.map((opt) => {
+            const isSelected = selected === opt.id;
+            const showCorrect =
+              submitted && correctOptionId !== null && opt.id === correctOptionId;
+            const showWrong =
+              submitted &&
+              isSelected &&
+              correctOptionId !== null &&
+              opt.id !== correctOptionId;
+
+            return (
+              <motion.li
+                key={opt.id}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.18 }}
+              >
+                <button
+                  type="button"
+                  disabled={submitted || validating}
+                  onClick={() => setSelected(opt.id)}
+                  className={cn(
+                    "relative flex w-full cursor-pointer items-start gap-3 overflow-hidden rounded-md border px-4 py-3 text-left text-sm transition-all duration-150",
+                    "hover:border-zinc-300 hover:bg-zinc-50 hover:shadow-sm",
+                    isSelected && !submitted
+                      ? "border-[#2e3192]/45 bg-[#2e3192]/5 text-zinc-900 shadow-sm"
+                      : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300",
+                    showCorrect && "border-emerald-300 bg-emerald-50 text-emerald-950",
+                    showWrong && "border-red-200 bg-red-50 text-red-950",
+                    submitted && "cursor-default",
+                  )}
+                >
+                  {isSelected && !submitted && (
+                    <motion.span
+                      layoutId="selected-answer-glow"
+                      className="absolute inset-y-0 left-0 w-1 bg-[#2e3192]"
+                      transition={{ type: "spring", stiffness: 420, damping: 32 }}
+                    />
+                  )}
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-zinc-200 text-[10px] font-mono uppercase text-zinc-500">
+                    {opt.id}
+                  </span>
+                  <span className="flex-1">{opt.label}</span>
+                  {showCorrect && (
+                    <CheckCircle2 className="ml-auto h-4 w-4 text-emerald-600" />
+                  )}
+                  {showWrong && (
+                    <XCircle className="ml-auto h-4 w-4 text-red-500" />
+                  )}
+                </button>
+              </motion.li>
+            );
+          })}
+        </ul>
+
+        {error && (
+          <p className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {error}
+          </p>
+        )}
+
+        {submitted && (
+          <motion.div
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            className={cn(
+              "mt-4 rounded-lg border p-4",
+              wasCorrect
+                ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+                : "border-red-200 bg-red-50 text-red-950",
+            )}
+          >
+            <div className="flex items-start gap-3">
+              <div
+                className={cn(
+                  "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border bg-white",
+                  wasCorrect ? "border-emerald-200 text-emerald-700" : "border-red-200 text-red-700",
+                )}
+              >
+                {wasCorrect ? (
+                  <CheckCircle2 className="h-4 w-4" />
+                ) : (
+                  <XCircle className="h-4 w-4" />
+                )}
+              </div>
+              <div>
+                <p className="text-sm font-semibold">
+                  {wasCorrect ? `Correct. +${POINTS_PER_MCQ} points.` : "Incorrect. +0 points."}
+                </p>
+                <p className="mt-2 text-xs leading-relaxed">
+                  {correctOption
+                    ? `Correct answer: ${correctOption.id.toUpperCase()}. ${correctOption.label}`
+                    : "Your response has been recorded for this checkpoint."}
+                </p>
+                        {answerExplanation && (
+                          <div className="mt-2 flex gap-1.5 text-xs leading-relaxed">
+                            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                            <div className="min-w-0 flex-1">
+                              <p className="font-semibold">Why this is correct</p>
+                              <ExplanationLines explanation={answerExplanation} />
+                            </div>
+                          </div>
+                        )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {!submitted ? (
+          <Button
+            variant="primary"
+            className="mt-5 w-full"
+            onClick={handleSubmit}
+            disabled={!selected || validating}
+          >
+            {validating ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Checking answer...
+              </>
+            ) : (
+              "Submit answer"
+            )}
+          </Button>
+        ) : (
+          <Button variant="primary" className="mt-5 w-full" onClick={handleContinue}>
+            Continue to next slide
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <AnimatePresence>
       {open && (
+        panelMode ? (
+          <motion.div
+            key="checkpoint-panel"
+            initial={{ opacity: 0, x: 12 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 12 }}
+            transition={{ duration: 0.2 }}
+            className="h-full min-h-0 overflow-auto"
+          >
+            {card}
+          </motion.div>
+        ) : (
         <>
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-zinc-900/55 backdrop-blur-[2px]"
+            className="fixed inset-0 z-[65] bg-zinc-900/55 backdrop-blur-[2px]"
           />
           <motion.div
             role="dialog"
@@ -173,201 +406,12 @@ export function MCQCheckpoint({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.99, y: 4 }}
             transition={{ type: "spring", stiffness: 400, damping: 30 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 z-[66] flex items-center justify-center p-4 pointer-events-none"
           >
-            <div className="w-full max-w-2xl overflow-hidden rounded-[var(--radius-card)] border border-zinc-200/90 bg-white shadow-[var(--shadow-elevated)]">
-              <div className="h-1 bg-zinc-100">
-                <motion.div
-                  initial={{ width: 0 }}
-                  animate={{ width: `${checkpointProgress}%` }}
-                  transition={{ duration: 0.45, ease: "easeOut" }}
-                  className="h-full bg-[#f15a24]"
-                />
-              </div>
-              <div className="flex flex-col gap-3 border-b border-zinc-100 bg-zinc-50/90 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-md border border-[#f15a24]/20 bg-white text-[#f15a24]">
-                    <Lock className="h-4 w-4" strokeWidth={1.75} />
-                  </div>
-                  <span className="text-xs font-semibold uppercase tracking-wider text-[#f15a24]">
-                    Checkpoint {Math.min(checkpointNumber, Math.max(totalCheckpoints, 1))} of{" "}
-                    {Math.max(totalCheckpoints, 1)}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs font-semibold text-zinc-700">
-                    <BarChart3 className="h-3.5 w-3.5 text-zinc-400" />
-                    Score{" "}
-                    <span className="font-mono tabular-nums">
-                      {score}/{totalScore}
-                    </span>
-                  </div>
-                  <div className="rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-                    <Plus className="mr-1 inline h-3 w-3" />
-                    {POINTS_PER_MCQ}
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-6">
-                <div className="mb-5 grid gap-3 sm:grid-cols-[1fr_220px] sm:items-stretch">
-                  <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4">
-                    <div className="flex items-center gap-2">
-                      <ShieldCheck className="h-4 w-4 text-[#2e3192]" strokeWidth={1.75} />
-                      <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
-                        Secure checkpoint
-                      </p>
-                    </div>
-                    <p className="mt-2 text-sm leading-relaxed text-zinc-600">
-                      Choose the response that best follows the training policy and required approval path.
-                    </p>
-                    <div className="mt-4 max-w-[180px]">
-                      <StreakCounter
-                        currentStreak={currentStreak}
-                        compact
-                        className="border-zinc-200 bg-white text-zinc-900"
-                      />
-                    </div>
-                  </div>
-                  <CheckpointSignal state={signalState} progress={checkpointProgress} />
-                </div>
-
-                <h2 className="text-lg font-semibold tracking-tight text-zinc-900">
-                  {displayPrompt}
-                </h2>
-                <p className="mt-1 text-xs text-zinc-500">
-                  Answer this checkpoint to unlock the next step.
-                </p>
-
-                <ul className="mt-5 space-y-2">
-                  {question.options.map((opt) => {
-                    const isSelected = selected === opt.id;
-                    const showCorrect =
-                      submitted && correctOptionId !== null && opt.id === correctOptionId;
-                    const showWrong =
-                      submitted &&
-                      isSelected &&
-                      correctOptionId !== null &&
-                      opt.id !== correctOptionId;
-
-                    return (
-                      <motion.li
-                        key={opt.id}
-                        initial={{ opacity: 0, y: 4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.18 }}
-                      >
-                        <button
-                          type="button"
-                          disabled={submitted || validating}
-                          onClick={() => setSelected(opt.id)}
-                          className={cn(
-                            "relative flex w-full cursor-pointer items-start gap-3 overflow-hidden rounded-md border px-4 py-3 text-left text-sm transition-all duration-150",
-                            "hover:border-zinc-300 hover:bg-zinc-50 hover:shadow-sm",
-                            isSelected && !submitted
-                              ? "border-[#2e3192]/45 bg-[#2e3192]/5 text-zinc-900 shadow-sm"
-                              : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300",
-                            showCorrect && "border-emerald-300 bg-emerald-50 text-emerald-950",
-                            showWrong && "border-red-200 bg-red-50 text-red-950",
-                            submitted && "cursor-default",
-                          )}
-                        >
-                          {isSelected && !submitted && (
-                            <motion.span
-                              layoutId="selected-answer-glow"
-                              className="absolute inset-y-0 left-0 w-1 bg-[#2e3192]"
-                              transition={{ type: "spring", stiffness: 420, damping: 32 }}
-                            />
-                          )}
-                          <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-zinc-200 text-[10px] font-mono uppercase text-zinc-500">
-                            {opt.id}
-                          </span>
-                          <span className="flex-1">{opt.label}</span>
-                          {showCorrect && (
-                            <CheckCircle2 className="ml-auto h-4 w-4 text-emerald-600" />
-                          )}
-                          {showWrong && (
-                            <XCircle className="ml-auto h-4 w-4 text-red-500" />
-                          )}
-                        </button>
-                      </motion.li>
-                    );
-                  })}
-                </ul>
-
-                {error && (
-                  <p className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                    {error}
-                  </p>
-                )}
-
-                {submitted && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={cn(
-                      "mt-4 rounded-lg border p-4",
-                      wasCorrect
-                        ? "border-emerald-200 bg-emerald-50 text-emerald-950"
-                        : "border-red-200 bg-red-50 text-red-950",
-                    )}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div
-                        className={cn(
-                          "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border bg-white",
-                          wasCorrect ? "border-emerald-200 text-emerald-700" : "border-red-200 text-red-700",
-                        )}
-                      >
-                        {wasCorrect ? (
-                          <CheckCircle2 className="h-4 w-4" />
-                        ) : (
-                          <XCircle className="h-4 w-4" />
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold">
-                          {wasCorrect ? `Correct. +${POINTS_PER_MCQ} points.` : "Incorrect. +0 points."}
-                        </p>
-                        <p className="mt-2 text-xs leading-relaxed">
-                          {correctOption
-                            ? `Correct answer: ${correctOption.id.toUpperCase()}. ${correctOption.label}`
-                            : "Your response has been recorded for this checkpoint."}
-                        </p>
-                        <p className="mt-2 flex gap-1.5 text-xs leading-relaxed">
-                          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                          <span>{buildExplanation(answerExplanation)}</span>
-                        </p>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-
-                {!submitted ? (
-                  <Button
-                    variant="primary"
-                    className="mt-5 w-full"
-                    onClick={handleSubmit}
-                    disabled={!selected || validating}
-                  >
-                    {validating ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Checking answer...
-                      </>
-                    ) : (
-                      "Submit answer"
-                    )}
-                  </Button>
-                ) : (
-                  <Button variant="primary" className="mt-5 w-full" onClick={handleContinue}>
-                    Continue to next slide
-                  </Button>
-                )}
-              </div>
-            </div>
+            <div className="pointer-events-auto mx-auto w-full max-w-2xl px-4">{card}</div>
           </motion.div>
         </>
+        )
       )}
     </AnimatePresence>
   );

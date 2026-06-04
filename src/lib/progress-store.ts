@@ -187,6 +187,7 @@ export function saveAcknowledgement(
   username: string,
   moduleId: string,
   feedbackRequired: boolean = false,
+  attestation?: { signatureName: string; digitalSignature: string },
 ): void {
   const all = readAll();
   const k = key(username, moduleId);
@@ -196,11 +197,13 @@ export function saveAcknowledgement(
   const timestamp = Date.now();
   const ack: AssessmentAcknowledgement = {
     userId: username,
-    userName: username,
+    userName: attestation?.signatureName ?? username,
+    signerEmail: username,
     assessmentId: moduleId,
     assessmentName: existing.moduleTitle,
     accepted: true,
     timestamp,
+    digitalSignature: attestation?.digitalSignature,
   };
 
   all[k] = {
@@ -458,6 +461,7 @@ export function applyScoreResult(
   const existing = all[k];
   if (!existing) return;
 
+  const now = Date.now();
   all[k] = {
     ...existing,
     mcqCorrect: result.mcqCorrect,
@@ -465,11 +469,21 @@ export function applyScoreResult(
     scorePercent: result.scorePercent,
     status: "in_progress",
     failedReason: result.passed ? undefined : result.failedReason,
+    lastFailureAt: result.passed ? existing.lastFailureAt : now,
+    lastFailureReason: result.passed ? existing.lastFailureReason : result.failedReason,
     completedAt: undefined,
     acknowledgement: result.passed ? undefined : existing.acknowledgement,
-    lastAccessedAt: Date.now(),
+    lastAccessedAt: now,
   };
   writeAll(all);
+
+  if (!result.passed) {
+    logAudit(
+      "Score Below Threshold",
+      username,
+      `Scored ${result.scorePercent}% on ${existing.moduleTitle} (attempt ${(existing.retakeCount ?? 0) + 1}).`,
+    );
+  }
 }
 
 /** Reset local progress when starting a fresh attempt (no resume). */

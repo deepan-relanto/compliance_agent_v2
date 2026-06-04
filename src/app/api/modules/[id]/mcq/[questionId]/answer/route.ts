@@ -1,4 +1,5 @@
 import { getSql } from "@/lib/db";
+import { normalizeMcqExplanation } from "@/lib/mcq-explanation";
 import { recordMcqAnswerDb } from "@/lib/services/progress-db-service";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -23,8 +24,11 @@ export async function POST(
 
     const sql = getSql();
     const rows = await sql`
-      SELECT correct_option_id, explanation FROM mcq_questions
-      WHERE id = ${questionId} AND module_id = ${moduleId}
+      SELECT q.correct_option_id, q.explanation, o.label AS correct_label
+      FROM mcq_questions q
+      LEFT JOIN mcq_options o
+        ON o.question_id = q.id AND o.id = q.correct_option_id
+      WHERE q.id = ${questionId} AND q.module_id = ${moduleId}
       LIMIT 1
     `;
 
@@ -36,10 +40,11 @@ export async function POST(
     }
 
     const correctOptionId = String(rows[0].correct_option_id ?? "").trim().toLowerCase();
-    const explanation =
-      typeof rows[0].explanation === "string" && rows[0].explanation.trim()
-        ? rows[0].explanation.trim()
-        : "This checks whether the learner applies the approved compliance process instead of taking an unsafe shortcut.";
+    const correctLabel = String(rows[0].correct_label ?? "").trim();
+    const explanation = normalizeMcqExplanation(
+      typeof rows[0].explanation === "string" ? rows[0].explanation : null,
+      correctLabel,
+    );
     const correct = optionId.trim().toLowerCase() === correctOptionId;
 
     if (userEmail && moduleTitle && batchId) {

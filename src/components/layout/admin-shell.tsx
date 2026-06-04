@@ -3,6 +3,7 @@
 import { RelantoLogo } from "@/components/brand/relanto-logo";
 import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/lib/auth-store";
+import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import {
   BarChart3,
@@ -16,7 +17,7 @@ import {
   Library,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 
 const navItems = [
   {
@@ -84,7 +85,6 @@ export function AdminShell({
 }: AdminShellProps) {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
-  const router = useRouter();
   const pathname = usePathname();
 
   return (
@@ -130,7 +130,7 @@ export function AdminShell({
               A
             </div>
             <p className="min-w-0 truncate text-xs font-medium text-zinc-700">
-              {user?.username}
+              {user?.displayName ?? user?.username}
             </p>
           </div>
           <Button
@@ -139,7 +139,7 @@ export function AdminShell({
             className="w-full justify-start text-zinc-600"
             onClick={() => {
               logout();
-              router.push("/login");
+              void signOut({ callbackUrl: "/login" });
             }}
           >
             <LogOut className="h-3.5 w-3.5" strokeWidth={1.75} />

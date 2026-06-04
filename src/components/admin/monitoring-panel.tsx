@@ -3,7 +3,10 @@
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { approveReviewRequest, rejectReviewRequest } from "@/lib/review-store";
+import {
+  approveReviewRequestApi,
+  rejectReviewRequestApi,
+} from "@/lib/review-api";
 import type { AssessmentProgress, ReviewRequest, AuditLogEntry } from "@/lib/types";
 import {
   ShieldAlert,
@@ -22,6 +25,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState, useCallback } from "react";
 import { useAuthStore } from "@/lib/auth-store";
+import { cn } from "@/lib/utils";
 
 export function MonitoringPanel() {
   const adminUser = useAuthStore((s) => s.user);
@@ -94,12 +98,12 @@ export function MonitoringPanel() {
     return (b.lastAccessedAt || 0) - (a.lastAccessedAt || 0);
   });
 
-  const handleApprove = (reqId: string) => {
+  const handleApprove = async (reqId: string) => {
+    setActionError("");
     try {
-      approveReviewRequest(reqId, adminName);
-      refreshData();
+      await approveReviewRequestApi(reqId, adminName);
+      await refreshData();
       setSelectedReview(null);
-      setActionError("");
     } catch (err: unknown) {
       setActionError(
         err instanceof Error ? err.message : "Failed to approve request.",
@@ -107,19 +111,19 @@ export function MonitoringPanel() {
     }
   };
 
-  const handleRejectSubmit = (e: React.FormEvent, reqId: string) => {
+  const handleRejectSubmit = async (e: React.FormEvent, reqId: string) => {
     e.preventDefault();
     if (!adminComment.trim()) {
       setActionError("Please provide an administrative comment/reason for rejection.");
       return;
     }
+    setActionError("");
     try {
-      rejectReviewRequest(reqId, adminName, adminComment.trim());
-      refreshData();
+      await rejectReviewRequestApi(reqId, adminName, adminComment.trim());
+      await refreshData();
       setSelectedReview(null);
       setAdminComment("");
       setShowRejectForm(false);
-      setActionError("");
     } catch (err: unknown) {
       setActionError(
         err instanceof Error ? err.message : "Failed to reject request.",
@@ -257,6 +261,7 @@ export function MonitoringPanel() {
                       <th className="px-6 py-3">Assessment</th>
                       <th className="px-6 py-3 text-center">Warnings</th>
                       <th className="px-6 py-3 text-center">Retakes Used</th>
+                      <th className="px-6 py-3 text-center">Score</th>
                       <th className="px-6 py-3 text-center">Acknowledged</th>
                       <th className="px-6 py-3">Status</th>
                       <th className="px-6 py-3 font-medium">Last Activity</th>
@@ -294,6 +299,22 @@ export function MonitoringPanel() {
                         </td>
                         <td className="px-6 py-4 align-middle text-center text-xs font-semibold text-zinc-700">
                           {record.retakeCount ?? 0} / 2
+                        </td>
+                        <td className="px-6 py-4 align-middle text-center">
+                          {record.scorePercent != null ? (
+                            <span
+                              className={cn(
+                                "inline-flex rounded px-1.5 py-0.5 font-mono text-[10px] font-bold tabular-nums",
+                                record.scorePercent >= 70
+                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200/50"
+                                  : "bg-red-50 text-red-700 border border-red-200/50",
+                              )}
+                            >
+                              {record.scorePercent}%
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-zinc-400">—</span>
+                          )}
                         </td>
                         <td className="px-6 py-4 align-middle text-center">
                           {record.acknowledgement?.accepted ? (
@@ -615,14 +636,60 @@ export function MonitoringPanel() {
                   </div>
                 </div>
                 {selectedRecord.acknowledgement && (
-                  <div className="pt-1.5 border-t border-zinc-200 mt-1.5 text-[9px] text-zinc-400 space-y-0.5 font-mono">
-                    <p>User ID: {selectedRecord.acknowledgement.userId}</p>
-                    <p>User Name: {selectedRecord.acknowledgement.userName}</p>
-                    <p>Assessment ID: {selectedRecord.acknowledgement.assessmentId}</p>
-                    <p>Assessment Name: {selectedRecord.acknowledgement.assessmentName}</p>
+                  <div className="pt-1.5 border-t border-zinc-200 mt-1.5 space-y-2">
+                    <div className="text-[9px] text-zinc-400 space-y-0.5 font-mono">
+                      <p>Signer: {selectedRecord.acknowledgement.userName}</p>
+                      {(selectedRecord.acknowledgement.signerEmail ||
+                        selectedRecord.acknowledgement.userId) && (
+                        <p>
+                          Account:{" "}
+                          {selectedRecord.acknowledgement.signerEmail ??
+                            selectedRecord.acknowledgement.userId}
+                        </p>
+                      )}
+                      <p>Assessment: {selectedRecord.acknowledgement.assessmentName}</p>
+                    </div>
+                    {selectedRecord.acknowledgement.digitalSignature && (
+                      <div className="rounded border border-zinc-200 bg-white p-2">
+                        <p className="text-[10px] font-medium text-zinc-500 mb-1">
+                          Electronic signature
+                        </p>
+                        <img
+                          src={selectedRecord.acknowledgement.digitalSignature}
+                          alt={`Signature: ${selectedRecord.acknowledgement.userName}`}
+                          className="max-h-24 w-auto"
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
+
+              {/* Score-based failure (below passing threshold) */}
+              {selectedRecord.scorePercent != null &&
+                selectedRecord.scorePercent < 70 &&
+                !selectedRecord.acknowledgement?.accepted && (
+                <div className="rounded-md bg-amber-50 border border-amber-100 p-3 text-xs">
+                  <p className="font-semibold text-amber-900 flex items-center gap-1">
+                    <XCircle className="h-3.5 w-3.5" />
+                    Below passing score ({selectedRecord.scorePercent}%)
+                  </p>
+                  <p className="text-amber-800 mt-0.5 leading-relaxed">
+                    {selectedRecord.failedReason ??
+                      selectedRecord.lastFailureReason ??
+                      "Learner did not reach the 70% threshold."}
+                  </p>
+                  {selectedRecord.lastFailureAt && (
+                    <p className="text-[9px] text-amber-600 mt-1 tabular-nums">
+                      Last recorded:{" "}
+                      {new Date(selectedRecord.lastFailureAt).toLocaleString()}
+                    </p>
+                  )}
+                  <p className="text-[9px] text-amber-700/90 mt-1">
+                    Retakes used: {selectedRecord.retakeCount ?? 0} / 2
+                  </p>
+                </div>
+              )}
 
               {/* Failure status explanation */}
               {(selectedRecord.status === "failed" || selectedRecord.status === "permanently_failed") && (
@@ -795,7 +862,7 @@ export function MonitoringPanel() {
                 <Button
                   size="sm"
                   className="bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-semibold"
-                  onClick={() => handleApprove(selectedReview.id)}
+                  onClick={() => void handleApprove(selectedReview.id)}
                 >
                   Approve Retake
                 </Button>
