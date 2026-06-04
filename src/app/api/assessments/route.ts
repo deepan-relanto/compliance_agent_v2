@@ -43,7 +43,12 @@ export async function POST(req: NextRequest) {
       contentHash = hashPdfFile(pdfUrl);
     } catch {
       return NextResponse.json(
-        { ok: false, message: "PDF file not found on server. Upload again." },
+        {
+          ok: false,
+          message: reuseModuleId
+            ? "The source PDF for this reusable content is missing. Re-upload the PDF before publishing it to more batches."
+            : "PDF file not found on server. Upload again.",
+        },
         { status: 400 },
       );
     }

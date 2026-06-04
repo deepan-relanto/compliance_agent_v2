@@ -12,6 +12,7 @@ export interface GeneratedMcq {
   slideIndex: number;
   prompt: string;
   correctOptionId: string;
+  explanation: string;
   options: { id: string; label: string }[];
 }
 
@@ -20,6 +21,7 @@ interface LlmMcqPayload {
     prompt?: string;
     options?: { id: string; label: string }[];
     correctOptionId?: string;
+    explanation?: string;
   }>;
 }
 
@@ -27,6 +29,7 @@ interface SingleLlmPayload {
   prompt?: string;
   options?: { id: string; label: string }[];
   correctOptionId?: string;
+  explanation?: string;
 }
 
 export function hashPdfFile(pdfUrl: string): string {
@@ -54,6 +57,67 @@ function parseJsonObject(raw: string): Record<string, unknown> | null {
   }
 }
 
+function textExcerpt(fullText: string, index: number): string {
+  const sentences = fullText
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.replace(/\s+/g, " ").trim())
+    .filter((sentence) => sentence.length >= 60);
+
+  const sentence =
+    sentences[index % Math.max(sentences.length, 1)] ??
+    fullText.replace(/\s+/g, " ").trim();
+
+  return sentence.length > 180 ? `${sentence.slice(0, 177).trim()}...` : sentence;
+}
+
+function generateLocalFallbackPool(
+  moduleTitle: string,
+  fullText: string,
+): GeneratedMcq[] {
+  const cleanText = fullText.replace(/\s+/g, " ").trim();
+  const context =
+    cleanText.length > 0
+      ? cleanText
+      : "the compliance material assigned in this training";
+
+  return Array.from({ length: TARGET_POOL_SIZE }, (_, index) => {
+    const excerpt = textExcerpt(context, index);
+    const questionNo = index + 1;
+
+    return {
+      id: `local-fallback-${questionNo}`,
+      slideIndex: questionNo * 3,
+      prompt:
+        `Based on "${moduleTitle}", what is the most appropriate learner action for this guidance: "${excerpt}"`,
+      correctOptionId: "a",
+      explanation:
+        "The safest response is to use the approved compliance process because it prevents unauthorized handling, policy exceptions, and avoidable risk.",
+      options: [
+        {
+          id: "a",
+          label:
+            "Apply the stated guidance and follow the required compliance process.",
+        },
+        {
+          id: "b",
+          label:
+            "Ignore the guidance unless a manager repeats it during the session.",
+        },
+        {
+          id: "c",
+          label:
+            "Share the information informally without checking the required controls.",
+        },
+        {
+          id: "d",
+          label:
+            "Skip the checkpoint because compliance topics are optional.",
+        },
+      ],
+    };
+  });
+}
+
 async function generateMcqPool(
   moduleTitle: string,
   fullText: string,
@@ -61,17 +125,25 @@ async function generateMcqPool(
   const userPrompt = buildMcqUserPrompt({ moduleTitle, fullText });
   let payload: LlmMcqPayload = {};
 
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    const raw = await nvidiaChatJson(MCQ_SYSTEM_PROMPT, userPrompt, {
-      maxTokens: 3000,
-      temperature: 0.2,
-    });
-    const parsed = parseJsonObject(raw);
-    if (parsed) {
-      payload = parsed as unknown as LlmMcqPayload;
-      break;
+  try {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const raw = await nvidiaChatJson(MCQ_SYSTEM_PROMPT, userPrompt, {
+        maxTokens: 3000,
+        temperature: 0.2,
+      });
+      const parsed = parseJsonObject(raw);
+      if (parsed) {
+        payload = parsed as unknown as LlmMcqPayload;
+        break;
+      }
+      console.warn(`[mcq-generation] Invalid pool JSON attempt ${attempt}:`, raw.slice(0, 200));
     }
-    console.error(`[mcq-generation] Invalid pool JSON attempt ${attempt}:`, raw.slice(0, 200));
+  } catch (err) {
+    console.warn(
+      "[mcq-generation] NVIDIA generation unavailable; using local fallback questions.",
+      err instanceof Error ? err.message : err,
+    );
+    return generateLocalFallbackPool(moduleTitle, fullText);
   }
 
   const questions = payload.questions ?? [];
@@ -95,6 +167,9 @@ async function generateMcqPool(
       slideIndex: (i + 1) * 3,
       prompt: q.prompt.trim(),
       correctOptionId: correct,
+      explanation:
+        q.explanation?.trim() ||
+        "The correct choice follows the approved compliance process and avoids unsafe shortcuts.",
       options: options.map((o) => ({
         id: String(o.id).trim(),
         label: String(o.label).trim(),
@@ -128,35 +203,47 @@ Return strict JSON:
     {"id":"c","label":"..."},
     {"id":"d","label":"..."}
   ],
-  "correctOptionId":"a|b|c|d"
+  "correctOptionId":"a|b|c|d",
+  "explanation":"One sentence explaining why the correct answer is right, without repeating the option text."
 }`;
 
   for (let attempt = 1; attempt <= 2; attempt++) {
-    const raw = await nvidiaChatJson(MCQ_SYSTEM_PROMPT, prompt, {
-      maxTokens: 800,
-      temperature: 0.2,
-    });
-    const parsed = parseJsonObject(raw) as SingleLlmPayload | null;
-    if (!parsed) continue;
-    const options = parsed.options ?? [];
-    const ids = new Set(options.map((o) => o.id));
-    const correct = parsed.correctOptionId;
-    if (
-      !parsed.prompt ||
-      options.length !== 4 ||
-      !correct ||
-      !ids.has(correct) ||
-      ids.size !== 4
-    ) {
-      continue;
+    try {
+      const raw = await nvidiaChatJson(MCQ_SYSTEM_PROMPT, prompt, {
+        maxTokens: 800,
+        temperature: 0.2,
+      });
+      const parsed = parseJsonObject(raw) as SingleLlmPayload | null;
+      if (!parsed) continue;
+      const options = parsed.options ?? [];
+      const ids = new Set(options.map((o) => o.id));
+      const correct = parsed.correctOptionId;
+      if (
+        !parsed.prompt ||
+        options.length !== 4 ||
+        !correct ||
+        !ids.has(correct) ||
+        ids.size !== 4
+      ) {
+        continue;
+      }
+      return {
+        id: `fallback-${index + 1}`,
+        slideIndex: (index + 1) * 3,
+        prompt: parsed.prompt.trim(),
+        correctOptionId: correct,
+        explanation:
+          parsed.explanation?.trim() ||
+          "The correct choice follows the approved compliance process and avoids unsafe shortcuts.",
+        options: options.map((o) => ({ id: String(o.id).trim(), label: String(o.label).trim() })),
+      };
+    } catch (err) {
+      console.warn(
+        "[mcq-generation] Single-question NVIDIA fallback unavailable.",
+        err instanceof Error ? err.message : err,
+      );
+      return null;
     }
-    return {
-      id: `fallback-${index + 1}`,
-      slideIndex: (index + 1) * 3,
-      prompt: parsed.prompt.trim(),
-      correctOptionId: correct,
-      options: options.map((o) => ({ id: String(o.id).trim(), label: String(o.label).trim() })),
-    };
   }
   return null;
 }
@@ -228,6 +315,17 @@ export async function generateAndStoreModuleMcqs(
       if (single) pool.push(single);
     }
   }
+  if (pool.length < TARGET_POOL_SIZE) {
+    const localFallback = generateLocalFallbackPool(moduleTitle, fullText);
+    for (const question of localFallback) {
+      if (pool.length >= TARGET_POOL_SIZE) break;
+      pool.push({
+        ...question,
+        id: `local-fill-${pool.length + 1}`,
+        slideIndex: (pool.length + 1) * 3,
+      });
+    }
+  }
   await sql`
     UPDATE training_modules
     SET mcq_generation_status = 'generating_60', updated_at = NOW()
@@ -239,8 +337,8 @@ export async function generateAndStoreModuleMcqs(
     const mcq = pool[i];
     const qId = `${moduleId}-pool-${i + 1}`;
     await sql`
-      INSERT INTO mcq_questions (id, module_id, slide_index, prompt, correct_option_id)
-      VALUES (${qId}, ${moduleId}, ${mcq.slideIndex}, ${mcq.prompt}, ${mcq.correctOptionId})
+      INSERT INTO mcq_questions (id, module_id, slide_index, prompt, correct_option_id, explanation)
+      VALUES (${qId}, ${moduleId}, ${mcq.slideIndex}, ${mcq.prompt}, ${mcq.correctOptionId}, ${mcq.explanation})
     `;
     for (const opt of mcq.options) {
       await sql`

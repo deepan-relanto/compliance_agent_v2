@@ -23,7 +23,7 @@ export async function POST(
 
     const sql = getSql();
     const rows = await sql`
-      SELECT correct_option_id FROM mcq_questions
+      SELECT correct_option_id, explanation FROM mcq_questions
       WHERE id = ${questionId} AND module_id = ${moduleId}
       LIMIT 1
     `;
@@ -36,6 +36,10 @@ export async function POST(
     }
 
     const correctOptionId = String(rows[0].correct_option_id ?? "").trim().toLowerCase();
+    const explanation =
+      typeof rows[0].explanation === "string" && rows[0].explanation.trim()
+        ? rows[0].explanation.trim()
+        : "This checks whether the learner applies the approved compliance process instead of taking an unsafe shortcut.";
     const correct = optionId.trim().toLowerCase() === correctOptionId;
 
     if (userEmail && moduleTitle && batchId) {
@@ -52,6 +56,7 @@ export async function POST(
         ok: true,
         correct,
         correctOptionId,
+        explanation,
         mcqCorrect: stats.mcqCorrect,
         mcqTotal: stats.mcqTotal,
       });
@@ -61,6 +66,7 @@ export async function POST(
       ok: true,
       correct,
       correctOptionId,
+      explanation,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Validation failed";

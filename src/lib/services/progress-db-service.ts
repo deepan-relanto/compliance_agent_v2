@@ -1,5 +1,5 @@
 import type { getSql } from "@/lib/db";
-import { PASS_THRESHOLD_PERCENT } from "@/lib/constants";
+import { PASS_THRESHOLD_PERCENT, isPassingScore } from "@/lib/constants";
 
 type Sql = ReturnType<typeof getSql>;
 
@@ -30,7 +30,7 @@ export function normalizeProgressStatus(
   const s = status ?? "not_started";
   if (s === "permanently_failed") return s;
   if (s === "completed" || completedAt) return "completed";
-  if (scorePercent != null && scorePercent > PASS_THRESHOLD_PERCENT) {
+  if (isPassingScore(scorePercent)) {
     return "completed";
   }
   if (s === "failed" && scorePercent != null) return "in_progress";
@@ -48,7 +48,7 @@ export async function reconcilePassedProgressStatus(sql: Sql): Promise<number> {
         last_accessed_at = COALESCE(last_accessed_at, updated_at, NOW()),
         updated_at = NOW()
     WHERE score_percent IS NOT NULL
-      AND score_percent > ${PASS_THRESHOLD_PERCENT}
+      AND score_percent >= ${PASS_THRESHOLD_PERCENT}
       AND status IN ('not_started', 'in_progress')
       AND acknowledgement IS NOT NULL
       AND (acknowledgement->>'accepted')::boolean IS TRUE
@@ -301,14 +301,14 @@ export async function finalizeAssessmentDb(
     row.mcq_answers,
     row.mcq_total,
   );
-  const passed = scorePercent > PASS_THRESHOLD_PERCENT;
+  const passed = isPassingScore(scorePercent);
   const canRetake = !passed;
 
   // Pass/fail score is saved here; status stays in_progress until acknowledgement (and feedback if required).
   const status = "in_progress";
   const failedReason = passed
     ? null
-    : `Score ${scorePercent}% is at or below the passing threshold (${PASS_THRESHOLD_PERCENT}%).`;
+    : `Score ${scorePercent}% is below the passing threshold (${PASS_THRESHOLD_PERCENT}%).`;
 
   if (passed) {
     await sql`
@@ -417,7 +417,7 @@ export async function startScoreRetakeDb(
   }
 
   const canRetake =
-    row.score_percent != null && row.score_percent <= PASS_THRESHOLD_PERCENT;
+    row.score_percent != null && row.score_percent < PASS_THRESHOLD_PERCENT;
 
   if (!canRetake && row.status === "completed") {
     return { ok: false, message: "You passed this assessment and cannot retake it." };

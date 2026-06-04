@@ -49,6 +49,13 @@ const sql = neon(url);
 await sql`ALTER TABLE training_modules ADD COLUMN IF NOT EXISTS content_hash TEXT`;
 await sql`ALTER TABLE training_modules ADD COLUMN IF NOT EXISTS mcq_generation_status TEXT NOT NULL DEFAULT 'pending'`;
 
+await sql`ALTER TABLE mcq_questions ADD COLUMN IF NOT EXISTS explanation TEXT`;
+await sql`
+  UPDATE mcq_questions
+  SET explanation = 'This checks whether the learner applies the approved compliance process instead of taking an unsafe shortcut.'
+  WHERE explanation IS NULL OR btrim(explanation) = ''
+`;
+
 await sql`ALTER TABLE assessment_progress ADD COLUMN IF NOT EXISTS mcq_correct INTEGER NOT NULL DEFAULT 0`;
 await sql`ALTER TABLE assessment_progress ADD COLUMN IF NOT EXISTS mcq_total INTEGER NOT NULL DEFAULT 0`;
 await sql`ALTER TABLE assessment_progress ADD COLUMN IF NOT EXISTS score_percent INTEGER`;

@@ -9,7 +9,7 @@
 
 import type { ModuleStatus, WarningHistoryEntry, AssessmentAcknowledgement } from "./types";
 import { logAudit } from "./audit-store";
-import { PASS_THRESHOLD_PERCENT } from "./constants";
+import { isPassingScore } from "./constants";
 
 export interface AssessmentProgress {
   username: string;
@@ -81,7 +81,7 @@ export function normalizeLearnerStatus(
 ): ModuleStatus {
   if (status === "permanently_failed" || status === "completed") return status;
   if (completedAt) return "completed";
-  if (scorePercent != null && scorePercent > PASS_THRESHOLD_PERCENT) return "completed";
+  if (isPassingScore(scorePercent)) return "completed";
   if (status === "failed" && scorePercent != null) return "in_progress";
   if (scorePercent != null && status === "not_started") return "in_progress";
   return status;

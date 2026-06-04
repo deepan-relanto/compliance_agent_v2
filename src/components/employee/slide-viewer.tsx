@@ -1,7 +1,12 @@
 "use client";
 
 import { FinalQaForm } from "@/components/employee/final-qa-form";
-import { McqModal } from "@/components/employee/mcq-modal";
+import { BadgeUnlock, type GamificationBadge } from "@/components/employee/badge-unlock";
+import { FinalResultScreen } from "@/components/employee/final-result-screen";
+import { MCQCheckpoint } from "@/components/employee/mcq-checkpoint";
+import { ProgressBar } from "@/components/employee/progress-bar";
+import { ScoreDisplay } from "@/components/employee/score-display";
+import { StreakCounter } from "@/components/employee/streak-counter";
 import { RelantoLogo } from "@/components/brand/relanto-logo";
 import { Button } from "@/components/ui/button";
 import { getMcqForSlide } from "@/lib/mock-data";
@@ -30,7 +35,7 @@ import {
   finalizeAssessmentScore,
   requestScoreRetake,
 } from "@/lib/progress-api";
-import { PASS_THRESHOLD_PERCENT } from "@/lib/constants";
+import { PASS_THRESHOLD_PERCENT, POINTS_PER_MCQ } from "@/lib/constants";
 import { submitReviewRequest, getAllReviewRequests } from "@/lib/review-store";
 import { updateUploadedAssessmentSlideCount } from "@/lib/mock-data";
 
@@ -54,6 +59,34 @@ const FALLBACK_MCQ: McqQuestion = {
     { id: "c", label: "Continue training (alternate 2)" },
     { id: "d", label: "Continue training (alternate 3)" },
   ],
+};
+
+const GAMIFICATION_BADGES: Record<string, GamificationBadge> = {
+  starter: {
+    id: "starter",
+    name: "Compliance Starter",
+    description: "First checkpoint completed.",
+  },
+  quickLearner: {
+    id: "quickLearner",
+    name: "Quick Learner",
+    description: "Reached 50% training progress.",
+  },
+  streakMaster: {
+    id: "streakMaster",
+    name: "Streak Master",
+    description: "Answered 3 checkpoint questions correctly in a row.",
+  },
+  champion: {
+    id: "champion",
+    name: "Compliance Champion",
+    description: "Scored 80% or above.",
+  },
+  perfect: {
+    id: "perfect",
+    name: "Perfect Performer",
+    description: "Scored 100%.",
+  },
 };
 
 function formatElapsed(ms: number): string {
@@ -145,6 +178,12 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
   const [retakeLoading, setRetakeLoading] = useState(false);
   const [quizOnlyIndex, setQuizOnlyIndex] = useState(0);
   const [forceQuizOnlyRetake, setForceQuizOnlyRetake] = useState(false);
+  const [answeredCount, setAnsweredCount] = useState(0);
+  const [correctAnswers, setCorrectAnswers] = useState(0);
+  const [currentStreak, setCurrentStreak] = useState(0);
+  const [bestStreak, setBestStreak] = useState(0);
+  const [earnedBadges, setEarnedBadges] = useState<GamificationBadge[]>([]);
+  const [badgePopup, setBadgePopup] = useState<GamificationBadge | null>(null);
 
   const loadIntegrityState = useCallback(() => {
     if (user?.username) {
@@ -172,6 +211,7 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
 
   const isExitingRef = useRef(false);
   const focusTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const earnedBadgeIdsRef = useRef<Set<string>>(new Set());
 
   const isLastSlide = slideIndex === totalSlides - 1;
   const gateIndex = useMemo(
@@ -180,6 +220,53 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
   );
   const quizOnlyMode = quizOnlyModeFromModule || forceQuizOnlyRetake;
   const activeQuiz = quizOnlyMode ? moduleMcqs[quizOnlyIndex] : null;
+  const totalQuestions = moduleMcqs.length;
+  const totalPossibleScore = totalQuestions * POINTS_PER_MCQ;
+  const liveScore = correctAnswers * POINTS_PER_MCQ;
+  const rawProgressPercent = useMemo(() => {
+    if (reviewOnlyMode) return 100;
+    if (quizOnlyMode) {
+      return totalQuestions > 0 ? (answeredCount / totalQuestions) * 100 : 0;
+    }
+    const totalSteps = totalSlides + totalQuestions;
+    const completedSteps = Math.min(totalSlides, slideIndex + 1) + answeredCount;
+    return totalSteps > 0 ? (completedSteps / totalSteps) * 100 : 0;
+  }, [
+    answeredCount,
+    quizOnlyMode,
+    reviewOnlyMode,
+    slideIndex,
+    totalQuestions,
+    totalSlides,
+  ]);
+  const progressPercent =
+    showScoreResult || showAcknowledgement || showFinalQa
+      ? 100
+      : Math.min(100, Math.max(0, Math.round(rawProgressPercent)));
+
+  const unlockBadge = useCallback((badgeId: keyof typeof GAMIFICATION_BADGES) => {
+    if (earnedBadgeIdsRef.current.has(badgeId)) return;
+    const badge = GAMIFICATION_BADGES[badgeId];
+    earnedBadgeIdsRef.current.add(badgeId);
+    setEarnedBadges((current) => [...current, badge]);
+    setBadgePopup(badge);
+  }, []);
+
+  const resetGamificationState = useCallback(() => {
+    setAnsweredCount(0);
+    setCorrectAnswers(0);
+    setCurrentStreak(0);
+    setBestStreak(0);
+    setEarnedBadges([]);
+    setBadgePopup(null);
+    earnedBadgeIdsRef.current = new Set();
+  }, []);
+
+  useEffect(() => {
+    if (!reviewOnlyMode && progressPercent >= 50) {
+      unlockBadge("quickLearner");
+    }
+  }, [progressPercent, reviewOnlyMode, unlockBadge]);
 
   const enterFullscreen = useCallback(async () => {
     try {
@@ -399,6 +486,8 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
 
     const result = await finalizeAssessmentScore(user.username, module.id);
     if (result) {
+      if (result.scorePercent >= 80) unlockBadge("champion");
+      if (result.scorePercent === 100) unlockBadge("perfect");
       setScoreResult(result);
       applyScoreResult(user.username, module.id, {
         scorePercent: result.scorePercent,
@@ -407,19 +496,17 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
         mcqTotal: result.mcqTotal,
         failedReason: result.passed
           ? undefined
-          : `Score ${result.scorePercent}% is at or below the passing threshold (${PASS_THRESHOLD_PERCENT}%).`,
+          : `Score ${result.scorePercent}% is below the passing threshold (${PASS_THRESHOLD_PERCENT}%).`,
       });
-      if (!result.passed) {
-        setMcqOpen(false);
-        setShowAcknowledgement(false);
-        setShowScoreResult(true);
-        return;
-      }
+      setMcqOpen(false);
+      setShowAcknowledgement(false);
+      setShowScoreResult(true);
+      return;
     }
     setMcqOpen(false);
     setIsAcknowledged(false);
     setShowAcknowledgement(true);
-  }, [reviewOnlyMode, user?.username, module.id]);
+  }, [reviewOnlyMode, user?.username, module.id, unlockBadge]);
 
   const tryAdvance = useCallback(() => {
     if (quizOnlyMode) {
@@ -486,12 +573,32 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
       setIsAcknowledged(false);
       setShowAcknowledgement(false);
       setForceQuizOnlyRetake(true);
+      resetGamificationState();
       if (moduleMcqs.length) {
         setGateMcq(moduleMcqs[0]);
         setMcqOpen(true);
       }
     }
   };
+
+  const handleCheckpointAnswered = useCallback((wasCorrect: boolean) => {
+    setAnsweredCount((count) => count + 1);
+    unlockBadge("starter");
+
+    if (wasCorrect) {
+      setCorrectAnswers((count) => count + 1);
+      setCurrentStreak((streak) => {
+        const nextStreak = streak + 1;
+        setBestStreak((best) => Math.max(best, nextStreak));
+        if (nextStreak >= 3) {
+          unlockBadge("streakMaster");
+        }
+        return nextStreak;
+      });
+    } else {
+      setCurrentStreak(0);
+    }
+  }, [unlockBadge]);
 
   const handleMcqContinue = () => {
     setMcqOpen(false);
@@ -621,6 +728,14 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
           )}
         </div>
       </header>
+
+      {!reviewOnlyMode && !showAcknowledgement && !showFinalQa && !showScoreResult && (
+        <div className="grid shrink-0 gap-3 border-b border-zinc-800 bg-zinc-950 px-4 py-3 sm:grid-cols-[minmax(160px,1fr)_auto_auto] sm:items-center">
+          <ProgressBar value={progressPercent} />
+          <ScoreDisplay correctAnswers={correctAnswers} totalQuestions={totalQuestions} />
+          <StreakCounter currentStreak={currentStreak} bestStreak={bestStreak} compact />
+        </div>
+      )}
 
       <div className="relative flex flex-1 flex-col overflow-hidden">
         <AnimatePresence mode="wait">
@@ -862,7 +977,7 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
         </footer>
       )}
 
-      <McqModal
+      <MCQCheckpoint
         moduleId={module.id}
         question={gateMcq}
         open={mcqOpen && !showAcknowledgement && !showFinalQa && !showScoreResult}
@@ -870,84 +985,39 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
         moduleTitle={module.title}
         batchId={user?.batchId}
         totalSlides={totalSlides}
+        currentStreak={currentStreak}
+        score={liveScore}
+        totalScore={totalPossibleScore}
+        checkpointNumber={quizOnlyMode ? quizOnlyIndex + 1 : answeredCount + 1}
+        totalCheckpoints={totalQuestions}
+        onAnswered={handleCheckpointAnswered}
         onContinue={handleMcqContinue}
       />
 
       {showScoreResult && scoreResult && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md overflow-hidden rounded-[var(--radius-card)] border border-zinc-200/90 bg-white text-center shadow-[var(--shadow-elevated)]">
-            <div
-              className={cn(
-                "px-8 pb-2 pt-8",
-                scoreResult.passed
-                  ? "bg-gradient-to-b from-emerald-50/80 to-white"
-                  : "bg-gradient-to-b from-red-50/60 to-white",
-              )}
-            >
-              <div
-                className={cn(
-                  "mx-auto flex h-16 w-16 items-center justify-center rounded-full border-4",
-                  scoreResult.passed
-                    ? "border-emerald-200 bg-emerald-50"
-                    : "border-red-200 bg-red-50",
-                )}
-              >
-                <span
-                  className={cn(
-                    "text-2xl font-bold tabular-nums",
-                    scoreResult.passed ? "text-emerald-700" : "text-red-600",
-                  )}
-                >
-                  {scoreResult.scorePercent}%
-                </span>
-              </div>
-              <h3 className="mt-5 text-xl font-semibold tracking-tight text-zinc-900">
-                {scoreResult.passed ? "Assessment passed" : "Below passing score"}
-              </h3>
-              <p className="mt-2 text-sm leading-relaxed text-zinc-600">
-                You answered {scoreResult.mcqCorrect} of {scoreResult.mcqTotal} checkpoint
-                questions correctly.
-              </p>
-              <p className="mt-1 text-xs text-zinc-500">
-                Passing score is above {PASS_THRESHOLD_PERCENT}%.
-              </p>
-            </div>
-            <div className="border-t border-zinc-100 px-8 py-6">
-              {scoreResult.canRetake ? (
-                <div className="flex flex-col gap-3">
-                  <Button
-                    variant="primary"
-                    className="w-full"
-                    disabled={retakeLoading}
-                    onClick={handleScoreRetake}
-                  >
-                    {retakeLoading ? "Preparing retake…" : "Retake quiz only"}
-                  </Button>
-                  <Link
-                    href="/dashboard"
-                    className="text-sm font-medium text-zinc-500 transition-colors hover:text-[#2e3192]"
-                    onClick={() => {
-                      isExitingRef.current = true;
-                    }}
-                  >
-                    Return to dashboard
-                  </Link>
-                </div>
-              ) : (
-                <Link
-                  href="/dashboard"
-                  className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-[#2e3192] text-sm font-semibold text-white transition-colors hover:bg-[#3d42a8]"
-                  onClick={() => {
-                    isExitingRef.current = true;
-                  }}
-                >
-                  Return to dashboard
-                </Link>
-              )}
-            </div>
-          </div>
-        </div>
+        <FinalResultScreen
+          moduleTitle={module.title}
+          scorePercent={scoreResult.scorePercent}
+          passed={scoreResult.passed}
+          mcqCorrect={scoreResult.mcqCorrect}
+          mcqTotal={scoreResult.mcqTotal}
+          bestStreak={bestStreak}
+          badges={earnedBadges}
+          canRetake={scoreResult.canRetake}
+          retakeLoading={retakeLoading}
+          onContinuePassed={() => {
+            setShowScoreResult(false);
+            setIsAcknowledged(false);
+            setShowAcknowledgement(true);
+          }}
+          onRetake={handleScoreRetake}
+          onDashboard={() => {
+            isExitingRef.current = true;
+          }}
+        />
       )}
+
+      <BadgeUnlock badge={badgePopup} onClose={() => setBadgePopup(null)} />
 
       {/* ── Warning Notification Modal overlay ────────────────────────────── */}
       {activeWarningReason && (

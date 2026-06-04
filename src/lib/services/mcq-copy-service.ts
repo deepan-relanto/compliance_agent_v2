@@ -9,7 +9,7 @@ export async function copyMcqsFromModule(
   targetModuleId: string,
 ): Promise<number> {
   const questions = await sql`
-    SELECT id, slide_index, prompt, correct_option_id
+    SELECT id, slide_index, prompt, correct_option_id, explanation
     FROM mcq_questions WHERE module_id = ${sourceModuleId}
     ORDER BY slide_index
   `;
@@ -28,8 +28,8 @@ export async function copyMcqsFromModule(
     const newQid = `${targetModuleId}-gate-${slideIndex}`;
 
     await sql`
-      INSERT INTO mcq_questions (id, module_id, slide_index, prompt, correct_option_id)
-      VALUES (${newQid}, ${targetModuleId}, ${slideIndex}, ${q.prompt}, ${q.correct_option_id})
+      INSERT INTO mcq_questions (id, module_id, slide_index, prompt, correct_option_id, explanation)
+      VALUES (${newQid}, ${targetModuleId}, ${slideIndex}, ${q.prompt}, ${q.correct_option_id}, ${q.explanation})
     `;
 
     const options = await sql`

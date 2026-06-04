@@ -1,5 +1,5 @@
 import { getSql } from "@/lib/db";
-import { PASS_THRESHOLD_PERCENT } from "@/lib/constants";
+import { PASS_THRESHOLD_PERCENT, isPassingScore } from "@/lib/constants";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -95,8 +95,7 @@ export async function GET(
     const hasAck = hasAcceptedAcknowledgement(progress?.acknowledgement);
     const isCompleted = progressStatus === "completed" && hasAck;
     const passedPendingAck =
-      scorePercent != null &&
-      scorePercent > PASS_THRESHOLD_PERCENT &&
+      isPassingScore(scorePercent) &&
       !hasAck &&
       progressStatus !== "permanently_failed";
     const retakeCount = Number(progress?.retake_count ?? 0);
@@ -104,7 +103,7 @@ export async function GET(
       !isCompleted &&
       !passedPendingAck &&
       progressStatus !== "permanently_failed" &&
-      ((scorePercent != null && scorePercent <= PASS_THRESHOLD_PERCENT) ||
+      ((scorePercent != null && scorePercent < PASS_THRESHOLD_PERCENT) ||
         (retakeCount > 0 &&
           scorePercent == null &&
           (progressStatus === "in_progress" || rawStatus === "failed")));

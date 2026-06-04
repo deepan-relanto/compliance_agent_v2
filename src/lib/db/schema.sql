@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS mcq_questions (
   slide_index       INTEGER NOT NULL,
   prompt            TEXT NOT NULL,
   correct_option_id TEXT NOT NULL,
+  explanation       TEXT,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

@@ -55,6 +55,7 @@ export function PdfPageViewer({
   const [containerWidth, setContainerWidth] = useState<number>(0);
   const [pageLoading, setPageLoading] = useState(true);
   const [docError, setDocError] = useState<string | null>(null);
+  const [fileReady, setFileReady] = useState(false);
 
   // Measure the available width so react-pdf fills the container
   useEffect(() => {
@@ -74,6 +75,44 @@ export function PdfPageViewer({
     setPageLoading(true);
   }, [pageNumber]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+
+    setFileReady(false);
+    setDocError(null);
+    setPageLoading(true);
+
+    const checkPdfAvailability = async () => {
+      try {
+        const res = await fetch(pdfUrl, {
+          method: "HEAD",
+          cache: "no-store",
+          signal: controller.signal,
+        });
+
+        if (!res.ok) {
+          setDocError(
+            "This PDF file is no longer available. Please contact your administrator to re-upload or reassign the training content.",
+          );
+          setPageLoading(false);
+          return;
+        }
+
+        setFileReady(true);
+      } catch {
+        if (controller.signal.aborted) return;
+        setDocError(
+          "Unable to reach the PDF file. Please check your connection and try again.",
+        );
+        setPageLoading(false);
+      }
+    };
+
+    void checkPdfAvailability();
+
+    return () => controller.abort();
+  }, [pdfUrl]);
+
   const handleDocLoadSuccess = useCallback(
     ({ numPages }: { numPages: number }) => {
       setDocError(null);
@@ -83,8 +122,9 @@ export function PdfPageViewer({
   );
 
   const handleDocLoadError = useCallback((err: Error) => {
-    console.error("[PdfPageViewer] Failed to load PDF document:", err);
+    console.warn("[PdfPageViewer] Failed to load PDF document:", err);
     setDocError("Unable to load the PDF. Please try again or contact support.");
+    setPageLoading(false);
   }, []);
 
   const handlePageRenderSuccess = useCallback(() => {
@@ -114,7 +154,7 @@ export function PdfPageViewer({
         </div>
       )}
 
-      {containerWidth > 0 && (
+      {containerWidth > 0 && fileReady && (
         <Document
           file={pdfUrl}
           onLoadSuccess={handleDocLoadSuccess}

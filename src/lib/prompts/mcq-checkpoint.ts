@@ -10,6 +10,7 @@ Rules:
 - Use practical workplace scenarios similar to policy-violation situations.
 - Each question must have exactly 4 options with ids: a, b, c, d.
 - Exactly one option is correct.
+- Include a one-sentence explanation that explains the reasoning, not a repeat of the option text.
 - No duplicate questions.
 - Avoid "all of the above" and "none of the above".
 - Keep language clear and professional.
@@ -25,7 +26,8 @@ Output must be valid JSON only (no markdown) with this shape:
         {"id":"c","label":"..."},
         {"id":"d","label":"..."}
       ],
-      "correctOptionId":"a"
+      "correctOptionId":"a",
+      "explanation":"..."
     }
   ]
 }`;
