@@ -1,5 +1,6 @@
 /**
- * Seed Relanto @relanto.ai users + two teams (Microsoft SSO — no password login).
+ * Seed Relanto @relanto.ai users + three teams (Microsoft SSO — no password login).
+ * Also removes legacy demo batches (batch_a/b/c).
  * Run: node scripts/db-seed-relanto-users.mjs
  */
 import { neon } from "@neondatabase/serverless";
@@ -56,12 +57,14 @@ const sql = neon(url);
 
 const SSO_PLACEHOLDER = "microsoft-sso";
 
+const LEGACY_BATCH_IDS = ["batch_a", "batch_b", "batch_c"];
+
 const batches = [
   {
     id: "relanto_team_1",
     label: "Relanto Team 1",
     description: "Compliance cohort — team one",
-    member_count: 5,
+    member_count: 6,
   },
   {
     id: "relanto_team_2",
@@ -69,13 +72,19 @@ const batches = [
     description: "Compliance cohort — team two",
     member_count: 3,
   },
+  {
+    id: "relanto_team_3",
+    label: "Relanto Team 3",
+    description: "Admin test cohort",
+    member_count: 1,
+  },
 ];
 
 const users = [
   {
-    email: "deepan.s@relanto.com",
+    email: "deepan.s@relanto.ai",
     role: "admin",
-    batch_id: null,
+    batch_id: "relanto_team_3",
   },
   {
     email: "gudivaka.vennela@relanto.ai",
@@ -103,6 +112,11 @@ const users = [
     batch_id: "relanto_team_1",
   },
   {
+    email: "vincent@relanto.ai",
+    role: "user",
+    batch_id: "relanto_team_1",
+  },
+  {
     email: "arushi.gupta@relanto.ai",
     role: "user",
     batch_id: "relanto_team_2",
@@ -119,7 +133,44 @@ const users = [
   },
 ];
 
-console.log("Seeding Relanto Microsoft SSO users…");
+console.log("Removing legacy demo batches…");
+
+for (const batchId of LEGACY_BATCH_IDS) {
+  const progress = await sql`
+    DELETE FROM assessment_progress WHERE batch_id = ${batchId} RETURNING id
+  `;
+  const links = await sql`
+    DELETE FROM module_batches WHERE batch_id = ${batchId} RETURNING module_id
+  `;
+  const sessions = await sql`
+    DELETE FROM live_sessions WHERE batch_id = ${batchId} RETURNING id
+  `;
+  const demoUsers = await sql`
+    DELETE FROM users WHERE batch_id = ${batchId} RETURNING email
+  `;
+  const removed = await sql`
+    DELETE FROM batches WHERE id = ${batchId} RETURNING id
+  `;
+  if (removed.length > 0) {
+    console.log(
+      `  · ${batchId}: batch + ${demoUsers.length} user(s), ${progress.length} progress row(s)`,
+    );
+  }
+}
+
+const relntoDemo = await sql`
+  DELETE FROM users WHERE email LIKE '%@relnto.com' RETURNING email
+`;
+if (relntoDemo.length > 0) {
+  console.log(`  · removed ${relntoDemo.length} @relnto.com demo user(s)`);
+}
+
+await sql`
+  UPDATE users SET batch_id = NULL, updated_at = NOW()
+  WHERE LOWER(email) = 'deepan.s@relanto.com'
+`;
+
+console.log("\nSeeding Relanto Microsoft SSO users…");
 
 for (const b of batches) {
   await sql`

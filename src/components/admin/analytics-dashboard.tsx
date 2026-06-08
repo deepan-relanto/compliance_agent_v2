@@ -134,12 +134,20 @@ function MetricBar({
 }
 
 function TimeSeriesChart({ points }: { points: TimeSeriesPoint[] }) {
+  const chartHeightPx = 144;
   const maxVal = Math.max(
     1,
     ...points.map((p) => p.completions + p.failures),
   );
   const totalCompletions = points.reduce((a, p) => a + p.completions, 0);
   const totalFailures = points.reduce((a, p) => a + p.failures, 0);
+  const isEmpty = totalCompletions === 0 && totalFailures === 0;
+
+  const formatDate = (dateKey: string) =>
+    new Date(dateKey + "T12:00:00").toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+    });
 
   return (
     <div>
@@ -154,47 +162,72 @@ function TimeSeriesChart({ points }: { points: TimeSeriesPoint[] }) {
         </span>
         <span className="text-zinc-400">Last 30 days</span>
       </div>
-      <div className="flex h-36 items-end gap-[3px] sm:gap-1">
-        {points.map((p) => {
-          const total = p.completions + p.failures;
-          const heightPct = (total / maxVal) * 100;
-          const dateLabel = new Date(p.date + "T12:00:00").toLocaleDateString(undefined, {
-            month: "short",
-            day: "numeric",
-          });
-          return (
-            <div
-              key={p.date}
-              className="group relative flex flex-1 flex-col items-center justify-end"
-              title={`${dateLabel}: ${p.completions} completed, ${p.failures} failed`}
-            >
+
+      <div
+        className="relative rounded-lg border border-zinc-100 bg-gradient-to-b from-zinc-50/80 to-white px-2 pt-3"
+        style={{ height: chartHeightPx + 28 }}
+      >
+        <div
+          className="pointer-events-none absolute inset-x-2 top-3 border-b border-dashed border-zinc-200"
+          style={{ bottom: 28 }}
+        />
+        <div
+          className="absolute inset-x-2 top-3 flex items-end gap-[2px] sm:gap-1"
+          style={{ height: chartHeightPx }}
+        >
+          {points.map((p) => {
+            const total = p.completions + p.failures;
+            const barHeight =
+              total > 0 ? Math.max(Math.round((total / maxVal) * chartHeightPx), 6) : 0;
+            const dateLabel = formatDate(p.date);
+            return (
               <div
-                className="flex w-full min-h-[2px] flex-col-reverse overflow-hidden rounded-t-sm bg-zinc-100 transition-all group-hover:opacity-90"
-                style={{ height: `${Math.max(heightPct, total > 0 ? 4 : 0)}%` }}
+                key={p.date}
+                className="group relative flex h-full flex-1 flex-col justify-end"
+                title={`${dateLabel}: ${p.completions} completed, ${p.failures} failed`}
               >
-                {p.completions > 0 && (
-                  <div
-                    className="w-full bg-emerald-500"
-                    style={{ flex: p.completions }}
-                  />
-                )}
-                {p.failures > 0 && (
-                  <div
-                    className="w-full bg-red-400"
-                    style={{ flex: p.failures }}
-                  />
-                )}
+                <div
+                  className={cn(
+                    "flex w-full flex-col-reverse overflow-hidden rounded-t transition-opacity group-hover:opacity-90",
+                    total === 0 ? "bg-transparent" : "bg-zinc-100",
+                  )}
+                  style={{ height: barHeight }}
+                >
+                  {p.completions > 0 && (
+                    <div
+                      className="w-full bg-emerald-500"
+                      style={{ flex: p.completions }}
+                    />
+                  )}
+                  {p.failures > 0 && (
+                    <div
+                      className="w-full bg-red-400"
+                      style={{ flex: p.failures }}
+                    />
+                  )}
+                </div>
               </div>
-              {(points.indexOf(p) % 5 === 0 || points.indexOf(p) === points.length - 1) && (
-                <span className="mt-1 hidden text-[9px] text-zinc-400 sm:block">
-                  {dateLabel.split(" ")[1]}
-                </span>
-              )}
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
+        <div className="absolute inset-x-2 bottom-1 flex gap-[2px] sm:gap-1">
+          {points.map((p, i) => {
+            const showLabel =
+              i === 0 || i === points.length - 1 || (i + 1) % 7 === 0;
+            return (
+              <div key={`${p.date}-label`} className="flex-1 text-center">
+                {showLabel ? (
+                  <span className="text-[10px] tabular-nums text-zinc-400">
+                    {formatDate(p.date)}
+                  </span>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
       </div>
-      {totalCompletions === 0 && totalFailures === 0 && (
+
+      {isEmpty && (
         <p className="mt-4 text-center text-sm text-zinc-500">
           No completions or failures in the last 30 days yet.
         </p>

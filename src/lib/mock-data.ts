@@ -1,22 +1,29 @@
 /** Placeholder AI insight copy per batch until Gemini reports are wired. */
 export function getAiReportForBatch(batchId: string): string {
-  if (batchId === "batch_a") {
-    return `## Batch A — Engineering
+  if (batchId === "relanto_team_1") {
+    return `## Relanto Team 1
 
 **Overall compliance** is tracked from live learner sessions. Upload assessments and assign them to this batch to begin collecting data.
 
 **Recommended:** Review integrity warnings in Monitoring after the first assessment week.`;
   }
-  if (batchId === "batch_b") {
-    return `## Batch B — Operations
+  if (batchId === "relanto_team_2") {
+    return `## Relanto Team 2
 
-**Field teams** often complete training on shared devices — remind learners to stay in fullscreen during proctored sessions.
-
-**Recommended:** Use Live Control when multiple active sessions appear on the monitoring dashboard.`;
-  }
-  return `## Batch C — Sales
-
-**Customer-facing teams** — keep modules short and scenario-based at each checkpoint.
+**Learner progress** — use batch analytics to compare pass rates and average scores across modules.
 
 **Recommended:** Export progress CSV before quarterly compliance reviews.`;
+  }
+  if (batchId === "relanto_team_3") {
+    return `## Relanto Team 3
+
+**Admin test cohort** — use this batch to validate new modules before rolling out to wider teams.
+
+**Recommended:** Run a full proctored session end-to-end before publishing to Team 1 or Team 2.`;
+  }
+  return `## Training batch
+
+**Compliance data** will appear here once learners complete assigned modules.
+
+**Recommended:** Assign published modules from the content library and monitor progress on the analytics dashboard.`;
 }
