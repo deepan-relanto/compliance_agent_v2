@@ -149,7 +149,6 @@ export async function loadModuleDetail(
 
   const mcqs = selected.map((q, index) => ({
     ...q,
-    id: `${moduleId}-gate-${index + 1}`,
     slideIndex: gateSlides[index] ?? q.slideIndex,
   }));
 
