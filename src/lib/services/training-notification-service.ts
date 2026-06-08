@@ -24,7 +24,7 @@ function invitationHtml(params: {
   <p style="font-size:12px;font-weight:700;letter-spacing:0.12em;color:#f15a24;text-transform:uppercase">Relanto Compliance Agent</p>
   <h1 style="font-size:22px;margin:8px 0 16px">Mandatory training assigned</h1>
   <p>Hi ${displayName},</p>
-  <p>Your administrator has assigned <strong>${moduleTitle}</strong> to your batch. This is a proctored compliance assessment (~${durationMinutes} min).</p>
+  <p>Your administrator has sent <strong>${moduleTitle}</strong> to you. This is a proctored compliance assessment (~${durationMinutes} min).</p>
   <p style="margin:28px 0">
     <a href="${loginUrl}" style="display:inline-block;background:#2e3192;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600">Start training</a>
   </p>
