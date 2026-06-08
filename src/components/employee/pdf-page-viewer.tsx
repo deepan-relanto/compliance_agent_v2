@@ -5,6 +5,7 @@
  * Loads the document once; only the page canvas updates when pageNumber changes.
  */
 
+import { clientPdfUrl } from "@/lib/pdf-url";
 import { Loader2, AlertTriangle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
@@ -109,7 +110,13 @@ export function PdfPageViewer({
     }
   }, []);
 
-  const file = useMemo(() => pdfUrl, [pdfUrl]);
+  const file = useMemo(
+    () => ({
+      url: clientPdfUrl(pdfUrl) ?? pdfUrl,
+      withCredentials: true as const,
+    }),
+    [pdfUrl],
+  );
   const docLoading = numPages === null && !docError;
   const canRenderPage =
     numPages != null && pageNumber >= 1 && pageNumber <= numPages && containerWidth > 0;

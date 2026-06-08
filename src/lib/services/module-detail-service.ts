@@ -1,5 +1,6 @@
 import { getSql } from "@/lib/db";
 import { PASS_THRESHOLD_PERCENT, isPassingScore } from "@/lib/constants";
+import { clientPdfUrl } from "@/lib/pdf-url";
 
 type Sql = ReturnType<typeof getSql>;
 
@@ -157,7 +158,7 @@ export async function loadModuleDetail(
       durationMinutes: row.duration_minutes as number,
       status: progressStatus,
       batchIds: batchRows.map((b) => b.batch_id as string),
-      pdfUrl: (row.pdf_url as string) || undefined,
+      pdfUrl: clientPdfUrl(row.pdf_url as string),
       contentType: (row.content_type as string) ?? "text",
       createdAt: row.created_at ? new Date(row.created_at as string).getTime() : undefined,
       feedbackRequired: Boolean(row.feedback_required),

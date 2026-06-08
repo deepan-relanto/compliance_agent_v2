@@ -1,4 +1,5 @@
 import { getSql } from "@/lib/db";
+import { clientPdfUrl } from "@/lib/pdf-url";
 import { listProgressForUser } from "@/lib/services/progress-db-service";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -13,7 +14,7 @@ function mapModule(row: Record<string, unknown>, batchIds: string[]) {
     durationMinutes: row.duration_minutes as number,
     status: "not_started" as const,
     batchIds,
-    pdfUrl: (row.pdf_url as string) || undefined,
+    pdfUrl: clientPdfUrl(row.pdf_url as string),
     contentType: (row.content_type as "text" | "pdf") || "text",
     createdAt: row.created_at
       ? new Date(row.created_at as string).getTime()
