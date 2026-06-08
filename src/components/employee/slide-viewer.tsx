@@ -599,9 +599,13 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
   // Assessments are one-time: do not persist slide position for resume.
 
   const openGate = useCallback(() => {
+    const gateSlot = Math.min(
+      Math.max(gateIndex, 0),
+      Math.max(moduleMcqs.length - 1, 0),
+    );
     const mcq =
+      moduleMcqs[gateSlot] ??
       moduleMcqs.find((q) => q.slideIndex === slideIndex + 1) ??
-      moduleMcqs[gateIndex % Math.max(moduleMcqs.length, 1)] ??
       FALLBACK_MCQ;
     setGateMcq(mcq);
     setMcqOpen(true);
@@ -700,11 +704,15 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
     }
     window.close();
     window.setTimeout(() => {
-      window.location.replace("/submitted");
-    }, 400);
+      window.location.replace("/submitted?done=1");
+    }, 300);
   }, []);
 
   const finishTrainingCompletion = useCallback(() => {
+    setShowFinalQa(false);
+    setShowAcknowledgement(false);
+    setShowScoreResult(false);
+    setMcqOpen(false);
     if (user?.username) {
       markCompleted(user.username, module.id);
       void syncProgressComplete(user.username, module.id);
@@ -930,7 +938,7 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
   }
 
   return (
-    <div className="training-interactive fixed inset-0 z-30 flex flex-col bg-zinc-900">
+    <div className="training-interactive fixed inset-0 z-30 flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-zinc-900">
       <header className="relative z-[70] flex h-12 shrink-0 items-center justify-between border-b border-zinc-800 bg-zinc-950 px-4 text-white">
         <RelantoLogo size="sm" showTagline={false} />
         <span className="hidden max-w-[280px] truncate text-sm font-semibold tracking-tight text-white sm:inline">
@@ -1281,7 +1289,12 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
         variant={completionNotice?.variant ?? "success"}
         autoCloseAfterMs={completionNotice?.autoCloseAfterMs}
         showAcknowledgeButton={completionNotice?.showAcknowledgeButton ?? true}
-        onAcknowledge={() => completionNotice?.onAcknowledge()}
+        onAcknowledge={
+          completionNotice?.onAcknowledge ??
+          (() => {
+            /* noop */
+          })
+        }
         onDismiss={
           completionNotice?.variant === "info"
             ? () => setCompletionNotice(null)

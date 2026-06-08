@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
 import { CheckCircle2, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export interface CompletionNoticeProps {
   open: boolean;
@@ -34,6 +34,11 @@ export function CompletionNotice({
 }: CompletionNoticeProps) {
   const isSuccess = variant === "success";
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+  const onAcknowledgeRef = useRef(onAcknowledge);
+
+  useEffect(() => {
+    onAcknowledgeRef.current = onAcknowledge;
+  }, [onAcknowledge]);
 
   useEffect(() => {
     if (!open || !autoCloseAfterMs) {
@@ -48,13 +53,13 @@ export function CompletionNotice({
     };
     tick();
     const interval = window.setInterval(tick, 250);
-    const timeout = window.setTimeout(() => onAcknowledge(), autoCloseAfterMs);
+    const timeout = window.setTimeout(() => onAcknowledgeRef.current(), autoCloseAfterMs);
 
     return () => {
       window.clearInterval(interval);
       window.clearTimeout(timeout);
     };
-  }, [open, autoCloseAfterMs, onAcknowledge]);
+  }, [open, autoCloseAfterMs]);
 
   return (
     <AnimatePresence>

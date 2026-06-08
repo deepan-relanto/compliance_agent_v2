@@ -19,6 +19,12 @@ export const metadata: Metadata = {
     "Micro-LMS for mandatory training compliance — interactive gates, live admin control, AI insights.",
 };
 
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover" as const,
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{

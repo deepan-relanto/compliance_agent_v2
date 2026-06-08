@@ -61,7 +61,7 @@ const batches = [
     id: "relanto_team_1",
     label: "Relanto Team 1",
     description: "Compliance cohort — team one",
-    member_count: 3,
+    member_count: 5,
   },
   {
     id: "relanto_team_2",
@@ -89,6 +89,16 @@ const users = [
   },
   {
     email: "shreyas.shankar@relanto.ai",
+    role: "user",
+    batch_id: "relanto_team_1",
+  },
+  {
+    email: "manisha.nair@relanto.ai",
+    role: "user",
+    batch_id: "relanto_team_1",
+  },
+  {
+    email: "sharmila.r@relanto.ai",
     role: "user",
     batch_id: "relanto_team_1",
   },

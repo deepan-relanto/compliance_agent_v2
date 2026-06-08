@@ -1,6 +1,7 @@
 import { getSql } from "@/lib/db";
 import { PASS_THRESHOLD_PERCENT, isPassingScore } from "@/lib/constants";
 import { clientPdfUrl } from "@/lib/pdf-url";
+import { dedupeMcqsByPrompt, gateCountForSlides } from "@/lib/mcq-dedupe";
 
 type Sql = ReturnType<typeof getSql>;
 
@@ -133,19 +134,22 @@ export async function loadModuleDetail(
     gateSlides.push(slide);
   }
 
+  const uniquePool = dedupeMcqsByPrompt(mcqPool);
+  const gateTotal = gateCountForSlides(slideCount);
   const needed =
     viewerMode === "quiz_only_retake"
-      ? mcqPool.length
-      : gateSlides.length > 0
-        ? gateSlides.length
-        : mcqPool.length;
+      ? uniquePool.length
+      : gateTotal > 0
+        ? Math.min(gateTotal, uniquePool.length)
+        : uniquePool.length;
   const randomized = userEmail
-    ? seededShuffle(mcqPool, `${moduleId}:${userEmail}`)
-    : mcqPool;
+    ? seededShuffle(uniquePool, `${moduleId}:${userEmail}:v2`)
+    : uniquePool;
   const selected = randomized.slice(0, Math.max(needed, 1));
 
   const mcqs = selected.map((q, index) => ({
     ...q,
+    id: `${moduleId}-gate-${index + 1}`,
     slideIndex: gateSlides[index] ?? q.slideIndex,
   }));
 

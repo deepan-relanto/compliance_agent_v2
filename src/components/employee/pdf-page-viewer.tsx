@@ -133,7 +133,7 @@ export function PdfPageViewer({
   return (
     <div
       ref={containerRef}
-      className="relative flex min-h-[320px] w-full items-center justify-center overflow-auto py-2"
+      className="relative flex min-h-[180px] w-full max-w-full items-center justify-center overflow-auto py-1 sm:min-h-[320px] sm:py-2"
     >
       {(docLoading || pageRendering) && (
         <div

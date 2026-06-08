@@ -5,8 +5,12 @@ import { normalizeMcqExplanation } from "@/lib/mcq-explanation";
 import { MCQ_SYSTEM_PROMPT, buildMcqUserPrompt } from "@/lib/prompts/mcq-checkpoint";
 import { extractPdfPagesText } from "@/lib/services/pdf-text-service";
 import { nvidiaChatJson } from "@/lib/services/nvidia-llm";
+import {
+  gateCountForSlides,
+  normalizeMcqPrompt,
+} from "@/lib/mcq-dedupe";
 
-const TARGET_POOL_SIZE = 10;
+const MIN_POOL_SIZE = 10;
 
 export interface GeneratedMcq {
   id: string;
@@ -175,10 +179,11 @@ function generateLocalFallbackPool(
   moduleTitle: string,
   fullText: string,
   pages: string[] = [],
+  targetPoolSize = MIN_POOL_SIZE,
 ): GeneratedMcq[] {
   const passages = extractContentPassages(fullText, pages);
 
-  return Array.from({ length: TARGET_POOL_SIZE }, (_, index) => {
+  return Array.from({ length: targetPoolSize }, (_, index) => {
     const scenario = FALLBACK_SCENARIOS[index % FALLBACK_SCENARIOS.length];
     const topic = passages[index % Math.max(passages.length, 1)];
     const questionNo = index + 1;
@@ -197,6 +202,7 @@ function generateLocalFallbackPool(
 async function generateMcqPool(
   moduleTitle: string,
   fullText: string,
+  targetPoolSize: number,
 ): Promise<GeneratedMcq[]> {
   const userPrompt = buildMcqUserPrompt({ moduleTitle, fullText });
   let payload: LlmMcqPayload = {};
@@ -219,11 +225,12 @@ async function generateMcqPool(
       "[mcq-generation] NVIDIA generation unavailable; using local fallback questions.",
       err instanceof Error ? err.message : err,
     );
-    return generateLocalFallbackPool(moduleTitle, fullText, []);
+    return generateLocalFallbackPool(moduleTitle, fullText, [], targetPoolSize);
   }
 
   const questions = payload.questions ?? [];
   const accepted: GeneratedMcq[] = [];
+  const seenPrompts = new Set<string>();
   for (let i = 0; i < questions.length; i++) {
     const q = questions[i];
     const options = q.options ?? [];
@@ -238,6 +245,11 @@ async function generateMcqPool(
     ) {
       continue;
     }
+    const promptKey = normalizeMcqPrompt(q.prompt);
+    if (!promptKey || seenPrompts.has(promptKey)) {
+      continue;
+    }
+    seenPrompts.add(promptKey);
     const normalizedOptions = options.map((o) => ({
       id: String(o.id).trim(),
       label: String(o.label).trim(),
@@ -253,7 +265,7 @@ async function generateMcqPool(
       explanation: normalizeMcqExplanation(q.explanation, correctLabel),
       options: normalizedOptions,
     });
-    if (accepted.length >= TARGET_POOL_SIZE) break;
+    if (accepted.length >= targetPoolSize) break;
   }
   return accepted;
 }
@@ -346,7 +358,9 @@ export async function generateAndStoreModuleMcqs(
     force?: boolean;
   },
 ): Promise<{ generated: number; skipped: boolean }> {
-  const { moduleId, moduleTitle, pdfUrl, contentHash, force = false } = params;
+  const { moduleId, moduleTitle, pdfUrl, contentHash, pageCount, force = false } =
+    params;
+  const targetPoolSize = Math.max(MIN_POOL_SIZE, gateCountForSlides(pageCount));
 
   const existing = await sql`
     SELECT content_hash, mcq_generation_status
@@ -393,17 +407,22 @@ export async function generateAndStoreModuleMcqs(
     WHERE id = ${moduleId}
   `;
 
-  const pool = await generateMcqPool(moduleTitle, fullText);
-  if (pool.length < TARGET_POOL_SIZE) {
-    for (let i = pool.length; i < TARGET_POOL_SIZE; i++) {
+  const pool = await generateMcqPool(moduleTitle, fullText, targetPoolSize);
+  if (pool.length < targetPoolSize) {
+    for (let i = pool.length; i < targetPoolSize; i++) {
       const single = await generateSingleFallback(moduleTitle, fullText, i);
       if (single) pool.push(single);
     }
   }
-  if (pool.length < TARGET_POOL_SIZE) {
-    const localFallback = generateLocalFallbackPool(moduleTitle, fullText, pages);
+  if (pool.length < targetPoolSize) {
+    const localFallback = generateLocalFallbackPool(
+      moduleTitle,
+      fullText,
+      pages,
+      targetPoolSize,
+    );
     for (const question of localFallback) {
-      if (pool.length >= TARGET_POOL_SIZE) break;
+      if (pool.length >= targetPoolSize) break;
       pool.push({
         ...question,
         id: `local-fill-${pool.length + 1}`,
