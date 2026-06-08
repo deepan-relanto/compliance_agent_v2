@@ -1,16 +1,9 @@
-import fs from "fs";
-import path from "path";
+import { getPdfBuffer } from "@/lib/services/pdf-storage-service";
 
-/** Extract plain text per page from a PDF in public/uploads. */
+/** Extract plain text per page from a stored PDF (disk or database). */
 export async function extractPdfPagesText(pdfUrl: string): Promise<string[]> {
-  const relative = pdfUrl.replace(/^\//, "");
-  const filePath = path.join(process.cwd(), "public", relative);
-
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`PDF not found: ${filePath}`);
-  }
-
-  const data = new Uint8Array(fs.readFileSync(filePath));
+  const buffer = await getPdfBuffer(pdfUrl);
+  const data = new Uint8Array(buffer);
 
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const doc = await pdfjs

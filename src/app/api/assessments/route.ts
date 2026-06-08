@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
     const resolvedSlideCount = slideCount ?? 1;
 
     try {
-      contentHash = hashPdfFile(pdfUrl);
+      contentHash = await hashPdfFile(pdfUrl);
     } catch {
       return NextResponse.json(
         {

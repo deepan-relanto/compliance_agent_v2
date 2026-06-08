@@ -1,6 +1,4 @@
 import { createHash } from "crypto";
-import fs from "fs";
-import path from "path";
 import { normalizeMcqExplanation } from "@/lib/mcq-explanation";
 import { MCQ_SYSTEM_PROMPT, buildMcqUserPrompt } from "@/lib/prompts/mcq-checkpoint";
 import { extractPdfPagesText } from "@/lib/services/pdf-text-service";
@@ -37,10 +35,9 @@ interface SingleLlmPayload {
   explanation?: string;
 }
 
-export function hashPdfFile(pdfUrl: string): string {
-  const relative = pdfUrl.replace(/^\//, "");
-  const filePath = path.join(process.cwd(), "public", relative);
-  const buf = fs.readFileSync(filePath);
+export async function hashPdfFile(pdfUrl: string): Promise<string> {
+  const { getPdfBuffer } = await import("@/lib/services/pdf-storage-service");
+  const buf = await getPdfBuffer(pdfUrl);
   return createHash("sha256").update(buf).digest("hex");
 }
 
@@ -204,7 +201,11 @@ async function generateMcqPool(
   fullText: string,
   targetPoolSize: number,
 ): Promise<GeneratedMcq[]> {
-  const userPrompt = buildMcqUserPrompt({ moduleTitle, fullText });
+  const userPrompt = buildMcqUserPrompt({
+    moduleTitle,
+    fullText,
+    questionCount: targetPoolSize,
+  });
   let payload: LlmMcqPayload = {};
 
   try {
@@ -275,26 +276,27 @@ async function generateSingleFallback(
   fullText: string,
   index: number,
 ): Promise<GeneratedMcq | null> {
-  const prompt = `Create exactly ONE scenario question for "${moduleTitle}" using this content.
+  const prompt = `Create exactly ONE realistic workplace SCENARIO question for "${moduleTitle}".
 
-Question number target: ${index + 1}
+Question number: ${index + 1}
+
+Requirements:
+- Name a specific employee facing a concrete dilemma grounded in the training content.
+- 3–5 sentences setting the scene, ending with "What should they do?"
+- 4 options (a–d), one correct per policy.
+- Explanation: two specific sentences (why correct is right; why wrong options are risky).
 
 Content:
 ---
 ${fullText.slice(0, 38000)}
 ---
 
-Return strict JSON:
+Return strict JSON only:
 {
   "prompt":"...",
-  "options":[
-    {"id":"a","label":"..."},
-    {"id":"b","label":"..."},
-    {"id":"c","label":"..."},
-    {"id":"d","label":"..."}
-  ],
-  "correctOptionId":"a|b|c|d",
-  "explanation":"Exactly two short sentences: why the correct answer is right, then why the wrong options are unsafe."
+  "options":[{"id":"a","label":"..."},{"id":"b","label":"..."},{"id":"c","label":"..."},{"id":"d","label":"..."}],
+  "correctOptionId":"a",
+  "explanation":"..."
 }`;
 
   for (let attempt = 1; attempt <= 2; attempt++) {

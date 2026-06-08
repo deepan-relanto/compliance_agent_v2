@@ -1,19 +1,8 @@
 import { getSql } from "@/lib/db";
 import { NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
+import { pdfExists } from "@/lib/services/pdf-storage-service";
 
 export const dynamic = "force-dynamic";
-
-function publicFileExists(publicUrl: string | null | undefined): boolean {
-  if (!publicUrl) return false;
-  const relative = publicUrl.replace(/^\//, "");
-  const publicRoot = path.join(process.cwd(), "public");
-  const filePath = path.normalize(path.join(publicRoot, relative));
-
-  if (!filePath.startsWith(publicRoot)) return false;
-  return fs.existsSync(filePath);
-}
 
 /** GET — published modules available for reuse (with MCQ counts) */
 export async function GET() {
@@ -50,27 +39,29 @@ export async function GET() {
       });
     }
 
-    const library = modules.map((m) => {
-      const pdfUrl = m.pdf_url as string;
-      const pdfAvailable = publicFileExists(pdfUrl);
+    const library = await Promise.all(
+      modules.map(async (m) => {
+        const pdfUrl = m.pdf_url as string;
+        const pdfAvailable = await pdfExists(pdfUrl);
 
-      return {
-        id: m.id as string,
-        title: m.title as string,
-        description: m.description as string,
-        slideCount: Number(m.slide_count),
-        pdfUrl,
-        contentHash: m.content_hash as string | null,
-        mcqGenerationStatus: m.mcq_generation_status as string,
-        mcqCount: Number(m.mcq_count ?? 0),
-        createdAt: m.created_at,
-        batches: batchesByModule[m.id as string] ?? [],
-        canReuse:
-          pdfAvailable &&
-          Number(m.mcq_count ?? 0) > 0 &&
-          m.mcq_generation_status === "completed",
-      };
-    });
+        return {
+          id: m.id as string,
+          title: m.title as string,
+          description: m.description as string,
+          slideCount: Number(m.slide_count),
+          pdfUrl,
+          contentHash: m.content_hash as string | null,
+          mcqGenerationStatus: m.mcq_generation_status as string,
+          mcqCount: Number(m.mcq_count ?? 0),
+          createdAt: m.created_at,
+          batches: batchesByModule[m.id as string] ?? [],
+          canReuse:
+            pdfAvailable &&
+            Number(m.mcq_count ?? 0) > 0 &&
+            m.mcq_generation_status === "completed",
+        };
+      }),
+    );
 
     return NextResponse.json({ ok: true, library });
   } catch (err) {

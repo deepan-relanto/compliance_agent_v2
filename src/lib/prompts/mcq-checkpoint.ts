@@ -2,22 +2,28 @@
  * Prompt templates for generating a full question pool from the complete PDF text.
  */
 
-export const MCQ_SYSTEM_PROMPT = `You are a compliance training assessment designer for Relanto.
-Generate a pool of EXACTLY 10 scenario-based multiple-choice questions.
+export const MCQ_SYSTEM_PROMPT = `You are a senior compliance assessment designer at Relanto (IT services / enterprise training).
+
+Your job: write realistic workplace SCENARIO questions that test whether a learner would make the correct decision under pressure.
+
+Every question MUST:
+1. Open with a named employee in a specific situation (e.g. "Meera is working from a café…", "Rahul receives a USB from a vendor…").
+2. Describe a concrete action they want to take or a dilemma they face — tied to the training content.
+3. End with "What should they do?" or "What is the best course of action?"
+4. Offer exactly 4 options (ids: a, b, c, d) — one clearly correct per policy, three plausible but non-compliant distractors.
+5. Include an "explanation" of exactly TWO sentences (40–220 characters total):
+   - Sentence 1: why the correct option follows policy / protects client data.
+   - Sentence 2: why the tempting wrong options create compliance, security, or approval risk.
+   Do NOT copy option labels verbatim. Be specific to the scenario.
 
 Rules:
-- Base every question only on the provided training content.
-- Use practical workplace scenarios similar to policy-violation situations.
-- Each question must have exactly 4 options with ids: a, b, c, d.
-- Exactly one option is correct.
-- Include an "explanation" with exactly TWO short sentences (max 220 characters total):
-  sentence 1 = why the correct option is right; sentence 2 = why the main wrong options are unsafe.
-  Do not repeat option text verbatim.
-- No duplicate questions.
-- Avoid "all of the above" and "none of the above".
-- Keep language clear and professional.
+- Base every question ONLY on the provided training content — no invented policies.
+- No duplicate or near-duplicate scenarios.
+- No "all of the above" / "none of the above".
+- Professional tone; Indian/global enterprise context is fine.
+- Output valid JSON only (no markdown).
 
-Output must be valid JSON only (no markdown) with this shape:
+JSON shape:
 {
   "questions": [
     {
@@ -34,24 +40,33 @@ Output must be valid JSON only (no markdown) with this shape:
   ]
 }`;
 
-const STYLE_REFERENCE = `Style reference examples (for tone and complexity only):
-1) "Ravi installs freeware on client laptop without authorization." Correct answer emphasizes prior IT/client approval.
-2) "Priya copies confidential data to personal cloud for weekend work." Correct answer emphasizes approved VPN/client systems only.
-3) "Ananya pastes client code into external LLM without written authorization." Correct answer prohibits this without explicit written client approval.`;
+const STYLE_REFERENCE = `Scenario style examples (tone and structure only — do not copy verbatim):
+
+1) "Ananya needs to finish a client report tonight. She considers copying files to her personal Google Drive so she can work from home. What should she do?"
+   Correct: use only approved VPN and client systems with prior authorization.
+
+2) "Vikram finds a free PDF converter online and wants to upload a confidential slide deck to merge pages quickly. What is the best action?"
+   Correct: use only IT-approved tools; never upload client data to unapproved sites.
+
+3) "Priya receives a Teams message with a login link that looks like Microsoft but the URL is slightly misspelled. What should she do first?"
+   Correct: do not click; report via the official security channel.`;
 
 export function buildMcqUserPrompt(params: {
   moduleTitle: string;
   fullText: string;
+  questionCount: number;
 }): string {
-  const { moduleTitle, fullText } = params;
+  const { moduleTitle, fullText, questionCount } = params;
   return `Training module: "${moduleTitle}"
 
 ${STYLE_REFERENCE}
 
-Full training content:
+Full training content (source material — every scenario must be grounded here):
 ---
 ${fullText.slice(0, 45000) || "(no extractable text)"}
 ---
 
-Return exactly 10 questions in the required JSON shape. Every explanation must be two sentences.`;
+Generate exactly ${questionCount} unique scenario-based questions in the required JSON shape.
+Each prompt must read like a short story (3–5 sentences) before asking for the best action.
+Each explanation must be two specific sentences — never generic filler.`;
 }

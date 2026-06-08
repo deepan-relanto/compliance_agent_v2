@@ -70,7 +70,7 @@ export async function POST(
       content_hash: string | null;
     };
 
-    const contentHash = row.content_hash ?? hashPdfFile(row.pdf_url);
+    const contentHash = row.content_hash ?? (await hashPdfFile(row.pdf_url));
 
     await sql`
       UPDATE training_modules

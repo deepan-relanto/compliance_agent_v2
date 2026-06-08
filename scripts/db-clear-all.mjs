@@ -52,6 +52,7 @@ const sql = neon(url);
 console.log("🧹 Clearing ALL app data (keeping users + batches)…\n");
 
 const tables = [
+  ["training_notifications", await sql`DELETE FROM training_notifications RETURNING id`],
   ["assessment_progress", await sql`DELETE FROM assessment_progress RETURNING id`],
   ["feedback_entries", await sql`DELETE FROM feedback_entries RETURNING id`],
   ["review_requests", await sql`DELETE FROM review_requests RETURNING id`],
@@ -61,6 +62,7 @@ const tables = [
   ["mcq_questions", await sql`DELETE FROM mcq_questions RETURNING id`],
   ["module_batches", await sql`DELETE FROM module_batches RETURNING module_id`],
   ["upload_files", await sql`DELETE FROM upload_files RETURNING id`],
+  ["pdf_storage", await sql`DELETE FROM pdf_storage RETURNING filename`],
   ["training_modules", await sql`DELETE FROM training_modules RETURNING id`],
 ];
 

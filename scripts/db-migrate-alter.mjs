@@ -76,4 +76,17 @@ await sql`
 `;
 await sql`CREATE INDEX IF NOT EXISTS idx_training_notifications_module ON training_notifications(module_id)`;
 
+await sql`
+  CREATE TABLE IF NOT EXISTS pdf_storage (
+    filename      TEXT PRIMARY KEY,
+    pdf_url       TEXT NOT NULL,
+    data          BYTEA NOT NULL,
+    content_hash  TEXT,
+    size_bytes    BIGINT,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )
+`;
+await sql`CREATE INDEX IF NOT EXISTS idx_pdf_storage_url ON pdf_storage(pdf_url)`;
+
 console.log("✅ Schema alterations applied.");

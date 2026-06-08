@@ -49,15 +49,24 @@ const sql = neon(url);
 
 console.log("Clearing training modules, MCQs, progress, uploads…");
 
+await sql`DELETE FROM training_notifications`;
 await sql`DELETE FROM assessment_progress`;
 await sql`DELETE FROM feedback_entries`;
 await sql`DELETE FROM review_requests`;
+await sql`DELETE FROM audit_logs`;
 await sql`DELETE FROM live_sessions`;
 await sql`DELETE FROM mcq_options`;
 await sql`DELETE FROM mcq_questions`;
 await sql`DELETE FROM module_batches`;
 await sql`DELETE FROM upload_files`;
+await sql`DELETE FROM pdf_storage`;
 await sql`DELETE FROM training_modules`;
+
+await sql`
+  UPDATE batches
+  SET compliance = 0, pass_rate = 0, fail_rate = 0, active_sessions = 0,
+      updated_at = NOW()
+`;
 
 const uploadsDir = join(root, "public", "uploads");
 try {

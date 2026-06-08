@@ -7,6 +7,7 @@
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
+import { storePdfInDatabase } from "@/lib/services/pdf-storage-service";
 
 /** 50 MB upload limit */
 export const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
@@ -96,12 +97,14 @@ export async function storePdfUpload(
     const finalPdfName = `${crypto.randomUUID()}.pdf`;
     const finalPdfPath = path.join(UPLOADS_DIR, finalPdfName);
     fs.writeFileSync(finalPdfPath, buffer);
+    const pdfUrl = `/uploads/${finalPdfName}`;
+    await storePdfInDatabase(pdfUrl, buffer);
 
     const pageCount = countPdfPages(finalPdfPath);
 
     return {
       ok: true,
-      pdfUrl: `/uploads/${finalPdfName}`,
+      pdfUrl,
       pdfPath: finalPdfPath,
       originalName,
       pageCount,

@@ -68,6 +68,19 @@ CREATE TABLE IF NOT EXISTS upload_files (
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Persistent PDF bytes (survives Render redeploys; served via /api/files/uploads)
+CREATE TABLE IF NOT EXISTS pdf_storage (
+  filename      TEXT PRIMARY KEY,
+  pdf_url       TEXT NOT NULL,
+  data          BYTEA NOT NULL,
+  content_hash  TEXT,
+  size_bytes    BIGINT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pdf_storage_url ON pdf_storage(pdf_url);
+
 -- ─── MCQ checkpoints ──────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS mcq_questions (
