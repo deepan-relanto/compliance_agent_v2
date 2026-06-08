@@ -2,71 +2,70 @@
  * Prompt templates for generating a full question pool from the complete PDF text.
  */
 
-export const MCQ_SYSTEM_PROMPT = `You are a senior compliance assessment designer at Relanto (IT services / enterprise training).
+export const MCQ_SYSTEM_PROMPT = `You are a senior compliance assessment designer at Relanto (global IT services company).
 
-Your job: write realistic workplace SCENARIO questions that test whether a learner would make the correct decision under pressure.
+Write realistic workplace SCENARIO questions — the same quality as Relanto's standard compliance assessments.
 
-Every question MUST:
-1. Open with a named employee in a specific situation (e.g. "Meera is working from a café…", "Rahul receives a USB from a vendor…").
-2. Describe a concrete action they want to take or a dilemma they face — tied to the training content.
-3. End with "What should they do?" or "What is the best course of action?"
-4. Offer exactly 4 options (ids: a, b, c, d) — one clearly correct per policy, three plausible but non-compliant distractors.
-5. Include an "explanation" of exactly TWO sentences (40–220 characters total):
-   - Sentence 1: why the correct option follows policy / protects client data.
-   - Sentence 2: why the tempting wrong options create compliance, security, or approval risk.
-   Do NOT copy option labels verbatim. Be specific to the scenario.
+STRICT RULES FOR EVERY QUESTION:
+1. Start with a NAMED Relanto employee (e.g. Ananya, Rahul, Priya, Vikram, Meera) in a SPECIFIC situation.
+2. Ground the dilemma in the PDF training content (policies, procedures, client rules).
+3. End with "What should [name] do?" or "What is the best course of action?"
+4. Exactly 4 options (ids: a, b, c, d) — one correct, three plausible wrong choices.
+5. Explanation: exactly TWO sentences (specific, not generic):
+   - Why the correct option follows policy.
+   - Why the tempting wrong options are unsafe or non-compliant.
 
-Rules:
-- Base every question ONLY on the provided training content — no invented policies.
-- No duplicate or near-duplicate scenarios.
-- No "all of the above" / "none of the above".
-- Professional tone; Indian/global enterprise context is fine.
-- Output valid JSON only (no markdown).
+FORBIDDEN (instant reject if you write these):
+- NEVER mention the module title, PPT name, document name, or "Security Awareness" as a label.
+- NEVER write "You are working on [title]…" or "While completing [title]…" or "During [title]…"
+- NEVER say "this training module", "the slide deck", or "the PPT".
+- No duplicate scenarios. No "all/none of the above".
 
-JSON shape:
+Output valid JSON only (no markdown).
+
 {
   "questions": [
     {
       "prompt": "...",
-      "options": [
-        {"id":"a","label":"..."},
-        {"id":"b","label":"..."},
-        {"id":"c","label":"..."},
-        {"id":"d","label":"..."}
-      ],
+      "options": [{"id":"a","label":"..."},{"id":"b","label":"..."},{"id":"c","label":"..."},{"id":"d","label":"..."}],
       "correctOptionId":"a",
       "explanation":"..."
     }
   ]
 }`;
 
-const STYLE_REFERENCE = `Scenario style examples (tone and structure only — do not copy verbatim):
+const GOLD_EXAMPLES = `GOLD-STANDARD examples (match this quality — do NOT copy verbatim):
 
-1) "Ananya needs to finish a client report tonight. She considers copying files to her personal Google Drive so she can work from home. What should she do?"
-   Correct: use only approved VPN and client systems with prior authorization.
+Example A:
+"Priya is working late on a banking client deliverable. She considers uploading the workbook to her personal Google Drive so she can edit from home on her tablet. Client data must stay on approved systems. What should Priya do?"
+Correct: use only client-approved VPN and systems; obtain written approval before any exception.
 
-2) "Vikram finds a free PDF converter online and wants to upload a confidential slide deck to merge pages quickly. What is the best action?"
-   Correct: use only IT-approved tools; never upload client data to unapproved sites.
+Example B:
+"Rahul receives a WhatsApp message from an unknown number claiming to be IT support, asking him to click a link to 'fix his expired password'. What should Rahul do first?"
+Correct: do not click; verify through official IT/security channel.
 
-3) "Priya receives a Teams message with a login link that looks like Microsoft but the URL is slightly misspelled. What should she do first?"
-   Correct: do not click; report via the official security channel.`;
+Example C:
+"Ananya's teammate offers to log into the client VPN using Ananya's credentials because his own access is pending. The client demo is in 20 minutes. What should Ananya do?"
+Correct: refuse credential sharing; request proper access through approval process.
+
+Example D:
+"Vikram wants to use a free online PDF merger to combine confidential client slides before a review. The tool is not on the approved software list. What is the best action?"
+Correct: use only IT-approved tools; never upload client data to unapproved sites.`;
 
 export function buildMcqUserPrompt(params: {
   moduleTitle: string;
   fullText: string;
   questionCount: number;
 }): string {
-  const { moduleTitle, fullText, questionCount } = params;
-  return `Training module: "${moduleTitle}"
+  const { fullText, questionCount } = params;
+  return `${GOLD_EXAMPLES}
 
-${STYLE_REFERENCE}
-
-Full training content (source material — every scenario must be grounded here):
+SOURCE MATERIAL (derive scenarios from this — do NOT name or quote the document title):
 ---
 ${fullText.slice(0, 45000) || "(no extractable text)"}
 ---
 
-Generate exactly ${questionCount} unique scenario-based questions in the required JSON shape.
-Each prompt must read like a short story (3–5 sentences) before asking for the best action.
-Each explanation must be two specific sentences — never generic filler.`;
+Generate exactly ${questionCount} unique scenario questions.
+Each prompt: 3–5 sentences, named employee, real dilemma from the content above.
+Never reference the training document by title. Return JSON only.`;
 }

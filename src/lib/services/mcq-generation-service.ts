@@ -7,6 +7,10 @@ import {
   gateCountForSlides,
   normalizeMcqPrompt,
 } from "@/lib/mcq-dedupe";
+import {
+  buildRelantoScenarioPrompt,
+  isAcceptableMcqPrompt,
+} from "@/lib/mcq-quality";
 
 const MIN_POOL_SIZE = 10;
 
@@ -95,105 +99,137 @@ function extractContentPassages(fullText: string, pages: string[]): string[] {
   return passages;
 }
 
-const FALLBACK_SCENARIOS: Array<{
-  buildPrompt: (title: string, topic?: string) => string;
+const RELANTO_FALLBACK_ANSWERS: Array<{
   correctOptionId: "a" | "b" | "c" | "d";
   explanation: string;
   options: { id: "a" | "b" | "c" | "d"; label: string }[];
 }> = [
   {
-    buildPrompt: (title, topic) =>
-      topic
-        ? `While completing "${title}", a colleague asks you to ignore the guidance on ${topic.slice(0, 120)}. What is the best response?`
-        : `While completing "${title}", a colleague asks you to skip the approved security controls to save time. What is the best response?`,
-    correctOptionId: "a",
-    explanation:
-      "Approved controls exist to reduce risk. The correct action is to follow the documented process and escalate exceptions through the proper channel.",
-    options: [
-      { id: "a", label: "Follow the approved process and escalate exceptions through the proper channel." },
-      { id: "b", label: "Agree to skip controls if the request comes from a senior colleague." },
-      { id: "c", label: "Handle it informally and document it later if something goes wrong." },
-      { id: "d", label: "Ignore the policy because training checkpoints are optional." },
-    ],
-  },
-  {
-    buildPrompt: (title) =>
-      `You are working on "${title}" from a public network without the approved VPN. What should you do before accessing company systems or client data?`,
     correctOptionId: "b",
     explanation:
-      "Approved VPN or secure access paths protect traffic on untrusted networks. Public Wi‑Fi without those controls can expose credentials and client data.",
+      "Approved VPN or secure access is required on untrusted networks before touching client systems. HTTPS alone does not protect the full session on public Wi‑Fi.",
     options: [
-      { id: "a", label: "Proceed if the website already uses HTTPS." },
-      { id: "b", label: "Connect through the approved VPN or other authorized secure access method." },
-      { id: "c", label: "Use a personal hotspot and disable security tools to improve speed." },
-      { id: "d", label: "Ask a teammate to log in on your behalf." },
+      { id: "a", label: "Proceed because the client portal uses HTTPS." },
+      { id: "b", label: "Connect through the approved VPN, then access client systems." },
+      { id: "c", label: "Disable security tools to improve connection speed." },
+      { id: "d", label: "Ask a teammate to log in remotely on their behalf." },
     ],
   },
   {
-    buildPrompt: (title) =>
-      `During "${title}", you receive a message asking you to share credentials so a teammate can finish a task faster. What is the correct action?`,
     correctOptionId: "c",
     explanation:
-      "Each person must use their own authorized account so access can be audited. Sharing credentials removes accountability and violates standard security policy.",
+      "Unapproved software and unknown USB content can introduce malware on client devices. IT and client approval gates exist before any install.",
     options: [
-      { id: "a", label: "Share credentials temporarily if the teammate is trusted." },
-      { id: "b", label: "Send credentials over chat and delete the message afterward." },
-      { id: "c", label: "Refuse to share credentials and request access through the approved process." },
-      { id: "d", label: "Use the teammate's credentials if they offer them first." },
+      { id: "a", label: "Install the utility since the vendor is on site." },
+      { id: "b", label: "Copy files to a personal drive for scanning at home." },
+      { id: "c", label: "Decline the install and follow the approved software/USB process." },
+      { id: "d", label: "Let the client admin install it without informing Relanto IT." },
     ],
   },
   {
-    buildPrompt: (title, topic) =>
-      topic
-        ? `A stakeholder asks you to email ${topic.slice(0, 100)} outside the approved client systems. What is the most compliant response?`
-        : `A stakeholder asks you to move confidential training material to personal cloud storage for convenience. What is the most compliant response?`,
     correctOptionId: "a",
     explanation:
-      "Approved systems include the required monitoring, retention, and access controls. Personal or unapproved channels bypass those protections.",
+      "Client data must remain on approved systems with monitoring and retention controls. Personal cloud storage bypasses those protections.",
     options: [
-      { id: "a", label: "Use only approved systems and obtain written authorization before any exception." },
-      { id: "b", label: "Use personal storage if you delete the files after the task." },
-      { id: "c", label: "Share externally if the recipient signs a verbal agreement." },
-      { id: "d", label: "Proceed when the deadline is tight and approval can wait." },
+      { id: "a", label: "Keep files on approved client/company systems and request formal approval for any exception." },
+      { id: "b", label: "Upload to personal cloud if deleted after the weekend." },
+      { id: "c", label: "Email the files to a personal account for convenience." },
+      { id: "d", label: "Use a teammate's personal storage if they offer." },
     ],
   },
   {
-    buildPrompt: (title) =>
-      `You notice a suspicious link while reviewing "${title}" materials on your work device. What should you do first?`,
     correctOptionId: "d",
     explanation:
-      "Reporting suspicious links lets security teams investigate before harm occurs. Opening or forwarding them can spread malware or credential theft.",
+      "Phishing links often mimic trusted brands with small URL changes. Reporting through the official channel lets security verify before anyone is compromised.",
     options: [
-      { id: "a", label: "Open the link in a private browser window to inspect it." },
-      { id: "b", label: "Forward the link to colleagues so they can help evaluate it." },
-      { id: "c", label: "Ignore it unless your antivirus flags it automatically." },
-      { id: "d", label: "Do not click the link and report it through the approved security channel." },
+      { id: "a", label: "Click the link in a private browser to inspect it." },
+      { id: "b", label: "Forward the message to the team chat for opinions." },
+      { id: "c", label: "Ignore it unless antivirus blocks the page." },
+      { id: "d", label: "Do not click; report via the official security/IT channel." },
+    ],
+  },
+  {
+    correctOptionId: "c",
+    explanation:
+      "Shared credentials break audit trails and violate Relanto and client access policy. Each person must use their own authorized account.",
+    options: [
+      { id: "a", label: "Share credentials temporarily because the demo is urgent." },
+      { id: "b", label: "Send credentials on Teams and delete the message after." },
+      { id: "c", label: "Refuse and request proper access through the approval process." },
+      { id: "d", label: "Use the colleague's account if they insist." },
+    ],
+  },
+  {
+    correctOptionId: "b",
+    explanation:
+      "Client and internal data must not be entered into unapproved AI or third-party tools without written authorization. Approved channels preserve confidentiality.",
+    options: [
+      { id: "a", label: "Paste the log if the chatbot promises encryption." },
+      { id: "b", label: "Use only approved tools or redacted samples with client/company approval." },
+      { id: "c", label: "Paste data if you remove client names manually." },
+      { id: "d", label: "Ask a friend outside Relanto to help draft the reply." },
+    ],
+  },
+  {
+    correctOptionId: "a",
+    explanation:
+      "Printed client information must be handled per clean-desk and secure disposal policy. Leaving reports in shared areas risks data exposure.",
+    options: [
+      { id: "a", label: "Secure or shred per policy and notify the document owner or security." },
+      { id: "b", label: "Leave it; someone else will collect it." },
+      { id: "c", label: "Take a photo for reference before discarding." },
+      { id: "d", label: "Share a photo in the project group chat." },
+    ],
+  },
+  {
+    correctOptionId: "c",
+    explanation:
+      "Sensitive client data must not be shared on unmanaged personal devices without approval. Use approved secure channels and equipment first.",
+    options: [
+      { id: "a", label: "Join from personal phone and screen-share immediately." },
+      { id: "b", label: "Read sensitive figures aloud instead of sharing screen." },
+      { id: "c", label: "Use approved equipment/channels or reschedule until secure access is available." },
+      { id: "d", label: "Record the call on a personal device for notes." },
     ],
   },
 ];
 
 function generateLocalFallbackPool(
-  moduleTitle: string,
   fullText: string,
   pages: string[] = [],
   targetPoolSize = MIN_POOL_SIZE,
+  startIndex = 0,
 ): GeneratedMcq[] {
   const passages = extractContentPassages(fullText, pages);
+  const defaultTopic =
+    "follow approved client security, data handling, and escalation procedures";
+  const results: GeneratedMcq[] = [];
+  const seen = new Set<string>();
 
-  return Array.from({ length: targetPoolSize }, (_, index) => {
-    const scenario = FALLBACK_SCENARIOS[index % FALLBACK_SCENARIOS.length];
-    const topic = passages[index % Math.max(passages.length, 1)];
-    const questionNo = index + 1;
+  for (
+    let attempt = 0;
+    attempt < targetPoolSize * 3 && results.length < targetPoolSize;
+    attempt++
+  ) {
+    const index = startIndex + attempt;
+    const topic = passages[index % Math.max(passages.length, 1)] || defaultTopic;
+    const prompt = buildRelantoScenarioPrompt(topic, index);
+    const key = normalizeMcqPrompt(prompt);
+    if (seen.has(key)) continue;
+    seen.add(key);
 
-    return {
-      id: `local-fallback-${questionNo}`,
-      slideIndex: questionNo * 3,
-      prompt: scenario.buildPrompt(moduleTitle, topic),
-      correctOptionId: scenario.correctOptionId,
-      explanation: scenario.explanation,
-      options: scenario.options,
-    };
-  });
+    const answer = RELANTO_FALLBACK_ANSWERS[index % RELANTO_FALLBACK_ANSWERS.length];
+    results.push({
+      id: `local-fallback-${results.length + 1}`,
+      slideIndex: (results.length + 1) * 3,
+      prompt,
+      correctOptionId: answer.correctOptionId,
+      explanation: answer.explanation,
+      options: answer.options,
+    });
+  }
+
+  return results;
 }
 
 async function generateMcqPool(
@@ -211,8 +247,8 @@ async function generateMcqPool(
   try {
     for (let attempt = 1; attempt <= 3; attempt++) {
       const raw = await nvidiaChatJson(MCQ_SYSTEM_PROMPT, userPrompt, {
-        maxTokens: 3000,
-        temperature: 0.2,
+        maxTokens: 4500,
+        temperature: 0.35,
       });
       const parsed = parseJsonObject(raw);
       if (parsed) {
@@ -226,7 +262,7 @@ async function generateMcqPool(
       "[mcq-generation] NVIDIA generation unavailable; using local fallback questions.",
       err instanceof Error ? err.message : err,
     );
-    return generateLocalFallbackPool(moduleTitle, fullText, [], targetPoolSize);
+    return generateLocalFallbackPool(fullText, [], targetPoolSize);
   }
 
   const questions = payload.questions ?? [];
@@ -242,7 +278,8 @@ async function generateMcqPool(
       options.length !== 4 ||
       !correct ||
       !ids.has(correct) ||
-      ids.size !== 4
+      ids.size !== 4 ||
+      !isAcceptableMcqPrompt(q.prompt, moduleTitle)
     ) {
       continue;
     }
@@ -268,6 +305,28 @@ async function generateMcqPool(
     });
     if (accepted.length >= targetPoolSize) break;
   }
+
+  if (accepted.length < targetPoolSize) {
+    const gap = targetPoolSize - accepted.length;
+    const fillers = generateLocalFallbackPool(
+      fullText,
+      [],
+      gap,
+      accepted.length,
+    );
+    for (const filler of fillers) {
+      const key = normalizeMcqPrompt(filler.prompt);
+      if (seenPrompts.has(key)) continue;
+      seenPrompts.add(key);
+      accepted.push({
+        ...filler,
+        id: `pool-${accepted.length + 1}`,
+        slideIndex: (accepted.length + 1) * 3,
+      });
+      if (accepted.length >= targetPoolSize) break;
+    }
+  }
+
   return accepted;
 }
 
@@ -276,28 +335,20 @@ async function generateSingleFallback(
   fullText: string,
   index: number,
 ): Promise<GeneratedMcq | null> {
-  const prompt = `Create exactly ONE realistic workplace SCENARIO question for "${moduleTitle}".
-
-Question number: ${index + 1}
+  const prompt = `Create exactly ONE Relanto workplace SCENARIO question (question #${index + 1}).
 
 Requirements:
-- Name a specific employee facing a concrete dilemma grounded in the training content.
-- 3–5 sentences setting the scene, ending with "What should they do?"
-- 4 options (a–d), one correct per policy.
-- Explanation: two specific sentences (why correct is right; why wrong options are risky).
+- Named Relanto employee in a specific situation grounded in the content below.
+- NEVER mention the module title, PPT name, or "training module".
+- 3–5 sentences, end with "What should [name] do?"
+- 4 options (a–d). Two-sentence explanation.
 
 Content:
 ---
 ${fullText.slice(0, 38000)}
 ---
 
-Return strict JSON only:
-{
-  "prompt":"...",
-  "options":[{"id":"a","label":"..."},{"id":"b","label":"..."},{"id":"c","label":"..."},{"id":"d","label":"..."}],
-  "correctOptionId":"a",
-  "explanation":"..."
-}`;
+Return strict JSON only.`;
 
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
@@ -315,7 +366,8 @@ Return strict JSON only:
         options.length !== 4 ||
         !correct ||
         !ids.has(correct) ||
-        ids.size !== 4
+        ids.size !== 4 ||
+        !isAcceptableMcqPrompt(parsed.prompt, moduleTitle)
       ) {
         continue;
       }
@@ -409,28 +461,25 @@ export async function generateAndStoreModuleMcqs(
     WHERE id = ${moduleId}
   `;
 
-  const pool = await generateMcqPool(moduleTitle, fullText, targetPoolSize);
+  let pool = await generateMcqPool(moduleTitle, fullText, targetPoolSize);
+
   if (pool.length < targetPoolSize) {
     for (let i = pool.length; i < targetPoolSize; i++) {
       const single = await generateSingleFallback(moduleTitle, fullText, i);
-      if (single) pool.push(single);
+      if (single && isAcceptableMcqPrompt(single.prompt, moduleTitle)) {
+        pool.push(single);
+      }
     }
   }
+
   if (pool.length < targetPoolSize) {
     const localFallback = generateLocalFallbackPool(
-      moduleTitle,
       fullText,
       pages,
-      targetPoolSize,
+      targetPoolSize - pool.length,
+      pool.length,
     );
-    for (const question of localFallback) {
-      if (pool.length >= targetPoolSize) break;
-      pool.push({
-        ...question,
-        id: `local-fill-${pool.length + 1}`,
-        slideIndex: (pool.length + 1) * 3,
-      });
-    }
+    pool = [...pool, ...localFallback].slice(0, targetPoolSize);
   }
   await sql`
     UPDATE training_modules
