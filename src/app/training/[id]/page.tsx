@@ -1,6 +1,7 @@
 "use client";
 
 import { RouteGuard } from "@/components/auth/route-guard";
+import { TrainingCompletedGate } from "@/components/employee/training-completed-gate";
 import type { McqQuestion, TrainingModule } from "@/lib/types";
 import { useAuthStore } from "@/lib/auth-store";
 import dynamic from "next/dynamic";
@@ -71,6 +72,14 @@ export default function TrainingPage() {
   }
 
   if (!trainingModule) return null;
+
+  if (trainingModule.viewerMode === "already_completed") {
+    return (
+      <RouteGuard allowedRoles={["user"]}>
+        <TrainingCompletedGate moduleTitle={trainingModule.title} />
+      </RouteGuard>
+    );
+  }
 
   return (
     <RouteGuard allowedRoles={["user"]}>

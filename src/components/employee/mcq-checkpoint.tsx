@@ -175,11 +175,11 @@ export function MCQCheckpoint({
   const card = (
     <div
       className={cn(
-        "w-full overflow-hidden rounded-[var(--radius-card)] border border-zinc-200/90 bg-white shadow-[var(--shadow-elevated)]",
-        panelMode ? "max-w-none" : "max-w-2xl",
+        "flex w-full min-h-0 flex-col overflow-hidden rounded-[var(--radius-card)] border border-zinc-200/90 bg-white shadow-[var(--shadow-elevated)]",
+        panelMode ? "max-w-none" : "max-h-[min(100dvh-1.5rem,920px)] max-w-2xl",
       )}
     >
-      <div className="h-1 bg-zinc-100">
+      <div className="h-1 shrink-0 bg-zinc-100">
         <motion.div
           initial={{ width: 0 }}
           animate={{ width: `${checkpointProgress}%` }}
@@ -187,7 +187,7 @@ export function MCQCheckpoint({
           className="h-full bg-[#f15a24]"
         />
       </div>
-      <div className="flex flex-col gap-3 border-b border-zinc-100 bg-zinc-50/90 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex shrink-0 flex-col gap-3 border-b border-zinc-100 bg-zinc-50/90 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-md border border-[#f15a24]/20 bg-white text-[#f15a24]">
             <Lock className="h-4 w-4" strokeWidth={1.75} />
@@ -212,8 +212,8 @@ export function MCQCheckpoint({
         </div>
       </div>
 
-      <div className="p-6">
-        <div className="mb-5 grid gap-3 sm:grid-cols-[1fr_220px] sm:items-stretch">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6">
+        <div className="mb-4 grid gap-3 sm:mb-5 sm:grid-cols-[1fr_220px] sm:items-stretch">
           <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4">
             <div className="flex items-center gap-2">
               <ShieldCheck className="h-4 w-4 text-[#2e3192]" strokeWidth={1.75} />
@@ -236,7 +236,7 @@ export function MCQCheckpoint({
           <CheckpointSignal state={signalState} progress={checkpointProgress} />
         </div>
 
-        <h2 className="text-lg font-semibold tracking-tight text-zinc-900">
+        <h2 className="text-base font-semibold tracking-tight text-zinc-900 sm:text-lg">
           {displayPrompt}
         </h2>
         <p className="mt-1 text-xs text-zinc-500">
@@ -310,7 +310,7 @@ export function MCQCheckpoint({
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             className={cn(
-              "mt-4 rounded-lg border p-4",
+              "mt-4 max-h-[min(40vh,280px)] overflow-y-auto rounded-lg border p-3 sm:p-4",
               wasCorrect
                 ? "border-emerald-200 bg-emerald-50 text-emerald-950"
                 : "border-red-200 bg-red-50 text-red-950",
@@ -351,11 +351,13 @@ export function MCQCheckpoint({
             </div>
           </motion.div>
         )}
+      </div>
 
+      <div className="shrink-0 border-t border-zinc-100 bg-white p-4 sm:px-6 sm:pb-5">
         {!submitted ? (
           <Button
             variant="primary"
-            className="mt-5 w-full"
+            className="w-full"
             onClick={handleSubmit}
             disabled={!selected || validating}
           >
@@ -369,7 +371,7 @@ export function MCQCheckpoint({
             )}
           </Button>
         ) : (
-          <Button variant="primary" className="mt-5 w-full" onClick={handleContinue}>
+          <Button variant="primary" className="w-full" onClick={handleContinue}>
             Continue to next slide
           </Button>
         )}
@@ -406,9 +408,11 @@ export function MCQCheckpoint({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.99, y: 4 }}
             transition={{ type: "spring", stiffness: 400, damping: 30 }}
-            className="fixed inset-0 z-[66] flex items-center justify-center p-4 pointer-events-none"
+            className="fixed inset-0 z-[66] flex items-start justify-center overflow-y-auto p-3 sm:items-center sm:p-4 pointer-events-none"
           >
-            <div className="pointer-events-auto mx-auto w-full max-w-2xl px-4">{card}</div>
+            <div className="pointer-events-auto mx-auto flex w-full max-w-2xl items-stretch px-1 sm:px-4">
+              {card}
+            </div>
           </motion.div>
         </>
         )

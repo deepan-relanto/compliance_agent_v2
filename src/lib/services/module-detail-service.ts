@@ -102,7 +102,9 @@ export async function loadModuleDetail(
   const progressStatus =
     rawStatus === "failed" && scorePercent != null ? "in_progress" : rawStatus;
   const hasAck = hasAcceptedAcknowledgement(progress?.acknowledgement);
-  const isCompleted = progressStatus === "completed" && hasAck;
+  const isCompleted =
+    progress?.completed_at != null ||
+    (progressStatus === "completed" && hasAck);
   const passedPendingAck =
     isPassingScore(scorePercent) &&
     !hasAck &&
@@ -120,8 +122,9 @@ export async function loadModuleDetail(
     | "standard"
     | "quiz_only_retake"
     | "review_only"
-    | "acknowledgement_pending" = isCompleted
-    ? "review_only"
+    | "acknowledgement_pending"
+    | "already_completed" = isCompleted
+    ? "already_completed"
     : passedPendingAck
       ? "acknowledgement_pending"
       : isScoreRetake
