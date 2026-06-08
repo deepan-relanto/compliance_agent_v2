@@ -184,3 +184,16 @@ CREATE TABLE IF NOT EXISTS live_sessions (
   started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- ─── Training email notifications ─────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS training_notifications (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  module_id         TEXT NOT NULL REFERENCES training_modules(id) ON DELETE CASCADE,
+  user_email        TEXT NOT NULL,
+  notification_type TEXT NOT NULL CHECK (notification_type IN ('invited', 'completed')),
+  sent_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (module_id, user_email, notification_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_training_notifications_module ON training_notifications(module_id);

@@ -1,5 +1,6 @@
 import { getSql } from "@/lib/db";
 import { markAssessmentCompletedDb } from "@/lib/services/progress-db-service";
+import { sendModuleCompletionEmail } from "@/lib/services/training-notification-service";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,10 @@ export async function POST(req: NextRequest) {
 
     const sql = getSql();
     await markAssessmentCompletedDb(sql, userEmail, moduleId);
+
+    void sendModuleCompletionEmail(sql, userEmail, moduleId).catch((err) => {
+      console.error("[progress complete email]", err);
+    });
 
     return NextResponse.json({ ok: true });
   } catch (err) {

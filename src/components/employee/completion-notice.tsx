@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
 import { CheckCircle2, X } from "lucide-react";
+import { useEffect, useState } from "react";
 
 export interface CompletionNoticeProps {
   open: boolean;
@@ -11,6 +12,9 @@ export interface CompletionNoticeProps {
   message: string;
   acknowledgeLabel?: string;
   variant?: "success" | "info";
+  /** Auto-run onAcknowledge after this many ms (success flow). */
+  autoCloseAfterMs?: number;
+  showAcknowledgeButton?: boolean;
   onAcknowledge: () => void;
   onDismiss?: () => void;
   className?: string;
@@ -22,11 +26,35 @@ export function CompletionNotice({
   message,
   acknowledgeLabel = "Acknowledge",
   variant = "success",
+  autoCloseAfterMs,
+  showAcknowledgeButton = true,
   onAcknowledge,
   onDismiss,
   className,
 }: CompletionNoticeProps) {
   const isSuccess = variant === "success";
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!open || !autoCloseAfterMs) {
+      setSecondsLeft(null);
+      return;
+    }
+
+    const endAt = Date.now() + autoCloseAfterMs;
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((endAt - Date.now()) / 1000));
+      setSecondsLeft(remaining);
+    };
+    tick();
+    const interval = window.setInterval(tick, 250);
+    const timeout = window.setTimeout(() => onAcknowledge(), autoCloseAfterMs);
+
+    return () => {
+      window.clearInterval(interval);
+      window.clearTimeout(timeout);
+    };
+  }, [open, autoCloseAfterMs, onAcknowledge]);
 
   return (
     <AnimatePresence>
@@ -87,21 +115,28 @@ export function CompletionNotice({
                       {title}
                     </h2>
                     <p className="text-sm leading-relaxed text-zinc-600">{message}</p>
+                    {autoCloseAfterMs && secondsLeft != null && (
+                      <p className="text-xs text-zinc-500">
+                        This window will close in {secondsLeft} second{secondsLeft === 1 ? "" : "s"}…
+                      </p>
+                    )}
                   </div>
                 </div>
-                <Button
-                  type="button"
-                  autoFocus
-                  className={cn(
-                    "mt-5 w-full cursor-pointer text-white",
-                    isSuccess
-                      ? "bg-gradient-to-r from-[#2e3192] to-[#3d42a8] hover:opacity-95"
-                      : "bg-gradient-to-r from-[#2e3192] via-[#3d42a8] to-[#f15a24] hover:opacity-95",
-                  )}
-                  onClick={onAcknowledge}
-                >
-                  {acknowledgeLabel}
-                </Button>
+                {showAcknowledgeButton && (
+                  <Button
+                    type="button"
+                    autoFocus
+                    className={cn(
+                      "mt-5 w-full cursor-pointer text-white",
+                      isSuccess
+                        ? "bg-gradient-to-r from-[#2e3192] to-[#3d42a8] hover:opacity-95"
+                        : "bg-gradient-to-r from-[#2e3192] via-[#3d42a8] to-[#f15a24] hover:opacity-95",
+                    )}
+                    onClick={onAcknowledge}
+                  >
+                    {acknowledgeLabel}
+                  </Button>
+                )}
               </div>
             </div>
           </motion.div>

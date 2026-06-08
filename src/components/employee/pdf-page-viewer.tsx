@@ -6,13 +6,20 @@
  */
 
 import { Loader2, AlertTriangle } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 
-pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
+const PDFJS_VERSION = pdfjs.version;
+pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.worker.min.mjs`;
+
+const PDF_DOCUMENT_OPTIONS = {
+  cMapUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/cmaps/`,
+  cMapPacked: true,
+  standardFontDataUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/standard_fonts/`,
+} as const;
 
 interface PdfPageViewerProps {
   pdfUrl: string;
@@ -26,15 +33,30 @@ export function PdfPageViewer({
   onLoadSuccess,
 }: PdfPageViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const onLoadSuccessRef = useRef(onLoadSuccess);
+  const mountedRef = useRef(true);
   const [containerWidth, setContainerWidth] = useState(0);
   const [numPages, setNumPages] = useState<number | null>(null);
   const [docError, setDocError] = useState<string | null>(null);
   const [pageRendering, setPageRendering] = useState(true);
+  const [docKey, setDocKey] = useState(0);
+
+  useEffect(() => {
+    onLoadSuccessRef.current = onLoadSuccess;
+  }, [onLoadSuccess]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const measure = () => {
       if (containerRef.current) {
-        setContainerWidth(containerRef.current.clientWidth);
+        const w = containerRef.current.clientWidth;
+        setContainerWidth((prev) => (Math.abs(prev - w) > 2 ? w : prev));
       }
     };
     measure();
@@ -47,23 +69,24 @@ export function PdfPageViewer({
     setNumPages(null);
     setDocError(null);
     setPageRendering(true);
+    setDocKey((k) => k + 1);
   }, [pdfUrl]);
 
   useEffect(() => {
-    if (numPages != null) setPageRendering(true);
+    if (numPages == null) return;
+    setPageRendering(true);
   }, [pageNumber, numPages]);
 
-  const handleDocLoadSuccess = useCallback(
-    ({ numPages: total }: { numPages: number }) => {
-      setDocError(null);
-      setNumPages(total);
-      onLoadSuccess(total);
-    },
-    [onLoadSuccess],
-  );
+  const handleDocLoadSuccess = useCallback(({ numPages: total }: { numPages: number }) => {
+    if (!mountedRef.current) return;
+    setDocError(null);
+    setNumPages(total);
+    onLoadSuccessRef.current(total);
+  }, []);
 
   const handleDocLoadError = useCallback((err: Error) => {
     console.warn("[PdfPageViewer] Failed to load PDF:", err);
+    if (!mountedRef.current) return;
     setDocError(
       "Unable to load the PDF. It may have been removed — contact your administrator.",
     );
@@ -71,10 +94,25 @@ export function PdfPageViewer({
   }, []);
 
   const handlePageRenderSuccess = useCallback(() => {
+    if (!mountedRef.current) return;
     setPageRendering(false);
   }, []);
 
+  const handlePageRenderError = useCallback((err: Error) => {
+    console.warn("[PdfPageViewer] Page render error:", err);
+    if (!mountedRef.current) return;
+    setPageRendering(false);
+    const msg = String(err?.message ?? err);
+    if (msg.includes("Transport") || msg.includes("sendWithPromise") || msg.includes("destroyed")) {
+      setNumPages(null);
+      setDocKey((k) => k + 1);
+    }
+  }, []);
+
+  const file = useMemo(() => pdfUrl, [pdfUrl]);
   const docLoading = numPages === null && !docError;
+  const canRenderPage =
+    numPages != null && pageNumber >= 1 && pageNumber <= numPages && containerWidth > 0;
 
   if (docError) {
     return (
@@ -102,24 +140,20 @@ export function PdfPageViewer({
 
       {containerWidth > 0 && (
         <Document
-          file={pdfUrl}
+          key={`${file}-${docKey}`}
+          file={file}
+          options={PDF_DOCUMENT_OPTIONS}
           onLoadSuccess={handleDocLoadSuccess}
           onLoadError={handleDocLoadError}
           loading={null}
           error={null}
-          options={{
-            cMapUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/cmaps/`,
-            cMapPacked: true,
-            standardFontDataUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/standard_fonts/`,
-          }}
         >
-          {numPages != null && pageNumber >= 1 && pageNumber <= numPages && (
+          {canRenderPage && (
             <Page
-              key={`page-${pageNumber}`}
               pageNumber={pageNumber}
               width={containerWidth}
               onRenderSuccess={handlePageRenderSuccess}
-              onRenderError={() => setPageRendering(false)}
+              onRenderError={handlePageRenderError}
               renderAnnotationLayer={false}
               renderTextLayer={false}
             />

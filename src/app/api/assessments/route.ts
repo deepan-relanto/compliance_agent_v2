@@ -1,5 +1,6 @@
 import { getSql } from "@/lib/db";
 import { copyMcqsFromModule } from "@/lib/services/mcq-copy-service";
+import { sendModuleInvitationEmails } from "@/lib/services/training-notification-service";
 import {
   generateAndStoreModuleMcqs,
   hashPdfFile,
@@ -130,6 +131,10 @@ export async function POST(req: NextRequest) {
         SET mcq_generation_status = 'completed', updated_at = NOW()
         WHERE id = ${id}
       `;
+
+      void sendModuleInvitationEmails(sql, id).catch((err) => {
+        console.error("[assessments reuse invite emails]", err);
+      });
 
       return NextResponse.json({
         ok: true,

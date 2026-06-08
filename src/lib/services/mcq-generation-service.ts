@@ -447,6 +447,15 @@ export async function generateAndStoreModuleMcqs(
     WHERE id = ${moduleId}
   `;
 
+  if (status === "completed") {
+    const { sendModuleInvitationEmails } = await import(
+      "@/lib/services/training-notification-service"
+    );
+    void sendModuleInvitationEmails(sql, moduleId).catch((err) => {
+      console.error("[mcq-generation invite emails]", err);
+    });
+  }
+
   if (generated === 0) {
     throw new Error(
       "Could not generate any checkpoint questions. Ensure the PDF has extractable text.",

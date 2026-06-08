@@ -147,6 +147,8 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
     message: string;
     acknowledgeLabel?: string;
     variant?: "success" | "info";
+    autoCloseAfterMs?: number;
+    showAcknowledgeButton?: boolean;
     onAcknowledge: () => void;
   } | null>(null);
 
@@ -155,11 +157,6 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
     setSignatureDataUrl(null);
     setAckSubmitting(false);
     setAckSyncWarning(null);
-  }, []);
-
-  const goToDashboard = useCallback(() => {
-    isExitingRef.current = true;
-    window.location.href = "/dashboard";
   }, []);
 
   const signatureReady =
@@ -691,6 +688,22 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
     totalSlides,
   ]);
 
+  const closeAfterCompletion = useCallback(() => {
+    isExitingRef.current = true;
+    setCompletionNotice(null);
+    try {
+      if (document.fullscreenElement) {
+        void document.exitFullscreen();
+      }
+    } catch {
+      /* ignore */
+    }
+    window.close();
+    window.setTimeout(() => {
+      window.location.replace("/submitted");
+    }, 400);
+  }, []);
+
   const finishTrainingCompletion = useCallback(() => {
     if (user?.username) {
       markCompleted(user.username, module.id);
@@ -699,14 +712,12 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
     setCompletionNotice({
       title: "Assessment submitted successfully",
       message: `Thank you. Your training for “${module.title}” is complete — attestation and feedback are on record.`,
-      acknowledgeLabel: "Return to dashboard",
       variant: "success",
-      onAcknowledge: () => {
-        setCompletionNotice(null);
-        goToDashboard();
-      },
+      autoCloseAfterMs: 5000,
+      showAcknowledgeButton: false,
+      onAcknowledge: closeAfterCompletion,
     });
-  }, [user?.username, module.id, module.title, goToDashboard]);
+  }, [user?.username, module.id, module.title, closeAfterCompletion]);
 
   const goToFeedbackStep = useCallback(() => {
     setShowAcknowledgement(false);
@@ -1268,6 +1279,8 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
         message={completionNotice?.message ?? ""}
         acknowledgeLabel={completionNotice?.acknowledgeLabel}
         variant={completionNotice?.variant ?? "success"}
+        autoCloseAfterMs={completionNotice?.autoCloseAfterMs}
+        showAcknowledgeButton={completionNotice?.showAcknowledgeButton ?? true}
         onAcknowledge={() => completionNotice?.onAcknowledge()}
         onDismiss={
           completionNotice?.variant === "info"

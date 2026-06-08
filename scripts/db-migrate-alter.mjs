@@ -64,4 +64,16 @@ await sql`ALTER TABLE assessment_progress ADD COLUMN IF NOT EXISTS mcq_answers J
 await sql`ALTER TABLE upload_files ADD COLUMN IF NOT EXISTS module_id TEXT REFERENCES training_modules(id) ON DELETE SET NULL`;
 await sql`ALTER TABLE upload_files ADD COLUMN IF NOT EXISTS content_hash TEXT`;
 
+await sql`
+  CREATE TABLE IF NOT EXISTS training_notifications (
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    module_id         TEXT NOT NULL REFERENCES training_modules(id) ON DELETE CASCADE,
+    user_email        TEXT NOT NULL,
+    notification_type TEXT NOT NULL CHECK (notification_type IN ('invited', 'completed')),
+    sent_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (module_id, user_email, notification_type)
+  )
+`;
+await sql`CREATE INDEX IF NOT EXISTS idx_training_notifications_module ON training_notifications(module_id)`;
+
 console.log("✅ Schema alterations applied.");

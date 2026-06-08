@@ -3,7 +3,7 @@
 import { RelantoLogo } from "@/components/brand/relanto-logo";
 import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/lib/auth-store";
-import { signOut } from "next-auth/react";
+import { signOutCompletely } from "@/lib/auth-sign-out";
 import { cn } from "@/lib/utils";
 import {
   BarChart3,
@@ -84,7 +84,6 @@ export function AdminShell({
   wide = false,
 }: AdminShellProps) {
   const user = useAuthStore((s) => s.user);
-  const logout = useAuthStore((s) => s.logout);
   const pathname = usePathname();
 
   return (
@@ -137,10 +136,7 @@ export function AdminShell({
             variant="ghost"
             size="sm"
             className="w-full justify-start text-zinc-600"
-            onClick={() => {
-              logout();
-              void signOut({ callbackUrl: "/login" });
-            }}
+            onClick={() => void signOutCompletely()}
           >
             <LogOut className="h-3.5 w-3.5" strokeWidth={1.75} />
             Sign out

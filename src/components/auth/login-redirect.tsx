@@ -1,22 +1,23 @@
 "use client";
 
-import { useAuthStore } from "@/lib/auth-store";
+import { resolvePostLoginPath } from "@/lib/auth-routes";
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 
 export function LoginRedirect() {
-  const user = useAuthStore((s) => s.user);
-  const isHydrated = useAuthStore((s) => s.isHydrated);
-  const { status } = useSession();
+  const { data: session, status } = useSession();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const signedOut = searchParams.get("signedOut");
+  const callbackUrl = searchParams.get("callbackUrl");
 
   useEffect(() => {
-    if (status === "loading" || !isHydrated) return;
-    if (status === "authenticated" && user) {
-      router.replace(user.role === "admin" ? "/admin" : "/dashboard");
-    }
-  }, [user, isHydrated, status, router]);
+    if (signedOut) return;
+    if (status !== "authenticated" || !session?.user?.email) return;
+    const role = session.user.role ?? "user";
+    router.replace(resolvePostLoginPath(callbackUrl, role));
+  }, [session, status, signedOut, callbackUrl, router]);
 
   return null;
 }

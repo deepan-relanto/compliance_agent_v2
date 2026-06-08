@@ -15,7 +15,9 @@ const highlights = [
 export default function LoginPage() {
   return (
     <div className="min-h-screen bg-white">
-      <LoginRedirect />
+      <Suspense fallback={null}>
+        <LoginRedirect />
+      </Suspense>
       <div className="grid min-h-screen lg:grid-cols-[1.05fr_1fr]">
         {/* Left — original light brand panel */}
         <div className="relative hidden overflow-hidden border-r border-zinc-200/80 bg-zinc-50 lg:block">

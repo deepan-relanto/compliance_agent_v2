@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/lib/auth-store";
 import { cn } from "@/lib/utils";
 import { LogOut } from "lucide-react";
-import { signOut } from "next-auth/react";
+import { signOutCompletely } from "@/lib/auth-sign-out";
 import Link from "next/link";
 
 interface EmployeeShellProps {
@@ -16,7 +16,6 @@ interface EmployeeShellProps {
 
 export function EmployeeShell({ children, title, subtitle }: EmployeeShellProps) {
   const user = useAuthStore((s) => s.user);
-  const logout = useAuthStore((s) => s.logout);
 
   const batchLabel = user?.batchId
     ? user.batchId.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
@@ -51,10 +50,7 @@ export function EmployeeShell({ children, title, subtitle }: EmployeeShellProps)
               variant="ghost"
               size="sm"
               className="text-zinc-600"
-              onClick={() => {
-                logout();
-                void signOut({ callbackUrl: "/login" });
-              }}
+              onClick={() => void signOutCompletely()}
             >
               <LogOut className="h-3.5 w-3.5" strokeWidth={1.75} />
               <span className="hidden sm:inline">Sign out</span>

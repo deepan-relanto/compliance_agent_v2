@@ -19,7 +19,10 @@ export const useAuthStore = create<AuthState>()(
       isHydrated: false,
       setHydrated: () => set({ isHydrated: true }),
       setUser: (user) => set({ user }),
-      logout: () => set({ user: null }),
+      logout: () => {
+        set({ user: null });
+        useAuthStore.persist.clearStorage();
+      },
     }),
     {
       name: "compliance-agent-auth",

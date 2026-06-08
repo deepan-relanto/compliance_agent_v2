@@ -33,7 +33,7 @@ function SessionSync({ children }: { children: React.ReactNode }) {
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   return (
-    <SessionProvider refetchOnWindowFocus>
+    <SessionProvider refetchOnWindowFocus={false} refetchInterval={0}>
       <SessionSync>{children}</SessionSync>
     </SessionProvider>
   );

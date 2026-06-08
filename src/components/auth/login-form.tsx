@@ -2,7 +2,7 @@
 
 import { RelantoLogo } from "@/components/brand/relanto-logo";
 import { Button } from "@/components/ui/button";
-import { useAuthStore } from "@/lib/auth-store";
+import { resolvePostLoginPath, isTrainingCallback } from "@/lib/auth-routes";
 import { motion } from "framer-motion";
 import { signIn } from "next-auth/react";
 import { ShieldCheck } from "lucide-react";
@@ -39,7 +39,6 @@ type AuthStatus = {
 
 export function LoginForm() {
   const searchParams = useSearchParams();
-  const user = useAuthStore((s) => s.user);
   const [loading, setLoading] = useState(false);
   const [statusLoading, setStatusLoading] = useState(true);
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
@@ -100,11 +99,11 @@ export function LoginForm() {
   const handleMicrosoftSignIn = useCallback(async () => {
     if (!authConfigured) return;
     setLoading(true);
-    await signIn("microsoft-entra-id", {
-      callbackUrl: user?.role === "admin" ? "/admin" : "/dashboard",
-    });
+    const callbackUrl = searchParams.get("callbackUrl");
+    const postLogin = resolvePostLoginPath(callbackUrl, undefined);
+    await signIn("microsoft-entra-id", { callbackUrl: postLogin });
     setLoading(false);
-  }, [user?.role, authConfigured]);
+  }, [authConfigured, searchParams]);
 
   return (
     <motion.div
@@ -131,9 +130,15 @@ export function LoginForm() {
             Compliance Agent
           </h1>
           <p className="mt-3 max-w-[280px] text-sm leading-relaxed text-zinc-500">
-            Sign in with your{" "}
-            <span className="font-semibold text-[#2e3192]">@relanto.ai</span> Microsoft
-            work account.
+            {isTrainingCallback(searchParams.get("callbackUrl"))
+              ? "Sign in with Microsoft to begin your proctored assessment."
+              : (
+                <>
+                  Sign in with your{" "}
+                  <span className="font-semibold text-[#2e3192]">@relanto.ai</span> Microsoft
+                  work account.
+                </>
+              )}
           </p>
         </div>
 
