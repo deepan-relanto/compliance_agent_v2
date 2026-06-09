@@ -216,40 +216,32 @@ export function MCQCheckpoint({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5">
-        <div
-          className={cn(
-            "mb-4 sm:mb-5",
-            submitted
-              ? "flex justify-end"
-              : "grid gap-3 sm:grid-cols-[1fr_200px] sm:items-stretch",
-          )}
-        >
-          {!submitted && (
-            <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 sm:p-4">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4 text-[#2e3192]" strokeWidth={1.75} />
-                <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
-                  Secure checkpoint
-                </p>
-              </div>
+        <div className="mb-4 grid gap-3 sm:mb-5 sm:grid-cols-[1fr_200px] sm:items-stretch">
+          <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 sm:p-4">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-[#2e3192]" strokeWidth={1.75} />
+              <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                Secure checkpoint
+              </p>
+            </div>
+            {!submitted && (
               <p className="mt-2 text-sm leading-relaxed text-zinc-600">
                 Choose the response that best follows the training policy and required approval path.
               </p>
-              <div className="mt-3 max-w-[180px]">
-                <StreakCounter
-                  currentStreak={currentStreak}
-                  bestStreak={bestStreak}
-                  compact
-                  tone="light"
-                />
-              </div>
+            )}
+            <div className="mt-3 max-w-[180px]">
+              <StreakCounter
+                currentStreak={currentStreak}
+                bestStreak={bestStreak}
+                compact
+                tone="light"
+              />
             </div>
-          )}
+          </div>
           <CheckpointSignal
             key={signalState}
             state={signalState}
             progress={checkpointProgress}
-            className={submitted ? "h-28 w-full max-w-[220px] shrink-0" : undefined}
           />
         </div>
 
