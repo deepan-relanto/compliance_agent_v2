@@ -64,6 +64,7 @@ export async function POST(
         explanation,
         mcqCorrect: stats.mcqCorrect,
         mcqTotal: stats.mcqTotal,
+        alreadyAnswered: stats.alreadyAnswered ?? false,
       });
     }
 

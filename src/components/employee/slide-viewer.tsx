@@ -246,6 +246,7 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
   const earnedBadgeIdsRef = useRef<Set<string>>(new Set());
   const badgeQueueRef = useRef<GamificationBadge[]>([]);
   const badgeShowingRef = useRef(false);
+  const answeredQuestionIdsRef = useRef(new Set<string>());
 
   const isLastSlide = slideIndex === totalSlides - 1;
   const gateIndex = useMemo(
@@ -664,7 +665,17 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
         void handleFinishAttempt();
         return;
       }
-      setGateMcq(activeQuiz ?? moduleMcqs[0] ?? FALLBACK_MCQ);
+      const quiz = activeQuiz ?? moduleMcqs[0] ?? FALLBACK_MCQ;
+      if (answeredQuestionIdsRef.current.has(quiz.id)) {
+        const next = quizOnlyIndex + 1;
+        if (next < moduleMcqs.length) {
+          setQuizOnlyIndex(next);
+        } else {
+          void handleFinishAttempt();
+        }
+        return;
+      }
+      setGateMcq(quiz);
       setMcqOpen(true);
       return;
     }
@@ -675,6 +686,18 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
     const upcoming = nextClickCount + 1;
     if (!reviewOnlyMode && upcoming % SLIDES_BETWEEN_GATES === 0) {
       setNextClickCount(upcoming);
+      const gateSlot = Math.min(
+        Math.max(Math.floor(upcoming / SLIDES_BETWEEN_GATES) - 1, 0),
+        Math.max(moduleMcqs.length - 1, 0),
+      );
+      const gateQuestion =
+        moduleMcqs[gateSlot] ??
+        moduleMcqs.find((q) => q.slideIndex === slideIndex + 1) ??
+        FALLBACK_MCQ;
+      if (answeredQuestionIdsRef.current.has(gateQuestion.id)) {
+        setSlideIndex((i) => Math.min(i + 1, totalSlides - 1));
+        return;
+      }
       openGate();
       return;
     }
@@ -690,6 +713,8 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
     openGate,
     handleFinishAttempt,
     totalSlides,
+    slideIndex,
+    quizOnlyIndex,
   ]);
 
   const closeAfterCompletion = useCallback(() => {
@@ -794,6 +819,10 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
   };
 
   const handleCheckpointAnswered = useCallback((wasCorrect: boolean) => {
+    const questionId = gateMcq.id;
+    if (answeredQuestionIdsRef.current.has(questionId)) return;
+    answeredQuestionIdsRef.current.add(questionId);
+
     setAnsweredCount((count) => count + 1);
     unlockBadge("starter");
 
@@ -810,7 +839,7 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
     } else {
       setCurrentStreak(0);
     }
-  }, [unlockBadge]);
+  }, [gateMcq.id, unlockBadge]);
 
   const handleMcqContinue = () => {
     setMcqOpen(false);
@@ -855,7 +884,7 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
       if (e.key === "ArrowRight") {
         e.preventDefault();
         tryAdvance();
-      } else if (e.key === "ArrowLeft" && slideIndex > 0) {
+      } else if (e.key === "ArrowLeft" && reviewOnlyMode && slideIndex > 0) {
         e.preventDefault();
         setSlideIndex((i) => Math.max(0, i - 1));
       }
@@ -875,6 +904,7 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
     slideIndex,
     tryAdvance,
     quizOnlyMode,
+    reviewOnlyMode,
   ]);
 
   useEffect(() => {
@@ -1129,7 +1159,7 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
                   )}
                 </div>
               ) : module.contentType === "pdf" && module.pdfUrl ? (
-                <div className="mx-auto flex h-full min-h-0 w-full max-w-[min(100%,1200px)] flex-col overflow-hidden rounded-lg border border-zinc-700/80 bg-zinc-950 shadow-2xl">
+                <div className="mx-auto flex h-full min-h-0 w-full max-w-[min(100%,1400px)] flex-col overflow-hidden rounded-lg border border-zinc-700/80 bg-zinc-950 shadow-2xl">
                   <div className="flex shrink-0 items-center justify-between border-b border-zinc-800 px-4 py-2">
                     <p className="text-xs font-semibold uppercase tracking-widest text-[#f15a24]">
                       Page {slideIndex + 1} of {numPages}
@@ -1141,8 +1171,8 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
                       </span>
                     </div>
                   </div>
-                  <div className="flex min-h-0 flex-1 items-stretch justify-center overflow-hidden bg-zinc-800/50 p-2 sm:p-3">
-                    <div className="flex h-full w-full items-center justify-center rounded-sm bg-white shadow-xl ring-1 ring-black/20">
+                  <div className="flex min-h-0 flex-1 items-stretch justify-center overflow-hidden bg-zinc-800/40 p-1 sm:p-2">
+                    <div className="flex h-full w-full max-w-full items-center justify-center rounded-sm bg-white shadow-xl ring-1 ring-black/20">
                       <PdfPageViewer
                         pdfUrl={module.pdfUrl!}
                         pageNumber={slideIndex + 1}
@@ -1205,16 +1235,22 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
 
       {!showFinalQa && !showAcknowledgement && !quizOnlyMode && !showScoreResult && (
         <footer className="relative z-[70] flex h-12 shrink-0 items-center justify-between border-t border-zinc-800 bg-zinc-950 px-4">
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={slideIndex === 0 || slideNavLocked}
-            onClick={() => setSlideIndex((i) => Math.max(0, i - 1))}
-            className="cursor-pointer text-zinc-300 hover:bg-zinc-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Previous
-          </Button>
+          {reviewOnlyMode ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={slideIndex === 0 || slideNavLocked}
+              onClick={() => setSlideIndex((i) => Math.max(0, i - 1))}
+              className="cursor-pointer text-zinc-300 hover:bg-zinc-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </Button>
+          ) : (
+            <span className="inline-flex min-w-[5.5rem] items-center text-xs text-zinc-500">
+              Forward only
+            </span>
+          )}
           <div className="flex gap-1">
             {slides.map((_, i) => (
               <div

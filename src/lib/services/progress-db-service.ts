@@ -240,7 +240,7 @@ export async function recordMcqAnswerDb(
     questionId: string;
     wasCorrect: boolean;
   },
-): Promise<{ mcqCorrect: number; mcqTotal: number }> {
+): Promise<{ mcqCorrect: number; mcqTotal: number; alreadyAnswered?: boolean }> {
   await ensureProgressRow(sql, {
     userEmail: params.userEmail,
     moduleId: params.moduleId,
@@ -257,6 +257,14 @@ export async function recordMcqAnswerDb(
   }
   if (row.status === "failed" && row.score_percent == null) {
     return { mcqCorrect: row.mcq_correct, mcqTotal: row.mcq_total };
+  }
+
+  if (Object.prototype.hasOwnProperty.call(row.mcq_answers, params.questionId)) {
+    return {
+      mcqCorrect: row.mcq_correct,
+      mcqTotal: row.mcq_total,
+      alreadyAnswered: true,
+    };
   }
 
   const answers = { ...row.mcq_answers, [params.questionId]: params.wasCorrect };

@@ -150,11 +150,14 @@ export function MCQCheckpoint({
         return;
       }
       const correct = Boolean(data.correct);
+      const alreadyAnswered = Boolean(data.alreadyAnswered);
       setWasCorrect(correct);
       setCorrectOptionId(data.correctOptionId ?? null);
       setAnswerExplanation(data.explanation ?? null);
       setSubmitted(true);
-      onAnswered(correct);
+      if (!alreadyAnswered) {
+        onAnswered(correct);
+      }
     } catch {
       setError("Could not reach the server. Try again.");
     } finally {

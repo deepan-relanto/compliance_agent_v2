@@ -123,11 +123,11 @@ export function PdfPageViewer({
   const docLoading = numPages === null && !docError;
   const pageWidth = useMemo(() => {
     if (containerWidth <= 0) return 0;
-    if (containerHeight <= 0) return Math.min(containerWidth, 1080);
-    // Fit within container using ~4:3 slide proportions; cap width so slides don't look stretched.
-    const widthFromHeight = Math.floor(containerHeight * (4 / 3));
-    const fitted = Math.min(containerWidth * 0.92, widthFromHeight);
-    return Math.min(Math.floor(fitted), 1080);
+    const widthBudget = Math.floor(containerWidth * 0.99);
+    if (containerHeight <= 0) return Math.min(widthBudget, 1320);
+    // Scale up to fill the white slide area; only shrink if height would overflow.
+    const widthFromHeight = Math.floor(containerHeight * 1.35);
+    return Math.min(widthBudget, widthFromHeight, 1320);
   }, [containerWidth, containerHeight]);
 
   const canRenderPage =
