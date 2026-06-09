@@ -1096,7 +1096,7 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -12 }}
               transition={{ duration: 0.2 }}
-              className="flex min-h-0 flex-1 flex-col p-4 sm:p-6"
+              className="flex min-h-0 flex-1 flex-col p-2 sm:p-3"
             >
               {quizOnlyMode ? (
                 <div className="mx-auto flex h-full w-full max-w-3xl flex-col items-center justify-center gap-4 p-4">
@@ -1129,20 +1129,20 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
                   )}
                 </div>
               ) : module.contentType === "pdf" && module.pdfUrl ? (
-                <div className="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col overflow-hidden rounded-lg border border-zinc-700/80 bg-zinc-950 shadow-2xl">
-                  <div className="flex shrink-0 items-center justify-between border-b border-zinc-800 px-4 py-2.5">
+                <div className="mx-auto flex h-full min-h-0 w-full max-w-[min(100%,1600px)] flex-col overflow-hidden rounded-lg border border-zinc-700/80 bg-zinc-950 shadow-2xl">
+                  <div className="flex shrink-0 items-center justify-between border-b border-zinc-800 px-4 py-2">
                     <p className="text-xs font-semibold uppercase tracking-widest text-[#f15a24]">
                       Page {slideIndex + 1} of {numPages}
                     </p>
                     <div className="flex items-center gap-2 text-zinc-200">
                       <FileText className="h-3.5 w-3.5 text-[#f15a24]" strokeWidth={1.75} />
-                      <span className="max-w-[220px] truncate text-xs font-semibold text-white">
+                      <span className="max-w-[min(40vw,320px)] truncate text-xs font-semibold text-white">
                         {module.title}
                       </span>
                     </div>
                   </div>
-                  <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-zinc-800/50 p-6">
-                    <div className="w-full max-w-4xl rounded-sm bg-white shadow-xl ring-1 ring-black/20">
+                  <div className="flex min-h-0 flex-1 items-stretch justify-center overflow-hidden bg-zinc-800/50 p-2 sm:p-3">
+                    <div className="flex h-full w-full items-center justify-center rounded-sm bg-white shadow-xl ring-1 ring-black/20">
                       <PdfPageViewer
                         pdfUrl={module.pdfUrl!}
                         pageNumber={slideIndex + 1}

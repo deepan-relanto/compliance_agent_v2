@@ -37,6 +37,7 @@ export function PdfPageViewer({
   const onLoadSuccessRef = useRef(onLoadSuccess);
   const mountedRef = useRef(true);
   const [containerWidth, setContainerWidth] = useState(0);
+  const [containerHeight, setContainerHeight] = useState(0);
   const [numPages, setNumPages] = useState<number | null>(null);
   const [docError, setDocError] = useState<string | null>(null);
   const [pageRendering, setPageRendering] = useState(true);
@@ -57,7 +58,9 @@ export function PdfPageViewer({
     const measure = () => {
       if (containerRef.current) {
         const w = containerRef.current.clientWidth;
+        const h = containerRef.current.clientHeight;
         setContainerWidth((prev) => (Math.abs(prev - w) > 2 ? w : prev));
+        setContainerHeight((prev) => (Math.abs(prev - h) > 2 ? h : prev));
       }
     };
     measure();
@@ -118,8 +121,16 @@ export function PdfPageViewer({
     [pdfUrl],
   );
   const docLoading = numPages === null && !docError;
+  const pageWidth = useMemo(() => {
+    if (containerWidth <= 0) return 0;
+    if (containerHeight <= 0) return containerWidth;
+    // Typical slide aspect ratio 16:9 — scale to fill available area without cropping.
+    const widthFromHeight = Math.floor(containerHeight * (16 / 9));
+    return Math.min(containerWidth, widthFromHeight);
+  }, [containerWidth, containerHeight]);
+
   const canRenderPage =
-    numPages != null && pageNumber >= 1 && pageNumber <= numPages && containerWidth > 0;
+    numPages != null && pageNumber >= 1 && pageNumber <= numPages && pageWidth > 0;
 
   if (docError) {
     return (
@@ -133,7 +144,7 @@ export function PdfPageViewer({
   return (
     <div
       ref={containerRef}
-      className="relative flex min-h-[180px] w-full max-w-full items-center justify-center overflow-auto py-1 sm:min-h-[320px] sm:py-2"
+      className="relative flex h-full min-h-[200px] w-full max-w-full items-center justify-center overflow-hidden"
     >
       {(docLoading || pageRendering) && (
         <div
@@ -145,7 +156,7 @@ export function PdfPageViewer({
         </div>
       )}
 
-      {containerWidth > 0 && (
+      {pageWidth > 0 && (
         <Document
           key={`${file}-${docKey}`}
           file={file}
@@ -158,7 +169,7 @@ export function PdfPageViewer({
           {canRenderPage && (
             <Page
               pageNumber={pageNumber}
-              width={containerWidth}
+              width={pageWidth}
               onRenderSuccess={handlePageRenderSuccess}
               onRenderError={handlePageRenderError}
               renderAnnotationLayer={false}

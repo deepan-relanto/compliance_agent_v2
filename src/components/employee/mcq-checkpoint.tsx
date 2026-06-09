@@ -19,6 +19,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 
 interface MCQCheckpointProps {
   moduleId: string;
@@ -176,7 +177,9 @@ export function MCQCheckpoint({
     <div
       className={cn(
         "flex w-full min-h-0 flex-col overflow-hidden rounded-[var(--radius-card)] border border-zinc-200/90 bg-white shadow-[var(--shadow-elevated)]",
-        panelMode ? "max-w-none" : "max-h-[min(100dvh-1.5rem,920px)] max-w-2xl",
+        panelMode
+          ? "max-w-none"
+          : "h-full max-h-[min(100dvh-1rem,900px)] max-w-2xl",
       )}
     >
       <div className="h-1 shrink-0 bg-zinc-100">
@@ -212,29 +215,31 @@ export function MCQCheckpoint({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6">
-        <div className="mb-4 grid gap-3 sm:mb-5 sm:grid-cols-[1fr_220px] sm:items-stretch">
-          <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4">
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="h-4 w-4 text-[#2e3192]" strokeWidth={1.75} />
-              <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
-                Secure checkpoint
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5">
+        {!submitted && (
+          <div className="mb-4 grid gap-3 sm:mb-5 sm:grid-cols-[1fr_200px] sm:items-stretch">
+            <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 sm:p-4">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-[#2e3192]" strokeWidth={1.75} />
+                <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                  Secure checkpoint
+                </p>
+              </div>
+              <p className="mt-2 text-sm leading-relaxed text-zinc-600">
+                Choose the response that best follows the training policy and required approval path.
               </p>
+              <div className="mt-3 max-w-[180px]">
+                <StreakCounter
+                  currentStreak={currentStreak}
+                  bestStreak={bestStreak}
+                  compact
+                  tone="light"
+                />
+              </div>
             </div>
-            <p className="mt-2 text-sm leading-relaxed text-zinc-600">
-              Choose the response that best follows the training policy and required approval path.
-            </p>
-            <div className="mt-4 max-w-[180px]">
-              <StreakCounter
-                currentStreak={currentStreak}
-                bestStreak={bestStreak}
-                compact
-                tone="light"
-              />
-            </div>
+            <CheckpointSignal state={signalState} progress={checkpointProgress} />
           </div>
-          <CheckpointSignal state={signalState} progress={checkpointProgress} />
-        </div>
+        )}
 
         <h2 className="text-base font-semibold tracking-tight text-zinc-900 sm:text-lg">
           {displayPrompt}
@@ -310,7 +315,7 @@ export function MCQCheckpoint({
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             className={cn(
-              "mt-4 max-h-[min(40vh,280px)] overflow-y-auto rounded-lg border p-3 sm:p-4",
+              "mt-4 rounded-lg border p-3 sm:p-4",
               wasCorrect
                 ? "border-emerald-200 bg-emerald-50 text-emerald-950"
                 : "border-red-200 bg-red-50 text-red-950",
@@ -379,10 +384,37 @@ export function MCQCheckpoint({
     </div>
   );
 
+  const modalLayer =
+    open && !panelMode ? (
+      <AnimatePresence>
+        <motion.div
+          key="checkpoint-backdrop"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[200] bg-zinc-900/55 backdrop-blur-[2px]"
+        />
+        <motion.div
+          key="checkpoint-dialog"
+          role="dialog"
+          aria-modal="true"
+          initial={{ opacity: 0, scale: 0.98, y: 8 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.99, y: 4 }}
+          transition={{ type: "spring", stiffness: 400, damping: 30 }}
+          className="fixed inset-0 z-[201] flex items-center justify-center overflow-hidden p-3 sm:p-4"
+        >
+          <div className="flex h-[min(calc(100dvh-1.5rem),900px)] w-full max-w-2xl min-h-0">
+            {card}
+          </div>
+        </motion.div>
+      </AnimatePresence>
+    ) : null;
+
   return (
-    <AnimatePresence>
-      {open && (
-        panelMode ? (
+    <>
+      <AnimatePresence>
+        {open && panelMode && (
           <motion.div
             key="checkpoint-panel"
             initial={{ opacity: 0, x: 12 }}
@@ -393,30 +425,11 @@ export function MCQCheckpoint({
           >
             {card}
           </motion.div>
-        ) : (
-        <>
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[65] bg-zinc-900/55 backdrop-blur-[2px]"
-          />
-          <motion.div
-            role="dialog"
-            aria-modal="true"
-            initial={{ opacity: 0, scale: 0.98, y: 8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.99, y: 4 }}
-            transition={{ type: "spring", stiffness: 400, damping: 30 }}
-            className="fixed inset-0 z-[66] flex items-start justify-center overflow-y-auto p-3 sm:items-center sm:p-4 pointer-events-none"
-          >
-            <div className="pointer-events-auto mx-auto flex w-full max-w-2xl items-stretch px-1 sm:px-4">
-              {card}
-            </div>
-          </motion.div>
-        </>
-        )
-      )}
-    </AnimatePresence>
+        )}
+      </AnimatePresence>
+      {typeof document !== "undefined" && modalLayer
+        ? createPortal(modalLayer, document.body)
+        : null}
+    </>
   );
 }
