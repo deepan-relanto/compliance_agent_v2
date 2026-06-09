@@ -22,10 +22,23 @@ const PDF_DOCUMENT_OPTIONS = {
   standardFontDataUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/standard_fonts/`,
 } as const;
 
+/** Typical PowerPoint export — used until the page reports its real size. */
+const DEFAULT_SLIDE_ASPECT = 16 / 9;
+
 interface PdfPageViewerProps {
   pdfUrl: string;
   pageNumber: number;
   onLoadSuccess: (numPages: number) => void;
+}
+
+function fitPageWidth(
+  containerWidth: number,
+  containerHeight: number,
+  pageAspect: number,
+): number {
+  if (containerWidth <= 0 || containerHeight <= 0 || pageAspect <= 0) return 0;
+  const maxWidthFromHeight = containerHeight * pageAspect;
+  return Math.floor(Math.min(containerWidth, maxWidthFromHeight));
 }
 
 export function PdfPageViewer({
@@ -38,6 +51,7 @@ export function PdfPageViewer({
   const mountedRef = useRef(true);
   const [containerWidth, setContainerWidth] = useState(0);
   const [containerHeight, setContainerHeight] = useState(0);
+  const [pageAspect, setPageAspect] = useState(DEFAULT_SLIDE_ASPECT);
   const [numPages, setNumPages] = useState<number | null>(null);
   const [docError, setDocError] = useState<string | null>(null);
   const [pageRendering, setPageRendering] = useState(true);
@@ -73,12 +87,14 @@ export function PdfPageViewer({
     setNumPages(null);
     setDocError(null);
     setPageRendering(true);
+    setPageAspect(DEFAULT_SLIDE_ASPECT);
     setDocKey((k) => k + 1);
   }, [pdfUrl]);
 
   useEffect(() => {
     if (numPages == null) return;
     setPageRendering(true);
+    setPageAspect(DEFAULT_SLIDE_ASPECT);
   }, [pageNumber, numPages]);
 
   const handleDocLoadSuccess = useCallback(({ numPages: total }: { numPages: number }) => {
@@ -95,6 +111,13 @@ export function PdfPageViewer({
       "Unable to load the PDF. It may have been removed — contact your administrator.",
     );
     setPageRendering(false);
+  }, []);
+
+  const handlePageLoadSuccess = useCallback((page: { width: number; height: number }) => {
+    if (!mountedRef.current) return;
+    if (page.width > 0 && page.height > 0) {
+      setPageAspect(page.width / page.height);
+    }
   }, []);
 
   const handlePageRenderSuccess = useCallback(() => {
@@ -121,14 +144,10 @@ export function PdfPageViewer({
     [pdfUrl],
   );
   const docLoading = numPages === null && !docError;
-  const pageWidth = useMemo(() => {
-    if (containerWidth <= 0) return 0;
-    const widthBudget = Math.floor(containerWidth * 0.99);
-    if (containerHeight <= 0) return Math.min(widthBudget, 1320);
-    // Scale up to fill the white slide area; only shrink if height would overflow.
-    const widthFromHeight = Math.floor(containerHeight * 1.35);
-    return Math.min(widthBudget, widthFromHeight, 1320);
-  }, [containerWidth, containerHeight]);
+  const pageWidth = useMemo(
+    () => fitPageWidth(containerWidth, containerHeight, pageAspect),
+    [containerWidth, containerHeight, pageAspect],
+  );
 
   const canRenderPage =
     numPages != null && pageNumber >= 1 && pageNumber <= numPages && pageWidth > 0;
@@ -145,21 +164,21 @@ export function PdfPageViewer({
   return (
     <div
       ref={containerRef}
-      className="relative flex h-full min-h-[200px] w-full max-w-full items-center justify-center overflow-hidden"
+      className="relative flex h-full min-h-0 w-full items-center justify-center overflow-hidden"
     >
       {(docLoading || pageRendering) && (
         <div
           className={`absolute inset-0 z-10 flex items-center justify-center ${
-            docLoading ? "bg-white/90" : "bg-white/40"
+            docLoading ? "bg-zinc-900/60" : "bg-zinc-900/20"
           }`}
         >
-          <Loader2 className="h-6 w-6 animate-spin text-[#2e3192]" />
+          <Loader2 className="h-6 w-6 animate-spin text-[#f15a24]" />
         </div>
       )}
 
       {pageWidth > 0 && (
         <Document
-          key={`${file}-${docKey}`}
+          key={`${file.url}-${docKey}`}
           file={file}
           options={PDF_DOCUMENT_OPTIONS}
           onLoadSuccess={handleDocLoadSuccess}
@@ -171,10 +190,12 @@ export function PdfPageViewer({
             <Page
               pageNumber={pageNumber}
               width={pageWidth}
+              onLoadSuccess={handlePageLoadSuccess}
               onRenderSuccess={handlePageRenderSuccess}
               onRenderError={handlePageRenderError}
               renderAnnotationLayer={false}
               renderTextLayer={false}
+              className="shadow-2xl ring-1 ring-black/25"
             />
           )}
         </Document>
