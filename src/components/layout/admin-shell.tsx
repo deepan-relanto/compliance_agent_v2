@@ -12,7 +12,6 @@ import {
   LayoutGrid,
   LogOut,
   MessageSquare,
-  Settings,
   ShieldAlert,
   Library,
 } from "lucide-react";
@@ -57,12 +56,6 @@ const navItems = [
     label: "Feedback",
     icon: MessageSquare,
     isActive: (path: string) => path.startsWith("/admin/feedback"),
-  },
-  {
-    href: "/admin/settings",
-    label: "Settings",
-    icon: Settings,
-    isActive: (path: string) => path.startsWith("/admin/settings"),
   },
 ];
 
