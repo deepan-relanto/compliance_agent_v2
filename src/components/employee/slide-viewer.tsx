@@ -1129,7 +1129,7 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
                   )}
                 </div>
               ) : module.contentType === "pdf" && module.pdfUrl ? (
-                <div className="mx-auto flex h-full min-h-0 w-full max-w-[min(100%,1600px)] flex-col overflow-hidden rounded-lg border border-zinc-700/80 bg-zinc-950 shadow-2xl">
+                <div className="mx-auto flex h-full min-h-0 w-full max-w-[min(100%,1200px)] flex-col overflow-hidden rounded-lg border border-zinc-700/80 bg-zinc-950 shadow-2xl">
                   <div className="flex shrink-0 items-center justify-between border-b border-zinc-800 px-4 py-2">
                     <p className="text-xs font-semibold uppercase tracking-widest text-[#f15a24]">
                       Page {slideIndex + 1} of {numPages}
@@ -1180,11 +1180,7 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
                   <BrandPanelHeader
                     eyebrow="Step 2 of 2 · Final feedback"
                     title="Complete your assessment"
-                    description={
-                      module.feedbackRequired
-                        ? `Feedback is required to finalize ${module.title}.`
-                        : `Share optional feedback about ${module.title} before finishing.`
-                    }
+                    description={`A star rating and written feedback are both required to finalize ${module.title}.`}
                     icon={ShieldCheck}
                     compact
                   />
@@ -1195,7 +1191,8 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
                   moduleId={module.id}
                   userId={user?.username ?? ""}
                   deferSuccessToParent
-                  messageRequired={!!module.feedbackRequired}
+                  messageRequired
+                  ratingRequired
                   onSuccess={() => {
                     finishTrainingCompletion();
                   }}

@@ -216,8 +216,15 @@ export function MCQCheckpoint({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5">
-        {!submitted && (
-          <div className="mb-4 grid gap-3 sm:mb-5 sm:grid-cols-[1fr_200px] sm:items-stretch">
+        <div
+          className={cn(
+            "mb-4 sm:mb-5",
+            submitted
+              ? "flex justify-end"
+              : "grid gap-3 sm:grid-cols-[1fr_200px] sm:items-stretch",
+          )}
+        >
+          {!submitted && (
             <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 sm:p-4">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="h-4 w-4 text-[#2e3192]" strokeWidth={1.75} />
@@ -237,9 +244,14 @@ export function MCQCheckpoint({
                 />
               </div>
             </div>
-            <CheckpointSignal state={signalState} progress={checkpointProgress} />
-          </div>
-        )}
+          )}
+          <CheckpointSignal
+            key={signalState}
+            state={signalState}
+            progress={checkpointProgress}
+            className={submitted ? "h-28 w-full max-w-[220px] shrink-0" : undefined}
+          />
+        </div>
 
         <h2 className="text-base font-semibold tracking-tight text-zinc-900 sm:text-lg">
           {displayPrompt}

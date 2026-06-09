@@ -18,6 +18,8 @@ interface FinalQaFormProps {
   deferSuccessToParent?: boolean;
   /** When false, feedback message is optional (learner may skip on parent screen). */
   messageRequired?: boolean;
+  /** When true, learner must select a 1–5 star rating before submitting. */
+  ratingRequired?: boolean;
 }
 
 export function FinalQaForm({
@@ -28,6 +30,7 @@ export function FinalQaForm({
   size = "default",
   deferSuccessToParent = false,
   messageRequired = true,
+  ratingRequired = false,
 }: FinalQaFormProps) {
   const large = size === "large";
   const batchId = useAuthStore((s) => s.user?.batchId);
@@ -36,9 +39,12 @@ export function FinalQaForm({
   const [hoveredStar, setHoveredStar] = useState<number>(0);
   const [submitted, setSubmitted] = useState(false);
 
+  const canSubmit =
+    message.trim().length > 0 && (!ratingRequired || rating >= 1);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!message.trim()) return;
+    if (!canSubmit) return;
 
     const ratingPrefix = rating > 0 ? `[Rating: ${rating}/5] ` : "";
     submitFeedback(userId, moduleId, moduleTitle, ratingPrefix + message.trim(), batchId);
@@ -110,9 +116,13 @@ export function FinalQaForm({
         </h3>
       </div>
       <p className={cn("text-zinc-500", large ? "mt-2 text-base leading-relaxed" : "mt-1 text-sm")}>
-        {messageRequired
-          ? "Share your experience or questions before your completion is finalized."
-          : "Optional — help us improve this module with a quick rating or comment."}
+        {messageRequired && ratingRequired
+          ? "Both a star rating and written feedback are required to complete your training."
+          : messageRequired
+            ? "Share your experience or questions before your completion is finalized."
+            : ratingRequired
+              ? "Please rate this module before finishing."
+              : "Optional — help us improve this module with a quick rating or comment."}
       </p>
 
       <form onSubmit={handleSubmit} className={cn(large ? "mt-8 space-y-6" : "mt-4 space-y-3")}>
@@ -123,14 +133,23 @@ export function FinalQaForm({
               large ? "mb-3 text-sm" : "mb-1.5 text-xs",
             )}
           >
-            Rating <span className="text-zinc-400">(optional)</span>
+            Rating{" "}
+            {ratingRequired ? (
+              <span className="text-[#f15a24]">(required)</span>
+            ) : (
+              <span className="text-zinc-400">(optional)</span>
+            )}
           </p>
           <div className={cn("flex", large ? "gap-2" : "gap-1")}>
             {[1, 2, 3, 4, 5].map((star) => (
               <button
                 key={star}
                 type="button"
-                onClick={() => setRating(star === rating ? 0 : star)}
+                onClick={() =>
+                  setRating(
+                    ratingRequired ? star : star === rating ? 0 : star,
+                  )
+                }
                 onMouseEnter={() => setHoveredStar(star)}
                 onMouseLeave={() => setHoveredStar(0)}
                 className={cn(
@@ -150,10 +169,24 @@ export function FinalQaForm({
           </div>
         </div>
 
+        <div>
+          <p
+            className={cn(
+              "font-medium text-zinc-500",
+              large ? "mb-2 text-sm" : "mb-1.5 text-xs",
+            )}
+          >
+            Written feedback{" "}
+            {messageRequired ? (
+              <span className="text-[#f15a24]">(required)</span>
+            ) : (
+              <span className="text-zinc-400">(optional)</span>
+            )}
+          </p>
         <textarea
           value={message}
           onChange={(e) => setMessage(e.target.value)}
-          placeholder="Your question or feedback…"
+          placeholder="Share what worked well, what was unclear, or how we can improve…"
           rows={large ? 6 : 4}
           required={messageRequired}
           className={cn(
@@ -161,11 +194,13 @@ export function FinalQaForm({
             large ? "px-4 py-3 text-base" : "px-3 py-2 text-sm",
           )}
         />
+        </div>
         <Button
           type="submit"
           size={large ? "lg" : "md"}
+          disabled={!canSubmit}
           className={cn(
-            "cursor-pointer bg-gradient-to-r from-[#2e3192] to-[#3d42a8] text-white hover:opacity-95",
+            "cursor-pointer bg-gradient-to-r from-[#2e3192] to-[#3d42a8] text-white hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50",
             large ? "w-full" : undefined,
           )}
         >

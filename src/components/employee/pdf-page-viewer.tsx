@@ -123,10 +123,11 @@ export function PdfPageViewer({
   const docLoading = numPages === null && !docError;
   const pageWidth = useMemo(() => {
     if (containerWidth <= 0) return 0;
-    if (containerHeight <= 0) return containerWidth;
-    // Typical slide aspect ratio 16:9 — scale to fill available area without cropping.
-    const widthFromHeight = Math.floor(containerHeight * (16 / 9));
-    return Math.min(containerWidth, widthFromHeight);
+    if (containerHeight <= 0) return Math.min(containerWidth, 1080);
+    // Fit within container using ~4:3 slide proportions; cap width so slides don't look stretched.
+    const widthFromHeight = Math.floor(containerHeight * (4 / 3));
+    const fitted = Math.min(containerWidth * 0.92, widthFromHeight);
+    return Math.min(Math.floor(fitted), 1080);
   }, [containerWidth, containerHeight]);
 
   const canRenderPage =
