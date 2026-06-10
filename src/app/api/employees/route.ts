@@ -8,9 +8,11 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-function parseList(param: string | null): string[] | undefined {
-  if (!param?.trim()) return undefined;
-  return param.split(",").map((s) => s.trim()).filter(Boolean);
+function parseList(values: string | string[] | null): string[] | undefined {
+  if (!values) return undefined;
+  const list = Array.isArray(values) ? values : [values];
+  const parsed = list.map((s) => s.trim()).filter(Boolean);
+  return parsed.length ? parsed : undefined;
 }
 
 export async function GET(req: NextRequest) {
@@ -29,11 +31,11 @@ export async function GET(req: NextRequest) {
 
     const result = await listEmployees(sql, {
       search: sp.get("search") ?? undefined,
-      departments: parseList(sp.get("departments")),
-      locations: parseList(sp.get("locations")),
-      genders: parseList(sp.get("genders")),
-      jobTitles: parseList(sp.get("jobTitles")),
-      workerTypes: parseList(sp.get("workerTypes")),
+      departments: parseList(sp.getAll("departments")),
+      locations: parseList(sp.getAll("locations")),
+      genders: parseList(sp.getAll("genders")),
+      jobTitles: parseList(sp.getAll("jobTitles")),
+      workerTypes: parseList(sp.getAll("workerTypes")),
       dateJoinedFrom: sp.get("dateJoinedFrom") ?? undefined,
       dateJoinedTo: sp.get("dateJoinedTo") ?? undefined,
       unassignedOnly: sp.get("unassignedOnly") === "1",

@@ -10,14 +10,18 @@ import {
   type EmployeeFiltersState,
 } from "@/components/admin/employee-filter-bar";
 
+function appendAll(params: URLSearchParams, key: string, values: string[]) {
+  for (const value of values) params.append(key, value);
+}
+
 function buildQuery(filters: EmployeeFiltersState, page: number) {
   const p = new URLSearchParams();
   if (filters.search) p.set("search", filters.search);
-  if (filters.departments.length) p.set("departments", filters.departments.join(","));
-  if (filters.locations.length) p.set("locations", filters.locations.join(","));
-  if (filters.genders.length) p.set("genders", filters.genders.join(","));
-  if (filters.jobTitles.length) p.set("jobTitles", filters.jobTitles.join(","));
-  if (filters.workerTypes.length) p.set("workerTypes", filters.workerTypes.join(","));
+  appendAll(p, "departments", filters.departments);
+  appendAll(p, "locations", filters.locations);
+  appendAll(p, "genders", filters.genders);
+  appendAll(p, "jobTitles", filters.jobTitles);
+  appendAll(p, "workerTypes", filters.workerTypes);
   if (filters.dateJoinedFrom) p.set("dateJoinedFrom", filters.dateJoinedFrom);
   if (filters.dateJoinedTo) p.set("dateJoinedTo", filters.dateJoinedTo);
   if (filters.unassignedOnly) p.set("unassignedOnly", "1");
