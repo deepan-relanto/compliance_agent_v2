@@ -25,3 +25,9 @@ export function resolvePostLoginPath(
 export function isTrainingCallback(callbackUrl: string | null | undefined): boolean {
   return !!callbackUrl?.startsWith("/training/");
 }
+
+/** Preserve return path when sending unauthenticated users to login. */
+export function loginPathWithCallback(returnPath: string): string {
+  const path = returnPath.startsWith("/") ? returnPath : "/dashboard";
+  return `/login?callbackUrl=${encodeURIComponent(path)}`;
+}

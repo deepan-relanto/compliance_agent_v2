@@ -5,6 +5,7 @@ import { TrainingCompletedGate } from "@/components/employee/training-completed-
 import type { McqQuestion, TrainingModule } from "@/lib/types";
 import { useAuthStore } from "@/lib/auth-store";
 import dynamic from "next/dynamic";
+import { useSession } from "next-auth/react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
@@ -18,14 +19,21 @@ export default function TrainingPage() {
   const params = useParams();
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
+  const isHydrated = useAuthStore((s) => s.isHydrated);
+  const { status: sessionStatus } = useSession();
   const id = typeof params.id === "string" ? params.id : "";
 
   const [trainingModule, setTrainingModule] = useState<TrainingModule | undefined>();
   const [mcqs, setMcqs] = useState<McqQuestion[]>([]);
   const [ready, setReady] = useState(false);
 
+  const authReady =
+    sessionStatus !== "loading" &&
+    isHydrated &&
+    (sessionStatus === "authenticated" ? !!user?.username : true);
+
   useEffect(() => {
-    if (!id) return;
+    if (!id || !authReady) return;
     const query = user?.username
       ? `?userEmail=${encodeURIComponent(user.username)}`
       : "";
@@ -57,13 +65,14 @@ export default function TrainingPage() {
         }
       });
     return () => controller.abort();
-  }, [id, user?.username]);
+  }, [id, user?.username, authReady]);
 
   useEffect(() => {
-    if (ready && !trainingModule) router.replace("/dashboard");
-  }, [ready, trainingModule, router]);
+    if (!authReady || !ready) return;
+    if (!trainingModule) router.replace("/dashboard");
+  }, [ready, trainingModule, router, authReady]);
 
-  if (!ready) {
+  if (!authReady || !ready) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-zinc-100">
         <Loader2 className="h-8 w-8 animate-spin text-[#2e3192]" />

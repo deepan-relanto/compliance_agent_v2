@@ -1,7 +1,11 @@
 import { getMicrosoftAuthConfig } from "@/lib/auth-config";
 import { isRelantoEmail } from "@/lib/auth-env";
 import { getSql } from "@/lib/db";
-import { getUserByEmail, toAuthUser } from "@/lib/services/auth-user-db-service";
+import {
+  ensureUserForSignIn,
+  getUserByEmail,
+  toAuthUser,
+} from "@/lib/services/auth-user-db-service";
 import type { AuthUser } from "@/lib/types";
 import NextAuth from "next-auth";
 import MicrosoftEntraId from "next-auth/providers/microsoft-entra-id";
@@ -44,7 +48,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       }
       try {
         const sql = getSql();
-        const dbUser = await getUserByEmail(sql, email);
+        const dbUser = await ensureUserForSignIn(
+          sql,
+          email,
+          user.name ?? user.email,
+        );
         return dbUser != null;
       } catch {
         return false;
@@ -55,7 +63,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const email = user.email.trim().toLowerCase();
         try {
           const sql = getSql();
-          const dbUser = await getUserByEmail(sql, email);
+          const dbUser =
+            (await getUserByEmail(sql, email)) ??
+            (await ensureUserForSignIn(sql, email, user.name ?? user.email));
           if (dbUser) {
             const authUser = toAuthUser(dbUser);
             token.email = authUser.username;
@@ -68,6 +78,17 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         }
       }
       return token;
+    },
+    async redirect({ url, baseUrl }) {
+      const base = baseUrl.replace(/\/$/, "");
+      if (url.startsWith("/")) return `${base}${url}`;
+      try {
+        const target = new URL(url);
+        if (target.origin === new URL(base).origin) return url;
+      } catch {
+        /* ignore malformed url */
+      }
+      return base;
     },
     async session({ session, token }) {
       if (session.user) {

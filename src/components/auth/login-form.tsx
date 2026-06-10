@@ -99,9 +99,12 @@ export function LoginForm() {
   const handleMicrosoftSignIn = useCallback(async () => {
     if (!authConfigured) return;
     setLoading(true);
-    const callbackUrl = searchParams.get("callbackUrl");
-    const postLogin = resolvePostLoginPath(callbackUrl, undefined);
-    await signIn("microsoft-entra-id", { callbackUrl: postLogin });
+    const rawCallback = searchParams.get("callbackUrl");
+    const postLogin = resolvePostLoginPath(rawCallback, undefined);
+    await signIn("microsoft-entra-id", {
+      callbackUrl: postLogin,
+      redirect: true,
+    });
     setLoading(false);
   }, [authConfigured, searchParams]);
 
