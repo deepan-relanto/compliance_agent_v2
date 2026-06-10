@@ -32,6 +32,36 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX IF NOT EXISTS idx_users_batch ON users(batch_id);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 
+-- ─── Master HR employee directory ───────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS employees (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  employee_number  TEXT NOT NULL UNIQUE,
+  name             TEXT NOT NULL,
+  work_email       TEXT NOT NULL,
+  date_of_birth    DATE,
+  gender           TEXT,
+  location         TEXT,
+  department       TEXT,
+  sub_department   TEXT,
+  job_title        TEXT,
+  reporting_to     TEXT,
+  date_joined      DATE,
+  worker_type      TEXT,
+  primary_skills   TEXT,
+  secondary_skills TEXT,
+  certifications   TEXT,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_employees_email ON employees(LOWER(work_email));
+CREATE INDEX IF NOT EXISTS idx_employees_department ON employees(department);
+CREATE INDEX IF NOT EXISTS idx_employees_location ON employees(location);
+CREATE INDEX IF NOT EXISTS idx_employees_job_title ON employees(job_title);
+CREATE INDEX IF NOT EXISTS idx_employees_date_joined ON employees(date_joined);
+CREATE INDEX IF NOT EXISTS idx_employees_gender ON employees(gender);
+
 -- ─── Training content ─────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS training_modules (

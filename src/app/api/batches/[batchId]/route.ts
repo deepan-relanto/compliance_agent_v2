@@ -1,4 +1,10 @@
+import { requireAdminSession } from "@/lib/api-admin";
 import { getSql } from "@/lib/db";
+import {
+  addBatchMembers,
+  deleteBatch,
+  removeBatchMembers,
+} from "@/lib/services/batch-management-service";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -47,6 +53,68 @@ export async function GET(
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to load batch";
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  }
+}
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ batchId: string }> },
+) {
+  const { error } = await requireAdminSession();
+  if (error) return error;
+
+  try {
+    const { batchId } = await params;
+    const body = await req.json();
+    const sql = getSql();
+
+    if (body.action === "add") {
+      const emails = Array.isArray(body.employeeEmails)
+        ? body.employeeEmails.map((e: unknown) => String(e).trim().toLowerCase()).filter(Boolean)
+        : [];
+      if (!emails.length) {
+        return NextResponse.json({ ok: false, error: "No employees selected." }, { status: 400 });
+      }
+      const added = await addBatchMembers(sql, batchId, emails);
+      return NextResponse.json({ ok: true, added });
+    }
+
+    if (body.action === "remove") {
+      const emails = Array.isArray(body.employeeEmails)
+        ? body.employeeEmails.map((e: unknown) => String(e).trim().toLowerCase()).filter(Boolean)
+        : [];
+      if (!emails.length) {
+        return NextResponse.json({ ok: false, error: "No members specified." }, { status: 400 });
+      }
+      const removed = await removeBatchMembers(sql, batchId, emails);
+      return NextResponse.json({ ok: true, removed });
+    }
+
+    return NextResponse.json({ ok: false, error: "Unknown action." }, { status: 400 });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to update batch";
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  }
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ batchId: string }> },
+) {
+  const { error } = await requireAdminSession();
+  if (error) return error;
+
+  try {
+    const { batchId } = await params;
+    const sql = getSql();
+    const deleted = await deleteBatch(sql, batchId);
+    if (!deleted) {
+      return NextResponse.json({ ok: false, error: "Batch not found" }, { status: 404 });
+    }
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to delete batch";
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }

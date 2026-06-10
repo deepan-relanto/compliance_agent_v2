@@ -1,5 +1,5 @@
 /**
- * Seed Relanto @relanto.ai users + three teams (Microsoft SSO — no password login).
+ * Seed Relanto @relanto.ai users + five teams (Microsoft SSO — no password login).
  * Also removes legacy demo batches (batch_a/b/c).
  * Run: node scripts/db-seed-relanto-users.mjs
  */
@@ -64,7 +64,7 @@ const batches = [
     id: "relanto_team_1",
     label: "Relanto Team 1",
     description: "Compliance cohort — team one",
-    member_count: 6,
+    member_count: 4,
   },
   {
     id: "relanto_team_2",
@@ -75,8 +75,26 @@ const batches = [
   {
     id: "relanto_team_3",
     label: "Relanto Team 3",
-    description: "Admin test cohort",
+    description: "Test cohort before wider rollout",
+    member_count: 4,
+  },
+  {
+    id: "relanto_team_4",
+    label: "Relanto Team 4",
+    description: "Compliance cohort — team four",
     member_count: 1,
+  },
+  {
+    id: "relanto_team_5",
+    label: "Relanto Team 5",
+    description: "Compliance cohort — team five",
+    member_count: 1,
+  },
+  {
+    id: "relanto_leaders",
+    label: "Relanto Leaders",
+    description: "Leadership compliance cohort",
+    member_count: 4,
   },
 ];
 
@@ -84,7 +102,7 @@ const users = [
   {
     email: "deepan.s@relanto.ai",
     role: "admin",
-    batch_id: "relanto_team_3",
+    batch_id: null,
   },
   {
     email: "gudivaka.vennela@relanto.ai",
@@ -94,12 +112,22 @@ const users = [
   {
     email: "hridyalakshmi.santhosh@relanto.ai",
     role: "user",
-    batch_id: "relanto_team_1",
+    batch_id: "relanto_team_3",
   },
   {
     email: "shreyas.shankar@relanto.ai",
     role: "user",
-    batch_id: "relanto_team_1",
+    batch_id: "relanto_team_3",
+  },
+  {
+    email: "nihaarrai.v@relanto.ai",
+    role: "user",
+    batch_id: "relanto_team_3",
+  },
+  {
+    email: "lakhi.ashetty@relanto.ai",
+    role: "user",
+    batch_id: "relanto_team_3",
   },
   {
     email: "manisha.nair@relanto.ai",
@@ -130,6 +158,36 @@ const users = [
     email: "srinithi.v@relanto.ai",
     role: "user",
     batch_id: "relanto_team_2",
+  },
+  {
+    email: "prasanna.rs@relanto.ai",
+    role: "user",
+    batch_id: "relanto_team_4",
+  },
+  {
+    email: "pramath.naik@relanto.ai",
+    role: "user",
+    batch_id: "relanto_team_5",
+  },
+  {
+    email: "venkatesh@relanto.ai",
+    role: "user",
+    batch_id: "relanto_leaders",
+  },
+  {
+    email: "santhi@relanto.ai",
+    role: "user",
+    batch_id: "relanto_leaders",
+  },
+  {
+    email: "sanjay.mathur@relanto.ai",
+    role: "user",
+    batch_id: "relanto_leaders",
+  },
+  {
+    email: "praveen.rajan@relanto.ai",
+    role: "user",
+    batch_id: "relanto_leaders",
   },
 ];
 
@@ -167,7 +225,8 @@ if (relntoDemo.length > 0) {
 
 await sql`
   UPDATE users SET batch_id = NULL, updated_at = NOW()
-  WHERE LOWER(email) = 'deepan.s@relanto.com'
+  WHERE LOWER(email) IN ('deepan.s@relanto.com', 'deepan.s@relanto.ai')
+    AND role = 'admin'
 `;
 
 console.log("\nSeeding Relanto Microsoft SSO users…");

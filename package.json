@@ -11,6 +11,7 @@
     "db:migrate:alter": "node scripts/db-migrate-alter.mjs",
     "db:seed": "node scripts/db-seed.mjs",
     "db:seed:relanto": "node scripts/db-seed-relanto-users.mjs",
+    "db:seed:employees": "node scripts/db-seed-employees.mjs",
     "db:clear-modules": "node scripts/db-clear-modules.mjs",
     "db:clear-progress": "node scripts/db-clear-progress.mjs",
     "db:fix-failed-scores": "node scripts/db-fix-failed-scores.mjs",

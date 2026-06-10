@@ -89,4 +89,33 @@ await sql`
 `;
 await sql`CREATE INDEX IF NOT EXISTS idx_pdf_storage_url ON pdf_storage(pdf_url)`;
 
+await sql`
+  CREATE TABLE IF NOT EXISTS employees (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    employee_number TEXT NOT NULL UNIQUE,
+    name            TEXT NOT NULL,
+    work_email      TEXT NOT NULL,
+    date_of_birth   DATE,
+    gender          TEXT,
+    location        TEXT,
+    department      TEXT,
+    sub_department  TEXT,
+    job_title       TEXT,
+    reporting_to    TEXT,
+    date_joined     DATE,
+    worker_type     TEXT,
+    primary_skills  TEXT,
+    secondary_skills TEXT,
+    certifications  TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )
+`;
+await sql`CREATE INDEX IF NOT EXISTS idx_employees_email ON employees(LOWER(work_email))`;
+await sql`CREATE INDEX IF NOT EXISTS idx_employees_department ON employees(department)`;
+await sql`CREATE INDEX IF NOT EXISTS idx_employees_location ON employees(location)`;
+await sql`CREATE INDEX IF NOT EXISTS idx_employees_job_title ON employees(job_title)`;
+await sql`CREATE INDEX IF NOT EXISTS idx_employees_date_joined ON employees(date_joined)`;
+await sql`CREATE INDEX IF NOT EXISTS idx_employees_gender ON employees(gender)`;
+
 console.log("✅ Schema alterations applied.");

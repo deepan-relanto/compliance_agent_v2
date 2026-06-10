@@ -45,8 +45,8 @@ export function BatchPicker() {
   if (batches.length === 0) {
     return (
       <div className="surface-card px-6 py-14 text-center text-sm text-zinc-500">
-        No batches found. Run <code className="font-mono text-zinc-700">npm run db:seed</code> to
-        create them.
+        No batches yet. Use <span className="font-medium text-zinc-700">Create batch</span> to filter
+        the HR directory and assign your first roster.
       </div>
     );
   }

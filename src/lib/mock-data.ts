@@ -21,6 +21,27 @@ export function getAiReportForBatch(batchId: string): string {
 
 **Recommended:** Run a full proctored session end-to-end before publishing to Team 1 or Team 2.`;
   }
+  if (batchId === "relanto_team_4") {
+    return `## Relanto Team 4
+
+**Compliance tracking** for this cohort — assign modules and monitor completion from the analytics dashboard.
+
+**Recommended:** Send training invites after publishing and reviewing module checkpoints.`;
+  }
+  if (batchId === "relanto_team_5") {
+    return `## Relanto Team 5
+
+**Compliance tracking** for this cohort — assign modules and monitor completion from the analytics dashboard.
+
+**Recommended:** Send training invites after publishing and reviewing module checkpoints.`;
+  }
+  if (batchId === "relanto_leaders") {
+    return `## Relanto Leaders
+
+**Leadership cohort** — assign modules and monitor completion from the analytics dashboard.
+
+**Recommended:** Send training invites after publishing and reviewing module checkpoints.`;
+  }
   return `## Training batch
 
 **Compliance data** will appear here once learners complete assigned modules.

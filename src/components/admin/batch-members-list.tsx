@@ -1,8 +1,9 @@
 "use client";
 
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Mail, Search, User } from "lucide-react";
+import { Loader2, Mail, Search, Trash2, User } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
@@ -15,15 +16,20 @@ export interface BatchMember {
 interface BatchMembersListProps {
   members: BatchMember[];
   batchLabel: string;
+  batchId?: string;
   analyticsHref?: string;
+  onMemberRemoved?: () => void;
 }
 
 export function BatchMembersList({
   members,
   batchLabel,
+  batchId,
   analyticsHref = "/admin/analytics",
+  onMemberRemoved,
 }: BatchMembersListProps) {
   const [search, setSearch] = useState("");
+  const [removing, setRemoving] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -35,6 +41,22 @@ export function BatchMembersList({
     );
   }, [members, search]);
 
+  const handleRemove = async (email: string) => {
+    if (!batchId || !confirm(`Remove ${email} from ${batchLabel}?`)) return;
+    setRemoving(email);
+    try {
+      const res = await fetch(`/api/batches/${encodeURIComponent(batchId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "remove", employeeEmails: [email] }),
+      });
+      const data = await res.json();
+      if (data.ok) onMemberRemoved?.();
+    } finally {
+      setRemoving(null);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <Card>
@@ -42,13 +64,10 @@ export function BatchMembersList({
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="section-label">Roster</p>
-              <h2 className="mt-1 text-base font-semibold text-zinc-900">
-                Batch members
-              </h2>
+              <h2 className="mt-1 text-base font-semibold text-zinc-900">Batch members</h2>
               <p className="mt-1 text-sm text-zinc-500">
-                {members.length} learner{members.length !== 1 ? "s" : ""} assigned to{" "}
-                <span className="font-medium text-zinc-700">{batchLabel}</span>.
-                Scores and progress live in{" "}
+                {members.length} learner{members.length !== 1 ? "s" : ""} in{" "}
+                <span className="font-medium text-zinc-700">{batchLabel}</span>. Scores in{" "}
                 <Link href={analyticsHref} className="font-medium text-[#2e3192] hover:underline">
                   Analytics
                 </Link>
@@ -72,9 +91,7 @@ export function BatchMembersList({
             <div className="empty-state mx-6 my-10 border-dashed py-12">
               <User className="h-8 w-8 text-zinc-300" strokeWidth={1.5} />
               <p className="mt-3 text-sm font-medium text-zinc-600">No learners in this batch</p>
-              <p className="mt-1 text-xs text-zinc-400">
-                Members are assigned when users are seeded or synced from HR.
-              </p>
+              <p className="mt-1 text-xs text-zinc-400">Use Add members to assign people from the HR directory.</p>
             </div>
           ) : filtered.length === 0 ? (
             <div className="empty-state mx-6 my-10 border-dashed py-12">
@@ -98,9 +115,7 @@ export function BatchMembersList({
                     {(member.displayName || member.email).charAt(0).toUpperCase()}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-zinc-900">
-                      {member.displayName}
-                    </p>
+                    <p className="truncate text-sm font-medium text-zinc-900">{member.displayName}</p>
                     <p className="mt-0.5 inline-flex items-center gap-1 font-mono text-xs text-zinc-500">
                       <Mail className="h-3 w-3 shrink-0" />
                       {member.email}
@@ -116,6 +131,21 @@ export function BatchMembersList({
                   >
                     {member.role}
                   </span>
+                  {batchId && member.role !== "admin" && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                      disabled={removing === member.email}
+                      onClick={() => void handleRemove(member.email)}
+                    >
+                      {removing === member.email ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                  )}
                 </li>
               ))}
             </ul>
