@@ -92,7 +92,9 @@ export default function TrainingPage() {
 
   return (
     <RouteGuard allowedRoles={["user"]}>
-      <SlideViewer module={trainingModule} mcqs={mcqs} />
+      <div className="min-h-[100dvh] bg-zinc-900">
+        <SlideViewer module={trainingModule} mcqs={mcqs} />
+      </div>
     </RouteGuard>
   );
 }
