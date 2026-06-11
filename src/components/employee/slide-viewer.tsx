@@ -862,6 +862,12 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
   /** Block slide navigation during checkpoint, warning, or result modal */
   const slideNavLocked =
     checkpointOpen || !!activeWarningReason || showScoreResult;
+
+  useEffect(() => {
+    if (checkpointOpen) {
+      proctorGraceUntilRef.current = 0;
+    }
+  }, [checkpointOpen]);
   const passedPendingAcknowledgement =
     showAcknowledgement && Boolean(scoreResult?.passed);
 
@@ -869,6 +875,20 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
     const onKeyDown = (e: KeyboardEvent) => {
       if (!sessionStarted) return;
       if (quizOnlyMode) return;
+      if (checkpointOpen) {
+        if (
+          e.key === "Escape" ||
+          e.key === "Tab" ||
+          e.key.startsWith("Arrow") ||
+          e.altKey ||
+          e.key === "F5" ||
+          e.key === "F11"
+        ) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        return;
+      }
       if (
         slideNavLocked ||
         showAcknowledgement ||
@@ -894,6 +914,7 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
     sessionStarted,
+    checkpointOpen,
     mcqOpen,
     showAcknowledgement,
     showFinalQa,

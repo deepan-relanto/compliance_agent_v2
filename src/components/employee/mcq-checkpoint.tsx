@@ -18,11 +18,27 @@ import {
   ShieldCheck,
   XCircle,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
-/** Scales checkpoint modal content only (slides stay at full size). */
-const CHECKPOINT_MODAL_ZOOM = 0.85;
+function shouldBlockCheckpointKey(e: KeyboardEvent): boolean {
+  if (
+    e.key === "Escape" ||
+    e.key === "Tab" ||
+    e.key === "F5" ||
+    e.key === "F11" ||
+    e.key === "F12" ||
+    e.key.startsWith("Arrow")
+  ) {
+    return true;
+  }
+  if (e.altKey) return true;
+  if (e.ctrlKey || e.metaKey) {
+    const k = e.key.toLowerCase();
+    if (["w", "r", "t", "n", "l", "tab", "p"].includes(k)) return true;
+  }
+  return false;
+}
 
 interface MCQCheckpointProps {
   moduleId: string;
@@ -56,7 +72,7 @@ function ExplanationLines({ explanation }: { explanation: string }) {
   return (
     <div className="space-y-1">
       {lines.map((line) => (
-        <p key={line} className="text-xs leading-relaxed text-inherit">
+        <p key={line} className="text-sm leading-relaxed text-inherit">
           {line}
         </p>
       ))}
@@ -179,13 +195,23 @@ export function MCQCheckpoint({
 
   const panelMode = variant === "panel";
 
+  const blockCheckpointShortcuts = useCallback((e: KeyboardEvent) => {
+    if (!shouldBlockCheckpointKey(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  useEffect(() => {
+    if (!open || panelMode) return;
+    window.addEventListener("keydown", blockCheckpointShortcuts, true);
+    return () => window.removeEventListener("keydown", blockCheckpointShortcuts, true);
+  }, [open, panelMode, blockCheckpointShortcuts]);
+
   const card = (
     <div
       className={cn(
         "flex w-full min-h-0 flex-col overflow-hidden rounded-[var(--radius-card)] border border-zinc-200/90 bg-white shadow-[var(--shadow-elevated)]",
-        panelMode
-          ? "max-w-none"
-          : "h-full max-h-[min(100dvh-1rem,900px)] max-w-2xl",
+        panelMode ? "max-w-none" : "h-full max-w-none",
       )}
     >
       <div className="h-1 shrink-0 bg-zinc-100">
@@ -201,20 +227,20 @@ export function MCQCheckpoint({
           <div className="flex h-8 w-8 items-center justify-center rounded-md border border-[#f15a24]/20 bg-white text-[#f15a24]">
             <Lock className="h-4 w-4" strokeWidth={1.75} />
           </div>
-          <span className="text-xs font-semibold uppercase tracking-wider text-[#f15a24]">
+          <span className="text-sm font-semibold uppercase tracking-wider text-[#f15a24]">
             Checkpoint {Math.min(checkpointNumber, Math.max(totalCheckpoints, 1))} of{" "}
             {Math.max(totalCheckpoints, 1)}
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs font-semibold text-zinc-700">
+          <div className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-sm font-semibold text-zinc-700">
             <BarChart3 className="h-3.5 w-3.5 text-zinc-400" />
             Score{" "}
             <span className="font-mono tabular-nums">
               {score}/{totalScore}
             </span>
           </div>
-          <div className="rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+          <div className="rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-sm font-semibold text-emerald-700">
             <Plus className="mr-1 inline h-3 w-3" />
             {POINTS_PER_MCQ}
           </div>
@@ -226,12 +252,12 @@ export function MCQCheckpoint({
           <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 sm:p-4">
             <div className="flex items-center gap-2">
               <ShieldCheck className="h-4 w-4 text-[#2e3192]" strokeWidth={1.75} />
-              <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+              <p className="text-sm font-semibold uppercase tracking-wider text-zinc-500">
                 Secure checkpoint
               </p>
             </div>
             {!submitted && (
-              <p className="mt-2 text-sm leading-relaxed text-zinc-600">
+              <p className="mt-2 text-base leading-relaxed text-zinc-600">
                 Choose the response that best follows the training policy and required approval path.
               </p>
             )}
@@ -251,10 +277,10 @@ export function MCQCheckpoint({
           />
         </div>
 
-        <h2 className="text-base font-semibold tracking-tight text-zinc-900 sm:text-lg">
+        <h2 className="text-lg font-semibold tracking-tight text-zinc-900 sm:text-xl">
           {displayPrompt}
         </h2>
-        <p className="mt-1 text-xs text-zinc-500">
+        <p className="mt-1 text-sm text-zinc-500">
           Answer this checkpoint to unlock the next step.
         </p>
 
@@ -281,7 +307,7 @@ export function MCQCheckpoint({
                   disabled={submitted || validating}
                   onClick={() => setSelected(opt.id)}
                   className={cn(
-                    "relative flex w-full cursor-pointer items-start gap-3 overflow-hidden rounded-md border px-4 py-3 text-left text-sm transition-all duration-150",
+                    "relative flex w-full cursor-pointer items-start gap-3 overflow-hidden rounded-md border px-4 py-3.5 text-left text-base transition-all duration-150",
                     "hover:border-zinc-300 hover:bg-zinc-50 hover:shadow-sm",
                     isSelected && !submitted
                       ? "border-[#2e3192]/45 bg-[#2e3192]/5 text-zinc-900 shadow-sm"
@@ -298,7 +324,7 @@ export function MCQCheckpoint({
                       transition={{ type: "spring", stiffness: 420, damping: 32 }}
                     />
                   )}
-                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-zinc-200 text-[10px] font-mono uppercase text-zinc-500">
+                  <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-zinc-200 text-xs font-mono uppercase text-zinc-500">
                     {opt.id}
                   </span>
                   <span className="flex-1">{opt.label}</span>
@@ -345,23 +371,23 @@ export function MCQCheckpoint({
                 )}
               </div>
               <div>
-                <p className="text-sm font-semibold">
+                <p className="text-base font-semibold">
                   {wasCorrect ? `Correct. +${POINTS_PER_MCQ} points.` : "Incorrect. +0 points."}
                 </p>
-                <p className="mt-2 text-xs leading-relaxed">
+                <p className="mt-2 text-sm leading-relaxed">
                   {correctOption
                     ? `Correct answer: ${correctOption.id.toUpperCase()}. ${correctOption.label}`
                     : "Your response has been recorded for this checkpoint."}
                 </p>
-                        {answerExplanation && (
-                          <div className="mt-2 flex gap-1.5 text-xs leading-relaxed">
-                            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                            <div className="min-w-0 flex-1">
-                              <p className="font-semibold">Why this is correct</p>
-                              <ExplanationLines explanation={answerExplanation} />
-                            </div>
-                          </div>
-                        )}
+                {answerExplanation && (
+                  <div className="mt-2 flex gap-1.5 text-sm leading-relaxed">
+                    <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold">Why this is correct</p>
+                      <ExplanationLines explanation={answerExplanation} />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </motion.div>
@@ -412,12 +438,15 @@ export function MCQCheckpoint({
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.99, y: 4 }}
           transition={{ type: "spring", stiffness: 400, damping: 30 }}
-          className="fixed inset-0 z-[201] flex items-center justify-center overflow-hidden p-3 sm:p-4"
+          className="fixed inset-0 z-[201] flex items-center justify-center overflow-hidden p-2 sm:p-3"
+          onKeyDown={(e) => {
+            if (shouldBlockCheckpointKey(e.nativeEvent)) {
+              e.preventDefault();
+              e.stopPropagation();
+            }
+          }}
         >
-          <div
-            className="flex h-[min(calc(100dvh-1.5rem),900px)] w-full max-w-2xl min-h-0"
-            style={{ zoom: CHECKPOINT_MODAL_ZOOM }}
-          >
+          <div className="flex h-[min(94dvh,960px)] w-full max-w-4xl min-h-0">
             {card}
           </div>
         </motion.div>
