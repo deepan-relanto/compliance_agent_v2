@@ -285,60 +285,56 @@ export function MCQCheckpoint({
             : "overflow-y-auto overscroll-contain",
         )}
       >
-        {modalMode && submitted ? (
-          <div className="mb-3 shrink-0">
-            <CheckpointSignal
-              key={signalState}
-              state={signalState}
-              progress={checkpointProgress}
-              className="h-20"
-            />
-          </div>
-        ) : (
-          <div
-            className={cn(
-              "grid gap-3 sm:items-stretch",
-              modalMode ? "mb-3 shrink-0 sm:grid-cols-[1fr_168px]" : "mb-4 sm:mb-5 sm:grid-cols-[1fr_200px]",
-            )}
-          >
-            <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 sm:p-4">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4 text-[#2e3192]" strokeWidth={1.75} />
-                <p
-                  className={cn(
-                    "font-semibold uppercase tracking-wider text-zinc-500",
-                    modalMode ? "text-xs sm:text-sm" : "text-sm",
-                  )}
-                >
+        {modalMode ? (
+          <div className="mb-3 flex shrink-0 items-stretch gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2">
+              <ShieldCheck
+                className="h-4 w-4 shrink-0 text-[#2e3192]"
+                strokeWidth={1.75}
+              />
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 sm:text-sm">
                   Secure checkpoint
                 </p>
-              </div>
-              {!submitted && (
-                <p
-                  className={cn(
-                    "mt-2 leading-relaxed text-zinc-600",
-                    modalMode ? "text-sm sm:text-base" : "text-base",
-                  )}
-                >
+                <p className="text-sm leading-snug text-zinc-600">
                   Choose the response that best follows the training policy and required approval path.
                 </p>
-              )}
-              {!modalMode && (
-                <div className="mt-3 max-w-[180px]">
-                  <StreakCounter
-                    currentStreak={currentStreak}
-                    bestStreak={bestStreak}
-                    compact
-                    tone="light"
-                  />
-                </div>
-              )}
+              </div>
             </div>
             <CheckpointSignal
               key={signalState}
               state={signalState}
               progress={checkpointProgress}
-              className={modalMode ? "h-24" : undefined}
+              className="h-16 w-36 shrink-0"
+            />
+          </div>
+        ) : (
+          <div className="mb-4 grid gap-3 sm:mb-5 sm:grid-cols-[1fr_200px] sm:items-stretch">
+            <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 sm:p-4">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-[#2e3192]" strokeWidth={1.75} />
+                <p className="text-sm font-semibold uppercase tracking-wider text-zinc-500">
+                  Secure checkpoint
+                </p>
+              </div>
+              {!submitted && (
+                <p className="mt-2 text-base leading-relaxed text-zinc-600">
+                  Choose the response that best follows the training policy and required approval path.
+                </p>
+              )}
+              <div className="mt-3 max-w-[180px]">
+                <StreakCounter
+                  currentStreak={currentStreak}
+                  bestStreak={bestStreak}
+                  compact
+                  tone="light"
+                />
+              </div>
+            </div>
+            <CheckpointSignal
+              key={signalState}
+              state={signalState}
+              progress={checkpointProgress}
             />
           </div>
         )}
@@ -361,10 +357,13 @@ export function MCQCheckpoint({
           </p>
         )}
 
-        {(!submitted || panelMode) && (
         <ul
           className={cn(
-            modalMode ? "mt-3 min-h-0 flex-1 space-y-1.5 overflow-y-auto" : "mt-5 space-y-2",
+            modalMode
+              ? submitted
+                ? "mt-2 shrink-0 space-y-1"
+                : "mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto"
+              : "mt-5 space-y-2",
           )}
         >
           {question.options.map((opt) => {
@@ -376,10 +375,12 @@ export function MCQCheckpoint({
               isSelected &&
               correctOptionId !== null &&
               opt.id !== correctOptionId;
+            const compactOptions = modalMode && submitted;
 
             return (
               <motion.li
                 key={opt.id}
+                layout
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.18 }}
@@ -389,8 +390,12 @@ export function MCQCheckpoint({
                   disabled={submitted || validating}
                   onClick={() => setSelected(opt.id)}
                   className={cn(
-                    "relative flex w-full cursor-pointer items-start gap-3 overflow-hidden rounded-md border px-3.5 py-3 text-left transition-all duration-150",
-                    modalMode ? "text-sm sm:text-base" : "px-4 py-3.5 text-base",
+                    "relative flex w-full cursor-pointer items-start gap-3 overflow-hidden rounded-md border text-left transition-all duration-150",
+                    compactOptions
+                      ? "px-3 py-2 text-sm"
+                      : modalMode
+                        ? "px-4 py-3.5 text-base"
+                        : "px-4 py-3.5 text-base",
                     "hover:border-zinc-300 hover:bg-zinc-50 hover:shadow-sm",
                     isSelected && !submitted
                       ? "border-[#2e3192]/45 bg-[#2e3192]/5 text-zinc-900 shadow-sm"
@@ -407,22 +412,26 @@ export function MCQCheckpoint({
                       transition={{ type: "spring", stiffness: 420, damping: 32 }}
                     />
                   )}
-                  <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-zinc-200 text-xs font-mono uppercase text-zinc-500">
+                  <span
+                    className={cn(
+                      "mt-0.5 flex shrink-0 items-center justify-center rounded-md border border-zinc-200 font-mono uppercase text-zinc-500",
+                      compactOptions ? "h-5 w-5 text-[10px]" : "h-6 w-6 text-xs",
+                    )}
+                  >
                     {opt.id}
                   </span>
                   <span className="flex-1">{opt.label}</span>
                   {showCorrect && (
-                    <CheckCircle2 className="ml-auto h-4 w-4 text-emerald-600" />
+                    <CheckCircle2 className="ml-auto h-4 w-4 shrink-0 text-emerald-600" />
                   )}
                   {showWrong && (
-                    <XCircle className="ml-auto h-4 w-4 text-red-500" />
+                    <XCircle className="ml-auto h-4 w-4 shrink-0 text-red-500" />
                   )}
                 </button>
               </motion.li>
             );
           })}
         </ul>
-        )}
 
         {error && (
           <p className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -456,22 +465,16 @@ export function MCQCheckpoint({
                 )}
               </div>
               <div>
-                <p className={cn("font-semibold", modalMode ? "text-sm sm:text-base" : "text-base")}>
+                <p className={cn("font-semibold", modalMode ? "text-sm" : "text-base")}>
                   {wasCorrect ? `Correct. +${POINTS_PER_MCQ} points.` : "Incorrect. +0 points."}
                 </p>
-                {!wasCorrect && selected && (
-                  <p className="mt-1.5 text-xs leading-relaxed sm:text-sm">
-                    Your answer: {selected.toUpperCase()}.{" "}
-                    {question.options.find((o) => o.id === selected)?.label}
-                  </p>
-                )}
-                <p className="mt-1.5 text-xs leading-relaxed sm:text-sm">
+                <p className="mt-1.5 text-sm leading-relaxed">
                   {correctOption
                     ? `Correct answer: ${correctOption.id.toUpperCase()}. ${correctOption.label}`
                     : "Your response has been recorded for this checkpoint."}
                 </p>
                 {answerExplanation && (
-                  <div className="mt-2 flex gap-1.5 text-xs leading-relaxed sm:text-sm">
+                  <div className="mt-2 flex gap-1.5 text-sm leading-relaxed">
                     <Info className="mt-0.5 h-4 w-4 shrink-0" />
                     <div className="min-w-0 flex-1">
                       <p className="font-semibold">Why this is correct</p>
@@ -542,7 +545,7 @@ export function MCQCheckpoint({
             }
           }}
         >
-          <div className="flex h-[min(86dvh,800px)] w-full max-w-3xl min-h-0">
+          <div className="flex h-[min(88dvh,840px)] w-full max-w-3xl min-h-0">
             {card}
           </div>
         </motion.div>
