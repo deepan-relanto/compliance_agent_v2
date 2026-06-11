@@ -7,6 +7,7 @@ import type {
 import { PASS_THRESHOLD_PERCENT } from "@/lib/constants";
 import {
   normalizeProgressStatus,
+  reconcileInvalidProgressScores,
   reconcilePassedProgressStatus,
 } from "@/lib/services/progress-db-service";
 
@@ -34,6 +35,7 @@ export async function getBatchPerformance(
   sql: Sql,
   batchId: string,
 ): Promise<BatchPerformancePayload | null> {
+  await reconcileInvalidProgressScores(sql);
   await reconcilePassedProgressStatus(sql);
   const batchRows = await sql`
     SELECT id, label, description, member_count
@@ -92,38 +94,38 @@ export async function getBatchPerformance(
       SELECT
         COUNT(DISTINCT u.email) FILTER (
           WHERE ap.user_email IS NOT NULL
-            AND (ap.score_percent IS NOT NULL OR ap.status <> 'not_started')
+            AND (
+              ap.status IN ('in_progress', 'completed', 'failed', 'permanently_failed')
+              OR ap.last_accessed_at IS NOT NULL
+              OR (ap.mcq_answers IS NOT NULL AND ap.mcq_answers::text <> '{}')
+            )
         )::int AS learners_started,
         COUNT(DISTINCT u.email) FILTER (
           WHERE ap.status = 'completed'
-            OR (ap.score_percent IS NOT NULL AND ap.score_percent > ${PASS_THRESHOLD_PERCENT})
         )::int AS completed,
         COUNT(DISTINCT u.email) FILTER (
-          WHERE ap.status = 'in_progress'
-            OR (ap.status = 'failed' AND ap.score_percent IS NOT NULL)
-            OR (
-              ap.score_percent IS NOT NULL
-              AND ap.score_percent <= ${PASS_THRESHOLD_PERCENT}
-              AND ap.status <> 'completed'
-            )
+          WHERE ap.user_email IS NOT NULL
+            AND ap.status IN ('in_progress', 'failed')
         )::int AS in_progress,
-        ROUND(AVG(LEAST(ap.score_percent, 100)) FILTER (WHERE ap.score_percent IS NOT NULL))::int AS avg_score,
+        ROUND(AVG(LEAST(ap.score_percent, 100)) FILTER (
+          WHERE ap.score_percent IS NOT NULL AND COALESCE(ap.mcq_total, 0) > 0
+        ))::int AS avg_score,
         ROUND(
           100.0 * COUNT(DISTINCT u.email) FILTER (
             WHERE ap.score_percent IS NOT NULL
-              AND LEAST(ap.score_percent, 100) > ${PASS_THRESHOLD_PERCENT}
+              AND COALESCE(ap.mcq_total, 0) > 0
+              AND LEAST(ap.score_percent, 100) >= ${PASS_THRESHOLD_PERCENT}
           )
           / NULLIF(
-            COUNT(DISTINCT u.email) FILTER (WHERE ap.score_percent IS NOT NULL),
+            COUNT(DISTINCT u.email) FILTER (
+              WHERE ap.score_percent IS NOT NULL AND COALESCE(ap.mcq_total, 0) > 0
+            ),
             0
           )
         )::int AS pass_rate,
         ROUND(
-          100.0 * COUNT(DISTINCT u.email) FILTER (
-            WHERE ap.status = 'completed'
-              OR (ap.score_percent IS NOT NULL AND ap.score_percent > ${PASS_THRESHOLD_PERCENT})
-          )
-          / NULLIF(COUNT(DISTINCT u.email) FILTER (WHERE ap.user_email IS NOT NULL), 0)
+          100.0 * COUNT(DISTINCT u.email) FILTER (WHERE ap.status = 'completed')
+          / NULLIF(COUNT(DISTINCT u.email), 0)
         )::int AS compliance
       FROM users u
       INNER JOIN module_batches mb ON mb.batch_id = ${batchId}

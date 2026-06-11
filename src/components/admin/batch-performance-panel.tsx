@@ -289,10 +289,12 @@ export function BatchPerformancePanel({ data }: BatchPerformancePanelProps) {
                 </thead>
                 <tbody className="divide-y divide-zinc-50">
                   {filtered.map((row) => {
-                    const displayScore =
-                      row.scorePercent != null
-                        ? Math.min(100, Math.max(0, row.scorePercent))
-                        : null;
+                    const hasMeaningfulScore =
+                      row.scorePercent != null &&
+                      (row.mcqTotal > 0 || isCompletedStatus(row.status));
+                    const displayScore = hasMeaningfulScore
+                      ? Math.min(100, Math.max(0, row.scorePercent!))
+                      : null;
                     const passed =
                       displayScore != null && displayScore > PASS_THRESHOLD_PERCENT;
 

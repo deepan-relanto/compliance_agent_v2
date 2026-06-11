@@ -21,7 +21,11 @@ export type ProgressRow = {
   completed_at: string | null;
 };
 
-/** Learner-facing / admin display status — never show "not started" when a score exists. */
+/**
+ * Display status for progress rows.
+ * "Completed" only when the attempt is fully finished — not merely a passing score
+ * while acknowledgement or feedback is still pending.
+ */
 export function normalizeProgressStatus(
   status: string | null | undefined,
   scorePercent: number | null,
@@ -30,13 +34,26 @@ export function normalizeProgressStatus(
   const s = status ?? "not_started";
   if (s === "permanently_failed") return s;
   if (s === "completed" || completedAt) return "completed";
-  if (isPassingScore(scorePercent)) {
-    return "completed";
-  }
   if (s === "failed" && scorePercent != null) return "in_progress";
   if (scorePercent != null && s === "not_started") return "in_progress";
   if (s === "in_progress" || s === "failed") return s;
   return s;
+}
+
+/** Clear scores saved without any answered checkpoints (legacy bug returned 100%). */
+export async function reconcileInvalidProgressScores(sql: Sql): Promise<number> {
+  const rows = await sql`
+    UPDATE assessment_progress
+    SET score_percent = NULL,
+        failed_reason = NULL,
+        updated_at = NOW()
+    WHERE score_percent IS NOT NULL
+      AND COALESCE(mcq_correct, 0) = 0
+      AND (mcq_answers IS NULL OR mcq_answers = '{}'::jsonb)
+      AND status NOT IN ('completed', 'permanently_failed')
+    RETURNING id
+  `;
+  return rows.length;
 }
 
 /** Fix rows where acknowledgement was saved but status was not marked completed. */
@@ -137,8 +154,11 @@ function scoreFromAnswers(
   // Safety: a corrupt row can have correct > total — clamp it.
   if (mcqCorrect > mcqTotal) mcqCorrect = mcqTotal;
 
-  const rawPercent =
-    mcqTotal > 0 ? Math.round((mcqCorrect / mcqTotal) * 100) : 100;
+  if (answeredCount === 0) {
+    return { mcqCorrect: 0, mcqTotal: assignedTotal > 0 ? assignedTotal : 0, scorePercent: 0 };
+  }
+
+  const rawPercent = Math.round((mcqCorrect / mcqTotal) * 100);
   const scorePercent = Math.min(100, Math.max(0, rawPercent));
   return { mcqCorrect, mcqTotal, scorePercent };
 }

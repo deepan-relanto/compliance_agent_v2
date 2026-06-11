@@ -9,6 +9,10 @@ import type {
   TimeSeriesPoint,
 } from "@/lib/analytics-types";
 import { PASS_THRESHOLD_PERCENT } from "@/lib/constants";
+import {
+  reconcileInvalidProgressScores,
+  reconcilePassedProgressStatus,
+} from "@/lib/services/progress-db-service";
 
 type Sql = ReturnType<typeof getSql>;
 
@@ -37,6 +41,9 @@ function fillTimeSeries(
 }
 
 export async function getAnalytics(sql: Sql): Promise<AnalyticsPayload> {
+  await reconcileInvalidProgressScores(sql);
+  await reconcilePassedProgressStatus(sql);
+
   const [summaryRows, batchRows, seriesRows, moduleRows, statusRows, historyRows] =
     await Promise.all([
       sql`
