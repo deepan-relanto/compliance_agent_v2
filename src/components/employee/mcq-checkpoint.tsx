@@ -21,6 +21,9 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
+/** Scales checkpoint modal content only (slides stay at full size). */
+const CHECKPOINT_MODAL_ZOOM = 0.85;
+
 interface MCQCheckpointProps {
   moduleId: string;
   question: McqQuestion;
@@ -411,7 +414,10 @@ export function MCQCheckpoint({
           transition={{ type: "spring", stiffness: 400, damping: 30 }}
           className="fixed inset-0 z-[201] flex items-center justify-center overflow-hidden p-3 sm:p-4"
         >
-          <div className="flex h-[min(calc(100dvh-1.5rem),900px)] w-full max-w-2xl min-h-0">
+          <div
+            className="flex h-[min(calc(100dvh-1.5rem),900px)] w-full max-w-2xl min-h-0"
+            style={{ zoom: CHECKPOINT_MODAL_ZOOM }}
+          >
             {card}
           </div>
         </motion.div>
