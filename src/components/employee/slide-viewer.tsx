@@ -54,8 +54,6 @@ const PdfPageViewer = dynamic(
   { ssr: false },
 );
 
-/** Scale slide/forms inside the shell — not the outer chrome (avoids viewport letterboxing). */
-const TRAINING_CONTENT_ZOOM = 0.8;
 const SLIDES_BETWEEN_GATES = 3;
 
 const FALLBACK_MCQ: McqQuestion = {
@@ -1029,11 +1027,7 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
         </div>
       )}
 
-      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-zinc-900">
-        <div
-          className="flex min-h-0 flex-1 flex-col overflow-hidden"
-          style={{ zoom: TRAINING_CONTENT_ZOOM }}
-        >
+      <div className="relative flex flex-1 flex-col overflow-hidden">
         <AnimatePresence mode="wait">
           {showAcknowledgement ? (
             <motion.div
@@ -1165,7 +1159,7 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
                   )}
                 </div>
               ) : module.contentType === "pdf" && module.pdfUrl ? (
-                <div className="mx-auto flex h-full min-h-0 w-full max-w-none flex-col overflow-hidden rounded-lg border border-zinc-700/80 bg-zinc-950 shadow-2xl">
+                <div className="mx-auto flex h-full min-h-0 w-full max-w-[min(100%,96vw)] flex-col overflow-hidden rounded-lg border border-zinc-700/80 bg-zinc-950 shadow-2xl">
                   <div className="flex shrink-0 items-center justify-between border-b border-zinc-800 px-4 py-1.5">
                     <p className="text-xs font-semibold uppercase tracking-widest text-[#f15a24]">
                       Page {slideIndex + 1} of {numPages}
@@ -1235,7 +1229,6 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
             </motion.div>
           )}
         </AnimatePresence>
-        </div>
       </div>
 
       {!showFinalQa && !showAcknowledgement && !quizOnlyMode && !showScoreResult && (
