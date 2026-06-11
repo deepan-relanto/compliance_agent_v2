@@ -13,6 +13,7 @@ import {
   reconcileInvalidProgressScores,
   reconcilePassedProgressStatus,
 } from "@/lib/services/progress-db-service";
+import { resolveDisplayScorePercent } from "@/lib/progress-score";
 
 type Sql = ReturnType<typeof getSql>;
 
@@ -202,19 +203,31 @@ export async function getAnalytics(sql: Sql): Promise<AnalyticsPayload> {
     count: Number(r.count ?? 0),
   }));
 
-  const history: HistoricalRecord[] = historyRows.map((r) => ({
-    userEmail: r.user_email as string,
-    moduleTitle: r.module_title as string,
-    batchId: r.batch_id as string,
-    batchLabel: (r.batch_label as string) ?? r.batch_id,
-    status: r.status as string,
-    scorePercent: r.score_percent != null ? Number(r.score_percent) : null,
-    mcqCorrect: Number(r.mcq_correct ?? 0),
-    mcqTotal: Number(r.mcq_total ?? 0),
-    retakeCount: Number(r.retake_count ?? 0),
-    completedAt: (r.completed_at as string) ?? null,
-    updatedAt: r.updated_at as string,
-  }));
+  const history: HistoricalRecord[] = historyRows.map((r) => {
+    const mcqCorrect = Number(r.mcq_correct ?? 0);
+    const mcqTotal = Number(r.mcq_total ?? 0);
+    const storedScorePercent =
+      r.score_percent != null ? Number(r.score_percent) : null;
+    const status = r.status as string;
+    return {
+      userEmail: r.user_email as string,
+      moduleTitle: r.module_title as string,
+      batchId: r.batch_id as string,
+      batchLabel: (r.batch_label as string) ?? r.batch_id,
+      status,
+      scorePercent: resolveDisplayScorePercent({
+        status,
+        storedScorePercent,
+        mcqCorrect,
+        mcqTotal,
+      }),
+      mcqCorrect,
+      mcqTotal,
+      retakeCount: Number(r.retake_count ?? 0),
+      completedAt: (r.completed_at as string) ?? null,
+      updatedAt: r.updated_at as string,
+    };
+  });
 
   return {
     summary,

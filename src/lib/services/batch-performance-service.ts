@@ -6,6 +6,10 @@ import type {
 } from "@/lib/batch-performance-types";
 import { PASS_THRESHOLD_PERCENT } from "@/lib/constants";
 import {
+  countMcqAnswers,
+  resolveDisplayScorePercent,
+} from "@/lib/progress-score";
+import {
   normalizeProgressStatus,
   reconcileInvalidProgressScores,
   reconcilePassedProgressStatus,
@@ -75,7 +79,8 @@ export async function getBatchPerformance(
         COALESCE(ap.retake_count, 0)::int AS retake_count,
         ap.completed_at,
         ap.updated_at,
-        ap.last_accessed_at
+        ap.last_accessed_at,
+        ap.mcq_answers
       FROM users u
       CROSS JOIN (
         SELECT m.id, m.title
@@ -167,18 +172,35 @@ export async function getBatchPerformance(
       learnerMap.set(email, learner);
     }
 
-    const scorePercent =
+    const storedScorePercent =
       row.score_percent != null ? Number(row.score_percent) : null;
     const rawStatus = (row.status as string | null) ?? null;
     const completedAt = (row.completed_at as string) ?? null;
+    const mcqCorrect = Number(row.mcq_correct ?? 0);
+    const mcqTotal = Number(row.mcq_total ?? 0);
+    const answerCount = countMcqAnswers(
+      row.mcq_answers as Record<string, boolean> | null,
+    );
+    const displayStatus = normalizeProgressStatus(
+      rawStatus,
+      storedScorePercent,
+      completedAt,
+    );
+    const scorePercent = resolveDisplayScorePercent({
+      status: displayStatus,
+      storedScorePercent,
+      mcqCorrect,
+      mcqTotal,
+      answerCount,
+    });
 
     const assessment: BatchAssessmentResult = {
       moduleId: row.module_id as string,
       moduleTitle: row.module_title as string,
-      status: normalizeProgressStatus(rawStatus, scorePercent, completedAt),
+      status: displayStatus,
       scorePercent,
-      mcqCorrect: Number(row.mcq_correct ?? 0),
-      mcqTotal: Number(row.mcq_total ?? 0),
+      mcqCorrect,
+      mcqTotal,
       retakeCount: Number(row.retake_count ?? 0),
       completedAt: (row.completed_at as string) ?? null,
       updatedAt: (row.updated_at as string) ?? null,

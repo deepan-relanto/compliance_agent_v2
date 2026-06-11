@@ -31,7 +31,6 @@ function displayStatus(
 ): ModuleStatus {
   if (status === "permanently_failed") return status;
   if (status === "completed") return status;
-  if (scorePercent != null && scorePercent > PASS_THRESHOLD_PERCENT) return "completed";
   if (
     status === "failed" ||
     status === "in_progress" ||

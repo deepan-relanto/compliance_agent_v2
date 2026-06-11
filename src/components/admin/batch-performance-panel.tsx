@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import type { BatchPerformancePayload } from "@/lib/batch-performance-types";
 import { exportBatchPerformanceCsv } from "@/lib/batch-performance-export";
 import { PASS_THRESHOLD_PERCENT } from "@/lib/constants";
+import { resolveDisplayScorePercent } from "@/lib/progress-score";
 import { cn } from "@/lib/utils";
 import {
   CheckCircle2,
@@ -289,14 +290,14 @@ export function BatchPerformancePanel({ data }: BatchPerformancePanelProps) {
                 </thead>
                 <tbody className="divide-y divide-zinc-50">
                   {filtered.map((row) => {
-                    const hasMeaningfulScore =
-                      row.scorePercent != null &&
-                      (row.mcqTotal > 0 || isCompletedStatus(row.status));
-                    const displayScore = hasMeaningfulScore
-                      ? Math.min(100, Math.max(0, row.scorePercent!))
-                      : null;
+                    const displayScore = resolveDisplayScorePercent({
+                      status: row.status,
+                      storedScorePercent: row.scorePercent,
+                      mcqCorrect: row.mcqCorrect,
+                      mcqTotal: row.mcqTotal,
+                    });
                     const passed =
-                      displayScore != null && displayScore > PASS_THRESHOLD_PERCENT;
+                      displayScore != null && displayScore >= PASS_THRESHOLD_PERCENT;
 
                     return (
                       <tr key={row.key} className="hover:bg-zinc-50/50">

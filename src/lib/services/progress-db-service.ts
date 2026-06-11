@@ -1,5 +1,10 @@
 import type { getSql } from "@/lib/db";
 import { PASS_THRESHOLD_PERCENT, isPassingScore } from "@/lib/constants";
+import {
+  computeScoreFromAnswers,
+  countMcqAnswers,
+  resolveDisplayScorePercent,
+} from "@/lib/progress-score";
 
 type Sql = ReturnType<typeof getSql>;
 
@@ -40,20 +45,80 @@ export function normalizeProgressStatus(
   return s;
 }
 
-/** Clear scores saved without any answered checkpoints (legacy bug returned 100%). */
+/** Clear or fix scores that do not match stored MCQ answers. */
 export async function reconcileInvalidProgressScores(sql: Sql): Promise<number> {
-  const rows = await sql`
+  const cleared = await sql`
     UPDATE assessment_progress
     SET score_percent = NULL,
         failed_reason = NULL,
         updated_at = NOW()
     WHERE score_percent IS NOT NULL
-      AND COALESCE(mcq_correct, 0) = 0
-      AND (mcq_answers IS NULL OR mcq_answers = '{}'::jsonb)
       AND status NOT IN ('completed', 'permanently_failed')
+      AND (
+        (
+          COALESCE(mcq_correct, 0) = 0
+          AND (mcq_answers IS NULL OR mcq_answers = '{}'::jsonb)
+        )
+        OR (
+          COALESCE(mcq_correct, 0) = 0
+          AND score_percent > 0
+        )
+      )
     RETURNING id
   `;
-  return rows.length;
+
+  const mismatched = await sql`
+    SELECT id, mcq_answers, mcq_total, mcq_correct, score_percent, status
+    FROM assessment_progress
+    WHERE score_percent IS NOT NULL
+      AND status NOT IN ('permanently_failed')
+      AND mcq_answers IS NOT NULL
+      AND mcq_answers::text <> '{}'
+  `;
+
+  let fixed = 0;
+  for (const row of mismatched) {
+    const answers = parseMcqAnswers(row.mcq_answers);
+    const assignedTotal = Number(row.mcq_total ?? 0);
+    const { mcqCorrect, mcqTotal, scorePercent } = computeScoreFromAnswers(
+      answers,
+      assignedTotal,
+    );
+    const stored = Number(row.score_percent);
+    const status = row.status as string;
+    const shouldStore =
+      status === "completed" ||
+      countMcqAnswers(answers) > 0 ||
+      scorePercent === 0;
+
+    if (!shouldStore && stored > 0) {
+      await sql`
+        UPDATE assessment_progress
+        SET score_percent = NULL, failed_reason = NULL, updated_at = NOW()
+        WHERE id = ${row.id as string}
+      `;
+      fixed++;
+      continue;
+    }
+
+    if (
+      mcqCorrect !== Number(row.mcq_correct ?? 0) ||
+      mcqTotal !== Number(row.mcq_total ?? 0) ||
+      scorePercent !== stored
+    ) {
+      await sql`
+        UPDATE assessment_progress
+        SET mcq_correct = ${mcqCorrect},
+            mcq_total = ${mcqTotal},
+            score_percent = ${shouldStore ? scorePercent : null},
+            updated_at = NOW()
+        WHERE id = ${row.id as string}
+      `;
+      fixed++;
+    }
+  }
+
+  return cleared.length + fixed;
 }
 
 /** Fix rows where acknowledgement was saved but status was not marked completed. */
@@ -128,39 +193,6 @@ export async function getProgressRow(
     failed_reason: (r.failed_reason as string) ?? null,
     completed_at: (r.completed_at as string) ?? null,
   };
-}
-
-function scoreFromAnswers(
-  answers: Record<string, boolean>,
-  assignedTotal: number,
-): { mcqCorrect: number; mcqTotal: number; scorePercent: number } {
-  const answeredCount = Object.keys(answers).length;
-  let mcqCorrect = Object.values(answers).filter(Boolean).length;
-
-  // Denominator: the number of questions the learner actually saw.
-  // 1) Prefer the assigned pool when it is at least as large as what they answered.
-  // 2) Otherwise (legacy/stale rows), fall back to the answered count.
-  let mcqTotal =
-    assignedTotal > 0
-      ? Math.max(assignedTotal, answeredCount)
-      : answeredCount;
-
-  // Cap denominator at the answered count when nothing more is expected (the
-  // legacy bug stored small totals that made percent > 100%).
-  if (answeredCount > 0 && mcqTotal > answeredCount) {
-    mcqTotal = answeredCount;
-  }
-
-  // Safety: a corrupt row can have correct > total — clamp it.
-  if (mcqCorrect > mcqTotal) mcqCorrect = mcqTotal;
-
-  if (answeredCount === 0) {
-    return { mcqCorrect: 0, mcqTotal: assignedTotal > 0 ? assignedTotal : 0, scorePercent: 0 };
-  }
-
-  const rawPercent = Math.round((mcqCorrect / mcqTotal) * 100);
-  const scorePercent = Math.min(100, Math.max(0, rawPercent));
-  return { mcqCorrect, mcqTotal, scorePercent };
 }
 
 export async function ensureProgressRow(
@@ -290,7 +322,7 @@ export async function recordMcqAnswerDb(
   const answers = { ...row.mcq_answers, [params.questionId]: params.wasCorrect };
   const assignedTotal =
     row.mcq_total > 0 ? row.mcq_total : await getModuleMcqCount(sql, params.moduleId);
-  const { mcqCorrect, mcqTotal } = scoreFromAnswers(answers, assignedTotal);
+  const { mcqCorrect, mcqTotal } = computeScoreFromAnswers(answers, assignedTotal);
 
   await sql`
     UPDATE assessment_progress
@@ -325,11 +357,12 @@ export async function finalizeAssessmentDb(
     return { scorePercent: 0, passed: false, canRetake: true, mcqCorrect: 0, mcqTotal: 0 };
   }
 
-  const { mcqCorrect, mcqTotal, scorePercent } = scoreFromAnswers(
+  const answerCount = countMcqAnswers(row.mcq_answers);
+  const { mcqCorrect, mcqTotal, scorePercent } = computeScoreFromAnswers(
     row.mcq_answers,
     row.mcq_total,
   );
-  const passed = isPassingScore(scorePercent);
+  const passed = isPassingScore(scorePercent) && answerCount > 0;
   const retakeCount = Number(row.retake_count ?? 0);
   const canRetake = !passed && retakeCount < 2;
 
@@ -337,13 +370,16 @@ export async function finalizeAssessmentDb(
   const status = "in_progress";
   const failedReason = passed
     ? null
-    : `Score ${scorePercent}% is below the passing threshold (${PASS_THRESHOLD_PERCENT}%).`;
+    : answerCount > 0
+      ? `Score ${scorePercent}% is below the passing threshold (${PASS_THRESHOLD_PERCENT}%).`
+      : null;
+  const persistScorePercent = answerCount > 0 ? scorePercent : null;
 
   if (passed) {
     await sql`
       UPDATE assessment_progress
       SET status = ${status},
-          score_percent = ${scorePercent},
+          score_percent = ${persistScorePercent},
           mcq_correct = ${mcqCorrect},
           mcq_total = ${mcqTotal},
           failed_reason = NULL,
@@ -356,7 +392,7 @@ export async function finalizeAssessmentDb(
     await sql`
       UPDATE assessment_progress
       SET status = ${status},
-          score_percent = ${scorePercent},
+          score_percent = ${persistScorePercent},
           mcq_correct = ${mcqCorrect},
           mcq_total = ${mcqTotal},
           failed_reason = ${failedReason},
@@ -516,26 +552,40 @@ export async function listProgressForUser(sql: Sql, userEmail: string) {
     WHERE user_email = ${userEmail}
     ORDER BY last_accessed_at DESC
   `;
-  return rows.map((r) => ({
-    userEmail: r.user_email as string,
-    moduleId: r.module_id as string,
-    moduleTitle: r.module_title as string,
-    batchId: r.batch_id as string,
-    currentSlide: Number(r.current_slide),
-    totalSlides: Number(r.total_slides),
-    status: normalizeProgressStatus(
+  return rows.map((r) => {
+    const mcqCorrect = Number(r.mcq_correct ?? 0);
+    const mcqTotal = Number(r.mcq_total ?? 0);
+    const storedScorePercent =
+      r.score_percent != null ? Number(r.score_percent) : null;
+    const answers = parseMcqAnswers(r.mcq_answers);
+    const displayStatus = normalizeProgressStatus(
       r.status as string,
-      r.score_percent != null ? Number(r.score_percent) : null,
+      storedScorePercent,
       (r.completed_at as string) ?? null,
-    ),
-    warningCount: Number(r.warning_count),
-    retakeCount: Number(r.retake_count),
-    mcqCorrect: Number(r.mcq_correct ?? 0),
-    mcqTotal: Number(r.mcq_total ?? 0),
-    scorePercent: r.score_percent != null ? Number(r.score_percent) : null,
-    failedReason: (r.failed_reason as string) ?? null,
-    completedAt: (r.completed_at as string) ?? null,
-  }));
+    );
+    return {
+      userEmail: r.user_email as string,
+      moduleId: r.module_id as string,
+      moduleTitle: r.module_title as string,
+      batchId: r.batch_id as string,
+      currentSlide: Number(r.current_slide),
+      totalSlides: Number(r.total_slides),
+      status: displayStatus,
+      warningCount: Number(r.warning_count),
+      retakeCount: Number(r.retake_count),
+      mcqCorrect,
+      mcqTotal,
+      scorePercent: resolveDisplayScorePercent({
+        status: displayStatus,
+        storedScorePercent,
+        mcqCorrect,
+        mcqTotal,
+        answerCount: countMcqAnswers(answers),
+      }),
+      failedReason: (r.failed_reason as string) ?? null,
+      completedAt: (r.completed_at as string) ?? null,
+    };
+  });
 }
 
 export async function listProgressForBatch(sql: Sql, batchId: string) {
@@ -565,22 +615,39 @@ export async function listProgressForBatch(sql: Sql, batchId: string) {
 export async function listAllProgressAdmin(sql: Sql) {
   const rows = await sql`
     SELECT user_email, module_id, module_title, batch_id, status, retake_count,
-           mcq_correct, mcq_total, score_percent, failed_reason, completed_at
+           mcq_correct, mcq_total, score_percent, mcq_answers, failed_reason, completed_at
     FROM assessment_progress
     WHERE score_percent IS NOT NULL OR status IN ('completed', 'failed')
     ORDER BY completed_at DESC NULLS LAST, module_title
   `;
-  return rows.map((r) => ({
-    userEmail: r.user_email as string,
-    moduleId: r.module_id as string,
-    moduleTitle: r.module_title as string,
-    batchId: r.batch_id as string,
-    status: r.status as string,
-    retakeCount: Number(r.retake_count),
-    mcqCorrect: Number(r.mcq_correct ?? 0),
-    mcqTotal: Number(r.mcq_total ?? 0),
-    scorePercent: r.score_percent != null ? Number(r.score_percent) : null,
-    failedReason: (r.failed_reason as string) ?? null,
-    completedAt: (r.completed_at as string) ?? null,
-  }));
+  return rows.map((r) => {
+    const mcqCorrect = Number(r.mcq_correct ?? 0);
+    const mcqTotal = Number(r.mcq_total ?? 0);
+    const storedScorePercent =
+      r.score_percent != null ? Number(r.score_percent) : null;
+    const displayStatus = normalizeProgressStatus(
+      r.status as string,
+      storedScorePercent,
+      (r.completed_at as string) ?? null,
+    );
+    return {
+      userEmail: r.user_email as string,
+      moduleId: r.module_id as string,
+      moduleTitle: r.module_title as string,
+      batchId: r.batch_id as string,
+      status: displayStatus,
+      retakeCount: Number(r.retake_count),
+      mcqCorrect,
+      mcqTotal,
+      scorePercent: resolveDisplayScorePercent({
+        status: displayStatus,
+        storedScorePercent,
+        mcqCorrect,
+        mcqTotal,
+        answerCount: countMcqAnswers(parseMcqAnswers(r.mcq_answers)),
+      }),
+      failedReason: (r.failed_reason as string) ?? null,
+      completedAt: (r.completed_at as string) ?? null,
+    };
+  });
 }

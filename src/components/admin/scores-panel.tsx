@@ -2,6 +2,7 @@
 
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { PASS_THRESHOLD_PERCENT } from "@/lib/constants";
+import { resolveDisplayScorePercent } from "@/lib/progress-score";
 import { cn } from "@/lib/utils";
 import { Loader2, Trophy } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -129,9 +130,15 @@ export function ScoresPanel() {
               </thead>
               <tbody className="divide-y divide-zinc-100">
                 {filtered.map((row) => {
+                  const displayScore = resolveDisplayScorePercent({
+                    status: row.status,
+                    storedScorePercent: row.scorePercent,
+                    mcqCorrect: row.mcqCorrect,
+                    mcqTotal: row.mcqTotal,
+                  });
                   const passed =
-                    row.scorePercent != null &&
-                    row.scorePercent > PASS_THRESHOLD_PERCENT;
+                    displayScore != null &&
+                    displayScore >= PASS_THRESHOLD_PERCENT;
                   return (
                     <tr key={`${row.userEmail}-${row.moduleId}`} className="bg-white">
                       <td className="px-4 py-3 font-medium text-zinc-800">
@@ -145,15 +152,15 @@ export function ScoresPanel() {
                             "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold",
                             passed
                               ? "bg-emerald-50 text-emerald-700"
-                              : row.scorePercent != null
+                              : displayScore != null
                                 ? "bg-amber-50 text-amber-800"
                                 : "bg-zinc-100 text-zinc-600",
                           )}
                         >
-                          {row.scorePercent != null ? (
+                          {displayScore != null ? (
                             <>
                               <Trophy className="h-3 w-3" />
-                              {row.scorePercent}%
+                              {displayScore}%
                             </>
                           ) : (
                             "—"

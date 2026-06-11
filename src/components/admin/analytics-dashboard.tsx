@@ -760,12 +760,9 @@ export function AnalyticsDashboard({ initialBatchId }: AnalyticsDashboardProps) 
                 </thead>
                 <tbody className="divide-y divide-zinc-50">
                   {filteredHistory.map((row) => {
-                    const displayScore =
-                      row.scorePercent != null
-                        ? Math.min(100, Math.max(0, row.scorePercent))
-                        : null;
+                    const displayScore = row.scorePercent;
                     const passed =
-                      displayScore != null && displayScore > PASS_THRESHOLD_PERCENT;
+                      displayScore != null && displayScore >= PASS_THRESHOLD_PERCENT;
                     return (
                       <tr
                         key={`${row.userEmail}-${row.moduleTitle}-${row.updatedAt}`}
