@@ -35,6 +35,7 @@ export async function syncProgressStart(params: {
   batchId: string;
   totalSlides: number;
   assignedMcqCount?: number;
+  freshStart?: boolean;
 }): Promise<void> {
   await fetch("/api/progress", {
     method: "POST",

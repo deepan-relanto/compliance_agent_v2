@@ -1,6 +1,5 @@
 import { getSql } from "@/lib/db";
-import { normalizeMcqExplanation } from "@/lib/mcq-explanation";
-import { recordMcqAnswerDb } from "@/lib/services/progress-db-service";
+import { validateAndRecordMcqAnswerDb } from "@/lib/services/progress-db-service";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +12,14 @@ export async function POST(
   try {
     const { id: moduleId, questionId } = await params;
     const body = await req.json();
-    const { optionId, userEmail, moduleTitle, batchId, totalSlides } = body;
+    const {
+      optionId,
+      userEmail,
+      moduleTitle,
+      batchId,
+      totalSlides,
+      assignedMcqCount,
+    } = body;
 
     if (!optionId || typeof optionId !== "string") {
       return NextResponse.json(
@@ -23,12 +29,43 @@ export async function POST(
     }
 
     const sql = getSql();
+
+    if (userEmail && moduleTitle && batchId) {
+      const result = await validateAndRecordMcqAnswerDb(sql, {
+        userEmail,
+        moduleId,
+        moduleTitle,
+        batchId,
+        totalSlides: totalSlides ?? 1,
+        questionId,
+        optionId,
+        assignedMcqCount:
+          typeof assignedMcqCount === "number" && assignedMcqCount > 0
+            ? assignedMcqCount
+            : undefined,
+      });
+
+      if (!result.found) {
+        return NextResponse.json(
+          { ok: false, error: "Question not found." },
+          { status: 404 },
+        );
+      }
+
+      return NextResponse.json({
+        ok: true,
+        correct: result.correct,
+        correctOptionId: result.correctOptionId,
+        mcqCorrect: result.mcqCorrect,
+        mcqTotal: result.mcqTotal,
+        alreadyAnswered: result.alreadyAnswered,
+      });
+    }
+
     const rows = await sql`
-      SELECT q.correct_option_id, q.explanation, o.label AS correct_label
-      FROM mcq_questions q
-      LEFT JOIN mcq_options o
-        ON o.question_id = q.id AND o.id = q.correct_option_id
-      WHERE q.id = ${questionId} AND q.module_id = ${moduleId}
+      SELECT correct_option_id
+      FROM mcq_questions
+      WHERE id = ${questionId} AND module_id = ${moduleId}
       LIMIT 1
     `;
 
@@ -39,40 +76,15 @@ export async function POST(
       );
     }
 
-    const correctOptionId = String(rows[0].correct_option_id ?? "").trim().toLowerCase();
-    const correctLabel = String(rows[0].correct_label ?? "").trim();
-    const explanation = normalizeMcqExplanation(
-      typeof rows[0].explanation === "string" ? rows[0].explanation : null,
-      correctLabel,
-    );
+    const correctOptionId = String(rows[0].correct_option_id ?? "")
+      .trim()
+      .toLowerCase();
     const correct = optionId.trim().toLowerCase() === correctOptionId;
-
-    if (userEmail && moduleTitle && batchId) {
-      const stats = await recordMcqAnswerDb(sql, {
-        userEmail,
-        moduleId,
-        moduleTitle,
-        batchId,
-        totalSlides: totalSlides ?? 1,
-        questionId,
-        wasCorrect: correct,
-      });
-      return NextResponse.json({
-        ok: true,
-        correct,
-        correctOptionId,
-        explanation,
-        mcqCorrect: stats.mcqCorrect,
-        mcqTotal: stats.mcqTotal,
-        alreadyAnswered: stats.alreadyAnswered ?? false,
-      });
-    }
 
     return NextResponse.json({
       ok: true,
       correct,
       correctOptionId,
-      explanation,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Validation failed";

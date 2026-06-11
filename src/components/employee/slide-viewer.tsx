@@ -108,9 +108,10 @@ function formatElapsed(ms: number): string {
 interface SlideViewerProps {
   module: TrainingModule;
   mcqs?: McqQuestion[];
+  freshStart?: boolean;
 }
 
-export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
+export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideViewerProps) {
   const user = useAuthStore((s) => s.user);
 
   // PDF modules: slides array drives the progress bar + navigation counts.
@@ -592,10 +593,11 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
         batchId: user.batchId,
         totalSlides,
         assignedMcqCount: moduleMcqs.length,
+        freshStart,
       });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.username, module.id, moduleMcqs.length]);
+  }, [user?.username, module.id, moduleMcqs.length, freshStart]);
 
   // Assessments are one-time: do not persist slide position for resume.
 
@@ -972,6 +974,7 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
     totalScore: totalPossibleScore,
     checkpointNumber: quizOnlyMode ? quizOnlyIndex + 1 : answeredCount + 1,
     totalCheckpoints: totalQuestions,
+    assignedMcqCount: moduleMcqs.length,
     onAnswered: handleCheckpointAnswered,
     onContinue: handleMcqContinue,
   };

@@ -10,15 +10,16 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 
-const SlideViewer = dynamic(
-  () => import("@/components/employee/slide-viewer").then((mod) => mod.SlideViewer),
-  { ssr: false },
-);
+const preloadSlideViewer = () =>
+  import("@/components/employee/slide-viewer").then((mod) => mod.SlideViewer);
+
+const SlideViewer = dynamic(() => preloadSlideViewer(), { ssr: false });
 
 export default function TrainingPage() {
   const params = useParams();
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
+  const [freshStart, setFreshStart] = useState(false);
   const isHydrated = useAuthStore((s) => s.isHydrated);
   const { status: sessionStatus } = useSession();
   const id = typeof params.id === "string" ? params.id : "";
@@ -31,6 +32,11 @@ export default function TrainingPage() {
     sessionStatus !== "loading" &&
     isHydrated &&
     (sessionStatus === "authenticated" ? !!user?.username : true);
+
+  useEffect(() => {
+    void preloadSlideViewer();
+    setFreshStart(new URLSearchParams(window.location.search).get("fresh") === "1");
+  }, []);
 
   useEffect(() => {
     if (!id || !authReady) return;
@@ -92,7 +98,7 @@ export default function TrainingPage() {
 
   return (
     <RouteGuard allowedRoles={["user"]}>
-      <SlideViewer module={trainingModule} mcqs={mcqs} />
+      <SlideViewer module={trainingModule} mcqs={mcqs} freshStart={freshStart} />
     </RouteGuard>
   );
 }

@@ -118,6 +118,8 @@ export interface McqQuestion {
   slideIndex: number;
   prompt: string;
   options: McqOption[];
+  /** Shipped with module load — correct answer id is never exposed. */
+  explanation?: string;
   /** Only set after server validation — never in module GET */
   correctOptionId?: string;
 }

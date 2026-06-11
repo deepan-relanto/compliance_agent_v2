@@ -8,10 +8,18 @@ import type { ModuleStatus, TrainingModule } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { PASS_THRESHOLD_PERCENT } from "@/lib/constants";
 import { Clock, FileText, Layers, Play, RotateCcw, Trophy } from "lucide-react";
-import { requestScoreRetake, resetAttemptProgress } from "@/lib/progress-api";
+import { requestScoreRetake } from "@/lib/progress-api";
 import { resetForScoreRetake, resetLocalAttempt } from "@/lib/progress-store";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+
+function prefetchTraining(moduleId: string, userEmail?: string) {
+  const query = userEmail
+    ? `?userEmail=${encodeURIComponent(userEmail)}`
+    : "";
+  void fetch(`/api/modules/${encodeURIComponent(moduleId)}${query}`);
+  void import("@/components/employee/slide-viewer");
+}
 
 interface ModuleCardProps {
   module: TrainingModule;
@@ -44,6 +52,10 @@ function displayStatus(
 export function ModuleCard({ module }: ModuleCardProps) {
   const user = useAuthStore((s) => s.user);
   const router = useRouter();
+
+  const warmTraining = useCallback(() => {
+    prefetchTraining(module.id, user?.username);
+  }, [module.id, user?.username]);
   const [status, setStatus] = useState<ModuleStatus>(module.status);
   const [scorePercent, setScorePercent] = useState<number | null>(null);
 
@@ -83,7 +95,11 @@ export function ModuleCard({ module }: ModuleCardProps) {
       : "primary";
 
   return (
-    <article className="surface-card-interactive group overflow-hidden">
+    <article
+      className="surface-card-interactive group overflow-hidden"
+      onMouseEnter={warmTraining}
+      onFocus={warmTraining}
+    >
       <div className="flex flex-col sm:flex-row">
         <div
           className={cn("h-1 w-full shrink-0 sm:h-auto sm:w-1", statusAccent[badgeStatus])}
@@ -165,11 +181,15 @@ export function ModuleCard({ module }: ModuleCardProps) {
                   }
                   return;
                 }
-                if (status === "in_progress" || status === "not_started" || status === "failed") {
-                  await resetAttemptProgress(user.username, module.id);
+                const needsFreshStart =
+                  status === "in_progress" ||
+                  status === "not_started" ||
+                  status === "failed";
+                if (needsFreshStart) {
                   resetLocalAttempt(user.username, module.id);
                 }
-                router.push(`/training/${module.id}`);
+                const fresh = needsFreshStart ? "?fresh=1" : "";
+                router.push(`/training/${module.id}${fresh}`);
               }}
             >
               {canScoreRetake ? (

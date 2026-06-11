@@ -4,7 +4,7 @@ import { StreakCounter } from "@/components/employee/streak-counter";
 import { CheckpointSignal } from "@/components/employee/checkpoint-signal";
 import { Button } from "@/components/ui/button";
 import { POINTS_PER_MCQ } from "@/lib/constants";
-import { formatExplanationLines } from "@/lib/mcq-explanation";
+import { formatExplanationLines, normalizeMcqExplanation } from "@/lib/mcq-explanation";
 import type { McqQuestion } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
@@ -54,6 +54,7 @@ interface MCQCheckpointProps {
   totalScore: number;
   checkpointNumber: number;
   totalCheckpoints: number;
+  assignedMcqCount?: number;
   variant?: "modal" | "panel";
   onAnswered: (wasCorrect: boolean) => void;
   onContinue: (wasCorrect: boolean) => void;
@@ -94,6 +95,7 @@ export function MCQCheckpoint({
   totalScore,
   checkpointNumber,
   totalCheckpoints,
+  assignedMcqCount,
   variant = "modal",
   onAnswered,
   onContinue,
@@ -160,6 +162,7 @@ export function MCQCheckpoint({
             moduleTitle,
             batchId,
             totalSlides,
+            assignedMcqCount,
           }),
         },
       );
@@ -170,9 +173,14 @@ export function MCQCheckpoint({
       }
       const correct = Boolean(data.correct);
       const alreadyAnswered = Boolean(data.alreadyAnswered);
+      const resolvedCorrectId = data.correctOptionId ?? null;
+      const correctLabel =
+        question.options.find((opt) => opt.id === resolvedCorrectId)?.label ?? "";
       setWasCorrect(correct);
-      setCorrectOptionId(data.correctOptionId ?? null);
-      setAnswerExplanation(data.explanation ?? null);
+      setCorrectOptionId(resolvedCorrectId);
+      setAnswerExplanation(
+        normalizeMcqExplanation(question.explanation, correctLabel),
+      );
       setSubmitted(true);
       if (!alreadyAnswered) {
         onAnswered(correct);

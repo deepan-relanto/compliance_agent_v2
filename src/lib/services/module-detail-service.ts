@@ -39,6 +39,7 @@ export interface ModuleMcqRow {
   id: string;
   slideIndex: number;
   prompt: string;
+  explanation?: string | null;
   options: { id: string; label: string }[];
 }
 
@@ -48,14 +49,16 @@ export async function loadModuleDetail(
   moduleId: string,
   userEmail: string,
 ) {
-  const [moduleRows, batchRows, questionRows, progressRows] = await Promise.all([
+  const [moduleRows, batchRows, mcqRows, progressRows] = await Promise.all([
     sql`SELECT * FROM training_modules WHERE id = ${moduleId} LIMIT 1`,
     sql`SELECT batch_id FROM module_batches WHERE module_id = ${moduleId}`,
     sql`
-      SELECT id, slide_index, prompt
-      FROM mcq_questions
-      WHERE module_id = ${moduleId}
-      ORDER BY slide_index
+      SELECT q.id, q.slide_index, q.prompt, q.explanation,
+             o.id AS option_id, o.label AS option_label
+      FROM mcq_questions q
+      LEFT JOIN mcq_options o ON o.question_id = q.id
+      WHERE q.module_id = ${moduleId}
+      ORDER BY q.slide_index, o.id
     `,
     userEmail
       ? sql`
@@ -70,30 +73,31 @@ export async function loadModuleDetail(
   if (moduleRows.length === 0) return null;
 
   const row = moduleRows[0];
-  const questionIds = questionRows.map((q) => q.id as string);
 
-  const optionsByQuestion = new Map<string, { id: string; label: string }[]>();
-  if (questionIds.length > 0) {
-    const optRows = await sql`
-      SELECT question_id, id, label
-      FROM mcq_options
-      WHERE question_id = ANY(${questionIds})
-      ORDER BY question_id, id
-    `;
-    for (const o of optRows) {
-      const qid = o.question_id as string;
-      const list = optionsByQuestion.get(qid) ?? [];
-      list.push({ id: o.id as string, label: o.label as string });
-      optionsByQuestion.set(qid, list);
+  const mcqPool: ModuleMcqRow[] = [];
+  const mcqById = new Map<string, ModuleMcqRow>();
+  for (const mcqRow of mcqRows) {
+    const qid = mcqRow.id as string;
+    let question = mcqById.get(qid);
+    if (!question) {
+      question = {
+        id: qid,
+        slideIndex: Number(mcqRow.slide_index),
+        prompt: mcqRow.prompt as string,
+        explanation:
+          typeof mcqRow.explanation === "string" ? mcqRow.explanation : null,
+        options: [],
+      };
+      mcqById.set(qid, question);
+      mcqPool.push(question);
+    }
+    if (mcqRow.option_id) {
+      question.options.push({
+        id: mcqRow.option_id as string,
+        label: mcqRow.option_label as string,
+      });
     }
   }
-
-  const mcqPool: ModuleMcqRow[] = questionRows.map((q) => ({
-    id: q.id as string,
-    slideIndex: Number(q.slide_index),
-    prompt: q.prompt as string,
-    options: optionsByQuestion.get(q.id as string) ?? [],
-  }));
 
   const progress = progressRows[0];
   const rawStatus = (progress?.status as string | undefined) ?? "not_started";
@@ -151,8 +155,11 @@ export async function loadModuleDetail(
   const selected = randomized.slice(0, Math.max(needed, 1));
 
   const mcqs = selected.map((q, index) => ({
-    ...q,
+    id: q.id,
     slideIndex: gateSlides[index] ?? q.slideIndex,
+    prompt: q.prompt,
+    options: q.options,
+    explanation: q.explanation ?? undefined,
   }));
 
   return {

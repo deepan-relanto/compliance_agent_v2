@@ -154,6 +154,26 @@ function parseMcqAnswers(raw: unknown): Record<string, boolean> {
   return raw as Record<string, boolean>;
 }
 
+function mapProgressRow(r: Record<string, unknown>): ProgressRow {
+  return {
+    user_email: r.user_email as string,
+    module_id: r.module_id as string,
+    module_title: r.module_title as string,
+    batch_id: r.batch_id as string,
+    current_slide: Number(r.current_slide),
+    total_slides: Number(r.total_slides),
+    status: r.status as string,
+    warning_count: Number(r.warning_count ?? 0),
+    retake_count: Number(r.retake_count ?? 0),
+    mcq_correct: Number(r.mcq_correct ?? 0),
+    mcq_total: Number(r.mcq_total ?? 0),
+    score_percent: r.score_percent != null ? Number(r.score_percent) : null,
+    mcq_answers: parseMcqAnswers(r.mcq_answers),
+    failed_reason: (r.failed_reason as string) ?? null,
+    completed_at: (r.completed_at as string) ?? null,
+  };
+}
+
 export async function getModuleMcqCount(sql: Sql, moduleId: string): Promise<number> {
   const rows = await sql`
     SELECT COUNT(*)::int AS c FROM mcq_questions WHERE module_id = ${moduleId}
@@ -175,23 +195,225 @@ export async function getProgressRow(
     LIMIT 1
   `;
   if (rows.length === 0) return null;
-  const r = rows[0];
+  return mapProgressRow(rows[0] as Record<string, unknown>);
+}
+
+/** Start or resume training — optional fresh reset + single upsert. */
+export async function startTrainingSessionDb(
+  sql: Sql,
+  params: {
+    userEmail: string;
+    moduleId: string;
+    moduleTitle: string;
+    batchId: string;
+    totalSlides: number;
+    assignedMcqCount?: number;
+    freshStart?: boolean;
+    currentSlide?: number;
+  },
+): Promise<ProgressRow> {
+  if (params.freshStart) {
+    await sql`
+      UPDATE assessment_progress
+      SET status = 'in_progress',
+          current_slide = 0,
+          mcq_answers = '{}'::jsonb,
+          mcq_correct = 0,
+          score_percent = NULL,
+          failed_reason = NULL,
+          completed_at = NULL,
+          last_accessed_at = NOW(),
+          updated_at = NOW()
+      WHERE user_email = ${params.userEmail} AND module_id = ${params.moduleId}
+        AND status NOT IN ('completed', 'permanently_failed')
+    `;
+  }
+
+  const mcqTotal =
+    params.assignedMcqCount && params.assignedMcqCount > 0
+      ? params.assignedMcqCount
+      : await getModuleMcqCount(sql, params.moduleId);
+
+  const slideValue =
+    typeof params.currentSlide === "number" ? params.currentSlide : 0;
+
+  const rows = await sql`
+    INSERT INTO assessment_progress (
+      user_email, module_id, module_title, batch_id, current_slide, total_slides,
+      status, mcq_total, mcq_correct, mcq_answers
+    )
+    VALUES (
+      ${params.userEmail},
+      ${params.moduleId},
+      ${params.moduleTitle},
+      ${params.batchId},
+      ${slideValue},
+      ${params.totalSlides},
+      'in_progress',
+      ${mcqTotal},
+      0,
+      ${JSON.stringify({})}::jsonb
+    )
+    ON CONFLICT (user_email, module_id) DO UPDATE SET
+      module_title = EXCLUDED.module_title,
+      batch_id = EXCLUDED.batch_id,
+      total_slides = EXCLUDED.total_slides,
+      mcq_total = CASE
+        WHEN assessment_progress.mcq_total > 0 THEN assessment_progress.mcq_total
+        ELSE EXCLUDED.mcq_total
+      END,
+      current_slide = CASE
+        WHEN ${typeof params.currentSlide === "number"} THEN ${slideValue}
+        ELSE assessment_progress.current_slide
+      END,
+      status = CASE
+        WHEN assessment_progress.status IN ('completed', 'permanently_failed') THEN assessment_progress.status
+        WHEN assessment_progress.status = 'failed' AND assessment_progress.score_percent IS NOT NULL THEN 'in_progress'
+        WHEN assessment_progress.status = 'not_started' THEN 'in_progress'
+        ELSE assessment_progress.status
+      END,
+      last_accessed_at = NOW(),
+      updated_at = NOW()
+    RETURNING user_email, module_id, module_title, batch_id, current_slide, total_slides,
+              status, warning_count, retake_count, mcq_correct, mcq_total, score_percent,
+              mcq_answers, failed_reason, completed_at
+  `;
+
+  return mapProgressRow(rows[0] as Record<string, unknown>);
+}
+
+/** Validate MCQ + update progress in at most two DB round-trips. */
+export async function validateAndRecordMcqAnswerDb(
+  sql: Sql,
+  params: {
+    userEmail: string;
+    moduleId: string;
+    moduleTitle: string;
+    batchId: string;
+    totalSlides: number;
+    questionId: string;
+    optionId: string;
+    assignedMcqCount?: number;
+  },
+): Promise<{
+  found: boolean;
+  correct: boolean;
+  correctOptionId: string;
+  mcqCorrect: number;
+  mcqTotal: number;
+  alreadyAnswered: boolean;
+}> {
+  const rows = await sql`
+    SELECT
+      q.correct_option_id,
+      p.status AS progress_status,
+      p.mcq_correct,
+      p.mcq_total,
+      p.mcq_answers,
+      p.score_percent
+    FROM mcq_questions q
+    LEFT JOIN assessment_progress p
+      ON p.user_email = ${params.userEmail} AND p.module_id = ${params.moduleId}
+    WHERE q.id = ${params.questionId} AND q.module_id = ${params.moduleId}
+    LIMIT 1
+  `;
+
+  if (rows.length === 0 || !rows[0].correct_option_id) {
+    return {
+      found: false,
+      correct: false,
+      correctOptionId: "",
+      mcqCorrect: 0,
+      mcqTotal: 0,
+      alreadyAnswered: false,
+    };
+  }
+
+  const correctOptionId = String(rows[0].correct_option_id ?? "")
+    .trim()
+    .toLowerCase();
+  const correct = params.optionId.trim().toLowerCase() === correctOptionId;
+  let progressStatus = rows[0].progress_status as string | null;
+
+  if (!progressStatus) {
+    await startTrainingSessionDb(sql, {
+      userEmail: params.userEmail,
+      moduleId: params.moduleId,
+      moduleTitle: params.moduleTitle,
+      batchId: params.batchId,
+      totalSlides: params.totalSlides,
+      assignedMcqCount: params.assignedMcqCount,
+    });
+    progressStatus = "in_progress";
+    rows[0].mcq_correct = 0;
+    rows[0].mcq_total =
+      params.assignedMcqCount && params.assignedMcqCount > 0
+        ? params.assignedMcqCount
+        : 0;
+    rows[0].mcq_answers = {};
+    rows[0].score_percent = null;
+  }
+
+  const mcqAnswers = parseMcqAnswers(rows[0].mcq_answers);
+  const mcqCorrectStored = Number(rows[0].mcq_correct ?? 0);
+  const mcqTotalStored = Number(rows[0].mcq_total ?? 0);
+
+  if (
+    progressStatus === "completed" ||
+    progressStatus === "permanently_failed" ||
+    (progressStatus === "failed" && rows[0].score_percent == null)
+  ) {
+    return {
+      found: true,
+      correct,
+      correctOptionId,
+      mcqCorrect: mcqCorrectStored,
+      mcqTotal: mcqTotalStored,
+      alreadyAnswered: false,
+    };
+  }
+
+  if (Object.prototype.hasOwnProperty.call(mcqAnswers, params.questionId)) {
+    return {
+      found: true,
+      correct,
+      correctOptionId,
+      mcqCorrect: mcqCorrectStored,
+      mcqTotal: mcqTotalStored,
+      alreadyAnswered: true,
+    };
+  }
+
+  const answers = { ...mcqAnswers, [params.questionId]: correct };
+  const assignedTotal =
+    mcqTotalStored > 0
+      ? mcqTotalStored
+      : params.assignedMcqCount && params.assignedMcqCount > 0
+        ? params.assignedMcqCount
+        : await getModuleMcqCount(sql, params.moduleId);
+  const { mcqCorrect, mcqTotal } = computeScoreFromAnswers(answers, assignedTotal);
+
+  await sql`
+    UPDATE assessment_progress
+    SET mcq_answers = ${JSON.stringify(answers)}::jsonb,
+        mcq_correct = ${mcqCorrect},
+        mcq_total = ${mcqTotal},
+        status = CASE
+          WHEN status IN ('not_started', 'failed') THEN 'in_progress'
+          ELSE status
+        END,
+        last_accessed_at = NOW(),
+        updated_at = NOW()
+    WHERE user_email = ${params.userEmail} AND module_id = ${params.moduleId}
+  `;
+
   return {
-    user_email: r.user_email as string,
-    module_id: r.module_id as string,
-    module_title: r.module_title as string,
-    batch_id: r.batch_id as string,
-    current_slide: Number(r.current_slide),
-    total_slides: Number(r.total_slides),
-    status: r.status as string,
-    warning_count: Number(r.warning_count),
-    retake_count: Number(r.retake_count),
-    mcq_correct: Number(r.mcq_correct ?? 0),
-    mcq_total: Number(r.mcq_total ?? 0),
-    score_percent: r.score_percent != null ? Number(r.score_percent) : null,
-    mcq_answers: parseMcqAnswers(r.mcq_answers),
-    failed_reason: (r.failed_reason as string) ?? null,
-    completed_at: (r.completed_at as string) ?? null,
+    found: true,
+    correct,
+    correctOptionId,
+    mcqCorrect,
+    mcqTotal,
+    alreadyAnswered: false,
   };
 }
 

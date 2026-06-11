@@ -1,8 +1,7 @@
 import { getSql } from "@/lib/db";
 import {
-  ensureProgressRow,
   listProgressForUser,
-  saveSlideProgressDb,
+  startTrainingSessionDb,
 } from "@/lib/services/progress-db-service";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -40,6 +39,7 @@ export async function POST(req: NextRequest) {
       totalSlides,
       currentSlide,
       assignedMcqCount,
+      freshStart,
     } = body;
 
     if (!userEmail || !moduleId || !moduleTitle || !batchId) {
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
     }
 
     const sql = getSql();
-    const row = await ensureProgressRow(sql, {
+    const row = await startTrainingSessionDb(sql, {
       userEmail,
       moduleId,
       moduleTitle,
@@ -60,11 +60,9 @@ export async function POST(req: NextRequest) {
         typeof assignedMcqCount === "number" && assignedMcqCount > 0
           ? assignedMcqCount
           : undefined,
+      freshStart: Boolean(freshStart),
+      currentSlide: typeof currentSlide === "number" ? currentSlide : undefined,
     });
-
-    if (typeof currentSlide === "number") {
-      await saveSlideProgressDb(sql, userEmail, moduleId, currentSlide);
-    }
 
     return NextResponse.json({ ok: true, progress: row });
   } catch (err) {
