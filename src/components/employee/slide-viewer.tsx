@@ -54,6 +54,7 @@ const PdfPageViewer = dynamic(
   { ssr: false },
 );
 
+const TRAINING_VIEW_ZOOM = 0.8;
 const SLIDES_BETWEEN_GATES = 3;
 
 const FALLBACK_MCQ: McqQuestion = {
@@ -968,7 +969,10 @@ export function SlideViewer({ module, mcqs = [] }: SlideViewerProps) {
   }
 
   return (
-    <div className="training-interactive fixed inset-0 z-30 flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-zinc-900">
+    <div
+      className="training-interactive fixed inset-0 z-30 flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-zinc-900"
+      style={{ zoom: TRAINING_VIEW_ZOOM }}
+    >
       <header className="relative z-[70] flex h-12 shrink-0 items-center justify-between border-b border-zinc-800 bg-zinc-950 px-4 text-white">
         <RelantoLogo size="sm" showTagline={false} />
         <span className="hidden max-w-[280px] truncate text-sm font-semibold tracking-tight text-white sm:inline">
