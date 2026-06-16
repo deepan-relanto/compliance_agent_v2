@@ -22,81 +22,137 @@ import {
   ClipboardList,
   Loader2,
   RefreshCw,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { useEffect, useState, useCallback } from "react";
 import { useAuthStore } from "@/lib/auth-store";
 import { cn } from "@/lib/utils";
 
+type TabType = "violations" | "reviews" | "audit";
+
+interface Summary {
+  activeAssessments: number;
+  usersWithWarnings: number;
+  totalWarnings: number;
+  failedAssessments: number;
+  permanentlyFailedCount: number;
+  pendingReviewsCount: number;
+}
+
+const PAGE_SIZE = 25;
+
 export function MonitoringPanel() {
   const adminUser = useAuthStore((s) => s.user);
   const adminName = adminUser?.username || "Admin";
 
+  // Summary KPI cards (lightweight — loads independently)
+  const [summary, setSummary] = useState<Summary | null>(null);
+
+  // Tab data
   const [records, setRecords] = useState<AssessmentProgress[]>([]);
   const [reviews, setReviews] = useState<ReviewRequest[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [tabLoading, setTabLoading] = useState(true);
+  const [tabRefreshing, setTabRefreshing] = useState(false);
+
+  // Pagination
+  const [page, setPage] = useState(1);
+  const [totalRecords, setTotalRecords] = useState(0);
+  const [totalReviews, setTotalReviews] = useState(0);
+  const [totalAudit, setTotalAudit] = useState(0);
 
   const [selectedRecord, setSelectedRecord] = useState<AssessmentProgress | null>(null);
   const [selectedReview, setSelectedReview] = useState<ReviewRequest | null>(null);
-  const [activeTab, setActiveTab] = useState<"violations" | "reviews" | "audit">("violations");
+  const [activeTab, setActiveTab] = useState<TabType>("violations");
 
   // Rejection Comment State
   const [adminComment, setAdminComment] = useState("");
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [actionError, setActionError] = useState("");
 
-  const refreshData = useCallback(async () => {
-    setLoading(true);
+  /** Load summary KPI cards (fast lightweight query) */
+  const loadSummary = useCallback(async () => {
     try {
-      const res = await fetch("/api/monitoring");
+      const res = await fetch("/api/monitoring?summary=1");
       const data = await res.json();
-      if (data.ok) {
-        setRecords(Array.isArray(data.records) ? data.records : []);
-        setReviews(Array.isArray(data.reviews) ? data.reviews : []);
-        setAuditLogs(Array.isArray(data.auditLogs) ? data.auditLogs : []);
-      } else {
-        setRecords([]);
-        setReviews([]);
-        setAuditLogs([]);
-      }
+      if (data.ok) setSummary(data as Summary);
     } catch {
-      setRecords([]);
-      setReviews([]);
-      setAuditLogs([]);
-    } finally {
-      setLoading(false);
+      // non-fatal — cards stay empty
     }
   }, []);
 
+  /** Load tab data for the active tab + page */
+  const loadTab = useCallback(
+    async (tab: TabType, pg: number, isRefresh = false) => {
+      if (isRefresh) setTabRefreshing(true);
+      else setTabLoading(true);
+      try {
+        const res = await fetch(
+          `/api/monitoring?tab=${tab}&page=${pg}&pageSize=${PAGE_SIZE}`,
+        );
+        const data = await res.json();
+        if (!data.ok) return;
+        if (tab === "violations") {
+          setRecords(Array.isArray(data.records) ? data.records : []);
+          setTotalRecords(Number(data.total ?? 0));
+        } else if (tab === "reviews") {
+          setReviews(Array.isArray(data.reviews) ? data.reviews : []);
+          setTotalReviews(Number(data.total ?? 0));
+        } else {
+          setAuditLogs(Array.isArray(data.auditLogs) ? data.auditLogs : []);
+          setTotalAudit(Number(data.total ?? 0));
+        }
+      } catch {
+        // non-fatal
+      } finally {
+        setTabLoading(false);
+        setTabRefreshing(false);
+      }
+    },
+    [],
+  );
+
+  /** Full refresh — summary + current tab data */
+  const refreshData = useCallback(async () => {
+    await Promise.all([loadSummary(), loadTab(activeTab, page, true)]);
+  }, [loadSummary, loadTab, activeTab, page]);
+
+  /** On mount — load summary first (appears instantly), then tab data */
   useEffect(() => {
-    void refreshData();
-  }, [refreshData]);
+    void loadSummary();
+    void loadTab("violations", 1);
+  }, [loadSummary, loadTab]);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center gap-2 py-24 text-sm text-zinc-500">
-        <Loader2 className="h-5 w-5 animate-spin text-[#2e3192]" />
-        Loading monitoring…
-      </div>
-    );
-  }
+  /** Reload tab data when tab or page changes */
+  useEffect(() => {
+    void loadTab(activeTab, page);
+  }, [activeTab, page, loadTab]);
 
-  // Summary Metrics calculations
-  const activeAssessments = records.filter((r) => r.status === "in_progress").length;
-  const usersWithWarnings = records.filter((r) => r.warningCount > 0).length;
-  const failedAssessments = records.filter((r) => r.status === "failed").length;
-  const permanentlyFailedCount = records.filter((r) => r.status === "permanently_failed").length;
-  const pendingReviewsCount = reviews.filter((r) => r.status === "Pending").length;
+  const handleTabChange = (tab: TabType) => {
+    setActiveTab(tab);
+    setPage(1);
+  };
 
-  const totalWarnings = records.reduce((acc, r) => acc + (r.warningCount || 0), 0);
+  // Derive summary metrics from loaded data or summary query
+  const activeAssessments = summary?.activeAssessments ?? 0;
+  const usersWithWarnings = summary?.usersWithWarnings ?? 0;
+  const failedAssessments = summary?.failedAssessments ?? 0;
+  const permanentlyFailedCount = summary?.permanentlyFailedCount ?? 0;
+  const pendingReviewsCount = summary?.pendingReviewsCount ?? 0;
+  const totalWarnings = summary?.totalWarnings ?? 0;
 
-  // Sort violations: 1) Highest warning count, 2) Most recent activity
-  const sortedRecords = [...records].sort((a, b) => {
-    if ((b.warningCount || 0) !== (a.warningCount || 0)) {
-      return (b.warningCount || 0) - (a.warningCount || 0);
-    }
-    return (b.lastAccessedAt || 0) - (a.lastAccessedAt || 0);
-  });
+  // Current tab totals and sorted records
+  const currentTotal =
+    activeTab === "violations"
+      ? totalRecords
+      : activeTab === "reviews"
+        ? totalReviews
+        : totalAudit;
+  const totalPages = Math.max(1, Math.ceil(currentTotal / PAGE_SIZE));
+
+  // Already sorted by DB query (warning_count DESC, last_accessed_at DESC)
+  const sortedRecords = records;
 
   const handleApprove = async (reqId: string) => {
     setActionError("");
@@ -210,13 +266,13 @@ export function MonitoringPanel() {
       {/* ── Tabs Switcher ────────────────────────────────────────────────── */}
       <div className="tab-nav">
         <button
-          onClick={() => setActiveTab("violations")}
+          onClick={() => handleTabChange("violations")}
           className={`tab-nav-item ${activeTab === "violations" ? "tab-nav-item-active" : ""}`}
         >
           Violations & Activity
         </button>
         <button
-          onClick={() => setActiveTab("reviews")}
+          onClick={() => handleTabChange("reviews")}
           className={`tab-nav-item flex items-center gap-1.5 ${activeTab === "reviews" ? "tab-nav-item-active" : ""}`}
         >
           Review Requests
@@ -227,7 +283,7 @@ export function MonitoringPanel() {
           )}
         </button>
         <button
-          onClick={() => setActiveTab("audit")}
+          onClick={() => handleTabChange("audit")}
           className={`tab-nav-item ${activeTab === "audit" ? "tab-nav-item-active" : ""}`}
         >
           Audit Trail Logs
@@ -244,7 +300,12 @@ export function MonitoringPanel() {
             </p>
           </CardHeader>
           <CardContent className="p-0">
-            {sortedRecords.length === 0 ? (
+            {tabLoading ? (
+              <div className="flex items-center justify-center gap-2 py-16 text-sm text-zinc-500">
+                <Loader2 className="h-4 w-4 animate-spin text-[#2e3192]" />
+                Loading violations…
+              </div>
+            ) : sortedRecords.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
                 <ShieldCheck className="h-8 w-8 text-zinc-300" strokeWidth={1.5} />
                 <p className="text-sm font-medium text-zinc-500">No active assessments found</p>
@@ -358,6 +419,37 @@ export function MonitoringPanel() {
                 </table>
               </div>
             )}
+            {/* Pagination */}
+            {!tabLoading && totalPages > 1 && (
+              <div className="flex items-center justify-between border-t border-zinc-100 px-6 py-3">
+                <span className="text-xs text-zinc-500">
+                  Page {page} of {totalPages} &middot; {currentTotal} total
+                  {tabRefreshing && <span className="ml-2 text-[#2e3192]">Updating…</span>}
+                </span>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-1 px-2 text-xs border-zinc-200"
+                    disabled={page <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  >
+                    <ChevronLeft className="h-3 w-3" />
+                    Prev
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-1 px-2 text-xs border-zinc-200"
+                    disabled={page >= totalPages}
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  >
+                    Next
+                    <ChevronRight className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -372,7 +464,12 @@ export function MonitoringPanel() {
             </p>
           </CardHeader>
           <CardContent className="p-0">
-            {reviews.length === 0 ? (
+            {tabLoading ? (
+              <div className="flex items-center justify-center gap-2 py-16 text-sm text-zinc-500">
+                <Loader2 className="h-4 w-4 animate-spin text-[#2e3192]" />
+                Loading reviews…
+              </div>
+            ) : reviews.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
                 <ClipboardList className="h-8 w-8 text-zinc-300" strokeWidth={1.5} />
                 <p className="text-sm font-medium text-zinc-500">No review requests found</p>

@@ -9,11 +9,7 @@ import {
   countMcqAnswers,
   resolveDisplayScorePercent,
 } from "@/lib/progress-score";
-import {
-  normalizeProgressStatus,
-  reconcileInvalidProgressScores,
-  reconcilePassedProgressStatus,
-} from "@/lib/services/progress-db-service";
+import { normalizeProgressStatus } from "@/lib/services/progress-db-service";
 
 type Sql = ReturnType<typeof getSql>;
 
@@ -39,8 +35,7 @@ export async function getBatchPerformance(
   sql: Sql,
   batchId: string,
 ): Promise<BatchPerformancePayload | null> {
-  await reconcileInvalidProgressScores(sql);
-  await reconcilePassedProgressStatus(sql);
+  // NOTE: reconcile functions removed from read path — run as maintenance job
   const batchRows = await sql`
     SELECT id, label, description, member_count
     FROM batches

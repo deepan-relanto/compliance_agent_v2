@@ -291,28 +291,36 @@ type StatusFilter = "all" | "completed" | "failed" | "in_progress";
 export function AnalyticsDashboard({ initialBatchId }: AnalyticsDashboardProps) {
   const [data, setData] = useState<AnalyticsPayload | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [batchFilter, setBatchFilter] = useState<string>(initialBatchId ?? "all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const [historyPage, setHistoryPage] = useState(1);
+  const HISTORY_PAGE_SIZE = 25;
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     setError("");
     try {
       const res = await fetch("/api/analytics");
       const json = await res.json();
       if (!res.ok || !json.ok) {
         setError(json.error ?? "Could not load analytics.");
-        setData(null);
+        if (!isRefresh) setData(null);
         return;
       }
       setData(json as AnalyticsPayload);
     } catch {
       setError("Network error loading analytics.");
-      setData(null);
+      if (!isRefresh) setData(null);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -343,6 +351,21 @@ export function AnalyticsDashboard({ initialBatchId }: AnalyticsDashboardProps) 
       return true;
     });
   }, [data, batchFilter, statusFilter, searchTerm]);
+
+  // Reset history page when filters change
+  useEffect(() => {
+    setHistoryPage(1);
+  }, [batchFilter, statusFilter, searchTerm]);
+
+  const paginatedHistory = useMemo(() => {
+    const start = (historyPage - 1) * HISTORY_PAGE_SIZE;
+    return filteredHistory.slice(start, start + HISTORY_PAGE_SIZE);
+  }, [filteredHistory, historyPage]);
+
+  const historyTotalPages = Math.max(
+    1,
+    Math.ceil(filteredHistory.length / HISTORY_PAGE_SIZE),
+  );
 
   const filterPillCount = useMemo(() => {
     let n = 0;
@@ -406,9 +429,9 @@ export function AnalyticsDashboard({ initialBatchId }: AnalyticsDashboardProps) 
               <Download className="h-3.5 w-3.5" />
               Export PDF
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => void load()}>
-              <RefreshCw className="h-3.5 w-3.5" />
-              Refresh
+            <Button variant="ghost" size="sm" onClick={() => void load(true)} disabled={refreshing}>
+              <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} />
+              {refreshing ? "Updating…" : "Refresh"}
             </Button>
           </div>
         </CardContent>
@@ -759,7 +782,7 @@ export function AnalyticsDashboard({ initialBatchId }: AnalyticsDashboardProps) 
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-50">
-                  {filteredHistory.map((row) => {
+                  {paginatedHistory.map((row) => {
                     const displayScore = row.scorePercent;
                     const passed =
                       displayScore != null && displayScore >= PASS_THRESHOLD_PERCENT;
@@ -808,6 +831,34 @@ export function AnalyticsDashboard({ initialBatchId }: AnalyticsDashboardProps) 
                   })}
                 </tbody>
               </table>
+            </div>
+          )}
+          {/* History pagination */}
+          {historyTotalPages > 1 && (
+            <div className="flex items-center justify-between border-t border-zinc-100 px-6 py-3">
+              <span className="text-xs text-zinc-500">
+                {filteredHistory.length} records &middot; page {historyPage} of {historyTotalPages}
+              </span>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-xs border-zinc-200"
+                  disabled={historyPage <= 1}
+                  onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
+                >
+                  ← Prev
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-xs border-zinc-200"
+                  disabled={historyPage >= historyTotalPages}
+                  onClick={() => setHistoryPage((p) => Math.min(historyTotalPages, p + 1))}
+                >
+                  Next →
+                </Button>
+              </div>
             </div>
           )}
         </CardContent>

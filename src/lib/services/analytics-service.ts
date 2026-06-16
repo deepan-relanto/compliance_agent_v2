@@ -9,11 +9,13 @@ import type {
   TimeSeriesPoint,
 } from "@/lib/analytics-types";
 import { PASS_THRESHOLD_PERCENT } from "@/lib/constants";
-import {
-  reconcileInvalidProgressScores,
-  reconcilePassedProgressStatus,
-} from "@/lib/services/progress-db-service";
 import { resolveDisplayScorePercent } from "@/lib/progress-score";
+
+// NOTE: reconcileInvalidProgressScores / reconcilePassedProgressStatus are
+// intentionally NOT called here. Running heavy UPDATE+SELECT repair on every
+// dashboard load added 1-4 s of latency. Run `npm run db:reconcile-progress`
+// as a maintenance job when needed, or call the functions from a dedicated
+// admin action endpoint.
 
 type Sql = ReturnType<typeof getSql>;
 
@@ -42,8 +44,7 @@ function fillTimeSeries(
 }
 
 export async function getAnalytics(sql: Sql): Promise<AnalyticsPayload> {
-  await reconcileInvalidProgressScores(sql);
-  await reconcilePassedProgressStatus(sql);
+  // Reconcile functions intentionally removed from read path — see comment above.
 
   const [summaryRows, batchRows, seriesRows, moduleRows, statusRows, historyRows] =
     await Promise.all([
