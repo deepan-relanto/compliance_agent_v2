@@ -25,7 +25,9 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
-import { useEffect, useState, useCallback } from "react";
+import { useState } from "react";
+import useSWR from "swr";
+const fetcher = (url: string) => fetch(url).then((res) => res.json());
 import { useAuthStore } from "@/lib/auth-store";
 import { cn } from "@/lib/utils";
 
@@ -47,87 +49,38 @@ export function MonitoringPanel() {
   const adminName = adminUser?.username || "Admin";
 
   // Summary KPI cards (lightweight — loads independently)
-  const [summary, setSummary] = useState<Summary | null>(null);
-
-  // Tab data
-  const [records, setRecords] = useState<AssessmentProgress[]>([]);
-  const [reviews, setReviews] = useState<ReviewRequest[]>([]);
-  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
-  const [tabLoading, setTabLoading] = useState(true);
-  const [tabRefreshing, setTabRefreshing] = useState(false);
-
-  // Pagination
+  // Pagination and Tabs
   const [page, setPage] = useState(1);
-  const [totalRecords, setTotalRecords] = useState(0);
-  const [totalReviews, setTotalReviews] = useState(0);
-  const [totalAudit, setTotalAudit] = useState(0);
-
+  const [activeTab, setActiveTab] = useState<TabType>("violations");
+  
   const [selectedRecord, setSelectedRecord] = useState<AssessmentProgress | null>(null);
   const [selectedReview, setSelectedReview] = useState<ReviewRequest | null>(null);
-  const [activeTab, setActiveTab] = useState<TabType>("violations");
 
   // Rejection Comment State
   const [adminComment, setAdminComment] = useState("");
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [actionError, setActionError] = useState("");
 
-  /** Load summary KPI cards (fast lightweight query) */
-  const loadSummary = useCallback(async () => {
-    try {
-      const res = await fetch("/api/monitoring?summary=1");
-      const data = await res.json();
-      if (data.ok) setSummary(data as Summary);
-    } catch {
-      // non-fatal — cards stay empty
-    }
-  }, []);
+  const { data: summaryData, mutate: mutateSummary } = useSWR("/api/monitoring?summary=1", fetcher);
+  const summary = summaryData?.ok ? (summaryData as Summary) : null;
 
-  /** Load tab data for the active tab + page */
-  const loadTab = useCallback(
-    async (tab: TabType, pg: number, isRefresh = false) => {
-      if (isRefresh) setTabRefreshing(true);
-      else setTabLoading(true);
-      try {
-        const res = await fetch(
-          `/api/monitoring?tab=${tab}&page=${pg}&pageSize=${PAGE_SIZE}`,
-        );
-        const data = await res.json();
-        if (!data.ok) return;
-        if (tab === "violations") {
-          setRecords(Array.isArray(data.records) ? data.records : []);
-          setTotalRecords(Number(data.total ?? 0));
-        } else if (tab === "reviews") {
-          setReviews(Array.isArray(data.reviews) ? data.reviews : []);
-          setTotalReviews(Number(data.total ?? 0));
-        } else {
-          setAuditLogs(Array.isArray(data.auditLogs) ? data.auditLogs : []);
-          setTotalAudit(Number(data.total ?? 0));
-        }
-      } catch {
-        // non-fatal
-      } finally {
-        setTabLoading(false);
-        setTabRefreshing(false);
-      }
-    },
-    [],
+  const { data: tabData, isLoading: tabLoading, isValidating: tabRefreshing, mutate: mutateTab } = useSWR(
+    `/api/monitoring?tab=${activeTab}&page=${page}&pageSize=${PAGE_SIZE}`,
+    fetcher
   );
 
-  /** Full refresh — summary + current tab data */
-  const refreshData = useCallback(async () => {
-    await Promise.all([loadSummary(), loadTab(activeTab, page, true)]);
-  }, [loadSummary, loadTab, activeTab, page]);
+  const records: AssessmentProgress[] = activeTab === "violations" && tabData?.ok && Array.isArray(tabData.records) ? tabData.records : [];
+  const reviews: ReviewRequest[] = activeTab === "reviews" && tabData?.ok && Array.isArray(tabData.reviews) ? tabData.reviews : [];
+  const auditLogs: AuditLogEntry[] = activeTab === "audit" && tabData?.ok && Array.isArray(tabData.auditLogs) ? tabData.auditLogs : [];
+  
+  const totalRecords = activeTab === "violations" && tabData?.ok ? Number(tabData.total ?? 0) : 0;
+  const totalReviews = activeTab === "reviews" && tabData?.ok ? Number(tabData.total ?? 0) : 0;
+  const totalAudit = activeTab === "audit" && tabData?.ok ? Number(tabData.total ?? 0) : 0;
 
-  /** On mount — load summary first (appears instantly), then tab data */
-  useEffect(() => {
-    void loadSummary();
-    void loadTab("violations", 1);
-  }, [loadSummary, loadTab]);
 
-  /** Reload tab data when tab or page changes */
-  useEffect(() => {
-    void loadTab(activeTab, page);
-  }, [activeTab, page, loadTab]);
+  const refreshData = async () => {
+    await Promise.all([mutateSummary(), mutateTab()]);
+  };
 
   const handleTabChange = (tab: TabType) => {
     setActiveTab(tab);

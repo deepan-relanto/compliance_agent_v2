@@ -18,7 +18,10 @@ import {
   Star,
   Users,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import useSWR from "swr";
+
+const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 interface BatchOption {
   id: string;
@@ -100,43 +103,28 @@ function FilterPill({
 }
 
 export function FeedbackTable() {
-  const [rows, setRows] = useState<FeedbackDisplayRow[]>([]);
-  const [batches, setBatches] = useState<BatchOption[]>([]);
-  const [loading, setLoading] = useState(true);
   const [batchFilter, setBatchFilter] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [fbRes, batchRes] = await Promise.all([
-        fetch("/api/feedback"),
-        fetch("/api/batches"),
-      ]);
-      const fbData = await fbRes.json();
-      const batchData = await batchRes.json();
+  const { data: fbData, isLoading: fbLoading, mutate: mutateFb } = useSWR("/api/feedback", fetcher);
+  const { data: batchData, isLoading: batchLoading } = useSWR("/api/batches", fetcher);
 
-      const batchList: BatchOption[] =
-        batchData.ok && Array.isArray(batchData.batches)
-          ? batchData.batches.map((b: { id: string; label: string }) => ({
-              id: b.id,
-              label: b.label,
-            }))
-          : [];
-      setBatches(batchList);
+  const batches: BatchOption[] =
+    batchData?.ok && Array.isArray(batchData.batches)
+      ? batchData.batches.map((b: { id: string; label: string }) => ({
+          id: b.id,
+          label: b.label,
+        }))
+      : [];
 
-      const apiEntries = fbData.ok && Array.isArray(fbData.entries) ? fbData.entries : [];
-      setRows(mapApiEntries(apiEntries));
-    } catch {
-      setRows([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const apiEntries = fbData?.ok && Array.isArray(fbData.entries) ? fbData.entries : [];
+  const rows = useMemo(() => mapApiEntries(apiEntries), [apiEntries]);
+  
+  const loading = fbLoading || batchLoading;
+  
+  const load = async () => {
+    await mutateFb();
+  };
 
   const filtered = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();

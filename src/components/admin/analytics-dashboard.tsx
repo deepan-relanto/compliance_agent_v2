@@ -31,7 +31,10 @@ import {
   XCircle,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import useSWR from "swr";
+
+const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 interface AnalyticsDashboardProps {
   initialBatchId?: string;
@@ -355,44 +358,22 @@ function StatusBreakdownChart({
 type StatusFilter = "all" | "completed" | "failed" | "in_progress";
 
 export function AnalyticsDashboard({ initialBatchId }: AnalyticsDashboardProps) {
-  const [data, setData] = useState<AnalyticsPayload | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState("");
+  const { data: rawData, error: rawError, isLoading, mutate, isValidating } = useSWR("/api/analytics", fetcher);
+  
   const [batchFilter, setBatchFilter] = useState<string>(initialBatchId ?? "all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [historyPage, setHistoryPage] = useState(1);
   const HISTORY_PAGE_SIZE = 25;
 
-  const load = useCallback(async (isRefresh = false) => {
-    if (isRefresh) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
-    }
-    setError("");
-    try {
-      const res = await fetch("/api/analytics");
-      const json = await res.json();
-      if (!res.ok || !json.ok) {
-        setError(json.error ?? "Could not load analytics.");
-        if (!isRefresh) setData(null);
-        return;
-      }
-      setData(json as AnalyticsPayload);
-    } catch {
-      setError("Network error loading analytics.");
-      if (!isRefresh) setData(null);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const data = rawData?.ok ? (rawData as AnalyticsPayload) : null;
+  const error = rawError ? "Network error loading analytics." : (!rawData?.ok && rawData?.error ? rawData.error : "");
+  const loading = isLoading;
+  const refreshing = isValidating;
+  
+  const load = async (isRefresh = false) => {
+    await mutate();
+  };
 
   const filteredHistory = useMemo(() => {
     if (!data) return [];
