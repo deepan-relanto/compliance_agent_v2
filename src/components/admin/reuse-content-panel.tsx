@@ -2,7 +2,6 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { useAuthStore } from "@/lib/auth-store";
 import type { BatchInfo } from "@/lib/types";
 import type { LibraryModule } from "@/lib/types";
@@ -30,30 +29,16 @@ function mapBatch(row: Record<string, unknown>): BatchInfo {
   };
 }
 
-function makeAssessmentId(name: string): string {
-  return (
-    name
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "") +
-    "-" +
-    Date.now().toString(36)
-  );
-}
-
 export function ReuseContentPanel() {
   const user = useAuthStore((s) => s.user);
   const [library, setLibrary] = useState<LibraryModule[]>([]);
   const [batches, setBatches] = useState<BatchInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [title, setTitle] = useState("");
   const [selectedBatchIds, setSelectedBatchIds] = useState<string[]>([]);
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
-  const [mcqCount, setMcqCount] = useState(0);
 
   const loadLibrary = useCallback(async () => {
     setLoading(true);
@@ -92,28 +77,19 @@ export function ReuseContentPanel() {
 
   async function handlePublish() {
     if (!selected) return;
-    const trimmed = title.trim();
-    if (!trimmed || trimmed.length < 3) {
-      setError("Enter a title (at least 3 characters).");
-      return;
-    }
     if (selectedBatchIds.length === 0) {
       setError("Select at least one batch.");
       return;
     }
     setError(null);
     setPublishing(true);
-    const id = makeAssessmentId(trimmed);
     try {
       const res = await fetch("/api/assessments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id,
-          title: trimmed,
-          description: `Reused from "${selected.title}"`,
-          slideCount: selected.slideCount,
-          pdfUrl: selected.pdfUrl,
+          id: selected.id,
+          title: selected.title,
           batchIds: selectedBatchIds,
           uploadedBy: user?.username ?? "admin@relnto.com",
           reuseModuleId: selected.id,
@@ -121,10 +97,9 @@ export function ReuseContentPanel() {
       });
       const json = await res.json();
       if (!res.ok || !json.ok) {
-        setError(json.message ?? "Publish failed.");
+        setError(json.message ?? "Update failed.");
         return;
       }
-      setMcqCount(json.mcqCount ?? 0);
       setDone(true);
     } catch {
       setError("Could not reach the server.");
@@ -135,7 +110,6 @@ export function ReuseContentPanel() {
 
   function handleReset() {
     setSelectedId(null);
-    setTitle("");
     setSelectedBatchIds([]);
     setError(null);
     setDone(false);
@@ -147,14 +121,13 @@ export function ReuseContentPanel() {
       <Card>
         <CardContent className="flex flex-col items-center px-8 py-14 text-center">
           <CheckCircle2 className="h-10 w-10 text-emerald-600" />
-          <h2 className="mt-4 text-xl font-semibold text-zinc-900">Published to batches</h2>
+          <h2 className="mt-4 text-xl font-semibold text-zinc-900">Batch assignments updated</h2>
           <p className="mt-2 text-sm text-zinc-500">
-            Reused PDF and {mcqCount} existing checkpoint question
-            {mcqCount === 1 ? "" : "s"} — no new LLM generation.
+            The module batch assignments were successfully updated. New invitation emails have been sent to eligible users.
           </p>
           <Button variant="secondary" className="mt-8" onClick={handleReset}>
             <RefreshCcw className="h-4 w-4" />
-            Publish another
+            Manage another
           </Button>
         </CardContent>
       </Card>
@@ -195,7 +168,7 @@ export function ReuseContentPanel() {
                     type="button"
                     onClick={() => {
                       setSelectedId(item.id);
-                      setTitle(`${item.title} (copy)`);
+                      setSelectedBatchIds(item.batches.map((b) => b.id));
                       setError(null);
                     }}
                     className={cn(
@@ -235,11 +208,6 @@ export function ReuseContentPanel() {
           <CardContent className="space-y-5">
             <div className="rounded-md border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-600">
               Reusing: <span className="font-medium text-zinc-900">{selected.title}</span>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-zinc-700">New assessment title</label>
-              <Input value={title} onChange={(e) => setTitle(e.target.value)} />
             </div>
 
             <div className="grid gap-2 sm:grid-cols-2">

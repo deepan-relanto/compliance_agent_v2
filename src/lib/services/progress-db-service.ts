@@ -393,7 +393,8 @@ export async function validateAndRecordMcqAnswerDb(
         : await getModuleMcqCount(sql, params.moduleId);
   const { mcqCorrect, mcqTotal } = computeScoreFromAnswers(answers, assignedTotal);
 
-  await sql`
+  // Fire and forget the update to eliminate DB write latency from the user's critical path
+  sql`
     UPDATE assessment_progress
     SET mcq_answers = ${JSON.stringify(answers)}::jsonb,
         mcq_correct = ${mcqCorrect},
@@ -405,7 +406,7 @@ export async function validateAndRecordMcqAnswerDb(
         last_accessed_at = NOW(),
         updated_at = NOW()
     WHERE user_email = ${params.userEmail} AND module_id = ${params.moduleId}
-  `;
+  `.catch(console.error);
 
   return {
     found: true,

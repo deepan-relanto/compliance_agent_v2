@@ -134,14 +134,21 @@ function MetricBar({
 }
 
 function TimeSeriesChart({ points }: { points: TimeSeriesPoint[] }) {
-  const chartHeightPx = 144;
+  const chartHeightPx = 150;
+  
   const maxVal = Math.max(
     1,
     ...points.map((p) => p.completions + p.failures),
   );
+  
   const totalCompletions = points.reduce((a, p) => a + p.completions, 0);
   const totalFailures = points.reduce((a, p) => a + p.failures, 0);
   const isEmpty = totalCompletions === 0 && totalFailures === 0;
+
+  const peakDay = points.reduce(
+    (max, p) => (p.completions + p.failures > max.val ? { date: p.date, val: p.completions + p.failures } : max),
+    { date: "", val: 0 }
+  );
 
   const formatDate = (dateKey: string) =>
     new Date(dateKey + "T12:00:00").toLocaleDateString(undefined, {
@@ -149,88 +156,147 @@ function TimeSeriesChart({ points }: { points: TimeSeriesPoint[] }) {
       day: "numeric",
     });
 
+  const yTicks = [maxVal, Math.round(maxVal / 2), 0];
+
   return (
-    <div>
-      <div className="mb-4 flex flex-wrap items-center gap-4 text-xs text-zinc-500">
-        <span className="inline-flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full bg-emerald-500" />
-          Completions ({totalCompletions})
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full bg-red-400" />
-          Failures ({totalFailures})
-        </span>
-        <span className="text-zinc-400">Last 30 days</span>
-      </div>
+    <div className="flex flex-col h-full justify-between gap-4">
+      <div>
+        <div className="mb-4 flex flex-wrap items-center gap-4 text-xs text-zinc-500 select-none">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            Completions ({totalCompletions})
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-red-400" />
+            Failures ({totalFailures})
+          </span>
+          <span className="text-zinc-400 ml-auto">Last 30 days</span>
+        </div>
 
-      <div
-        className="relative rounded-lg border border-zinc-100 bg-gradient-to-b from-zinc-50/80 to-white px-2 pt-3"
-        style={{ height: chartHeightPx + 28 }}
-      >
-        <div
-          className="pointer-events-none absolute inset-x-2 top-3 border-b border-dashed border-zinc-200"
-          style={{ bottom: 28 }}
-        />
-        <div
-          className="absolute inset-x-2 top-3 flex items-end gap-[2px] sm:gap-1"
-          style={{ height: chartHeightPx }}
-        >
-          {points.map((p) => {
-            const total = p.completions + p.failures;
-            const barHeight =
-              total > 0 ? Math.max(Math.round((total / maxVal) * chartHeightPx), 6) : 0;
-            const dateLabel = formatDate(p.date);
-            return (
+        <div className="relative flex">
+          {/* Y-Axis Labels */}
+          <div className="w-8 shrink-0 flex flex-col justify-between text-[10px] font-mono text-zinc-400 select-none pb-7 pt-3">
+            {yTicks.map((tick, i) => (
+              <span key={i} className="text-right pr-2">{tick}</span>
+            ))}
+          </div>
+
+          {/* Graph Content */}
+          <div className="flex-1 relative">
+            {/* Gridlines */}
+            <div className="absolute inset-0 flex flex-col justify-between pointer-events-none pb-7 pt-3">
+              <div className="w-full border-b border-zinc-100" />
+              <div className="w-full border-b border-zinc-100 border-dashed" />
+              <div className="w-full border-b border-zinc-200" />
+            </div>
+
+            <div
+              className="relative px-1 pt-3 flex items-end gap-[3px] sm:gap-1.5"
+              style={{ height: chartHeightPx + 28 }}
+            >
               <div
-                key={p.date}
-                className="group relative flex h-full flex-1 flex-col justify-end"
-                title={`${dateLabel}: ${p.completions} completed, ${p.failures} failed`}
+                className="absolute inset-x-1 top-3 flex items-end gap-[3px] sm:gap-1.5"
+                style={{ height: chartHeightPx }}
               >
-                <div
-                  className={cn(
-                    "flex w-full flex-col-reverse overflow-hidden rounded-t transition-opacity group-hover:opacity-90",
-                    total === 0 ? "bg-transparent" : "bg-zinc-100",
-                  )}
-                  style={{ height: barHeight }}
-                >
-                  {p.completions > 0 && (
+                {points.map((p) => {
+                  const total = p.completions + p.failures;
+                  const barHeight =
+                    total > 0 ? Math.max(Math.round((total / maxVal) * chartHeightPx), 8) : 0;
+                  const dateLabel = formatDate(p.date);
+                  
+                  return (
                     <div
-                      className="w-full bg-emerald-500"
-                      style={{ flex: p.completions }}
-                    />
-                  )}
-                  {p.failures > 0 && (
-                    <div
-                      className="w-full bg-red-400"
-                      style={{ flex: p.failures }}
-                    />
-                  )}
-                </div>
+                      key={p.date}
+                      className="group relative flex h-full flex-1 flex-col justify-end items-center"
+                    >
+                      {/* Tooltip */}
+                      <div className="absolute bottom-full mb-2 hidden group-hover:flex flex-col items-center z-25 pointer-events-none">
+                        <div className="bg-zinc-900 text-white text-[10px] rounded px-2.5 py-1.5 shadow-md whitespace-nowrap leading-none border border-zinc-800">
+                          <span className="font-semibold text-zinc-200">{dateLabel}</span> &middot; <span className="text-emerald-400 font-bold">{p.completions} passed</span>, <span className="text-red-400 font-bold">{p.failures} failed</span>
+                        </div>
+                        <div className="w-1.5 h-1.5 bg-zinc-900 rotate-45 -mt-1" />
+                      </div>
+
+                      {/* Continuous bar track background */}
+                      <div className="absolute inset-x-0 bottom-0 top-0 bg-zinc-50/50 rounded-t-sm group-hover:bg-zinc-100/50 transition-colors pointer-events-none" />
+
+                      {/* Value bar */}
+                      {total > 0 ? (
+                        <div
+                          className="w-full flex flex-col-reverse overflow-hidden rounded-t-[3px] shadow-sm z-10"
+                          style={{ height: barHeight }}
+                        >
+                          {p.completions > 0 && (
+                            <div
+                              className="w-full bg-gradient-to-t from-emerald-600 to-emerald-400 transition-all"
+                              style={{ flex: p.completions }}
+                            />
+                          )}
+                          {p.failures > 0 && (
+                            <div
+                              className="w-full bg-gradient-to-t from-red-500 to-red-400 transition-all"
+                              style={{ flex: p.failures }}
+                            />
+                          )}
+                        </div>
+                      ) : (
+                        <div className="w-1 h-1 rounded-full bg-zinc-200 mb-1 z-10 group-hover:bg-zinc-300 transition-colors" />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
-        </div>
-        <div className="absolute inset-x-2 bottom-1 flex gap-[2px] sm:gap-1">
-          {points.map((p, i) => {
-            const showLabel =
-              i === 0 || i === points.length - 1 || (i + 1) % 7 === 0;
-            return (
-              <div key={`${p.date}-label`} className="flex-1 text-center">
-                {showLabel ? (
-                  <span className="text-[10px] tabular-nums text-zinc-400">
-                    {formatDate(p.date)}
-                  </span>
-                ) : null}
+
+              {/* X Axis Labels */}
+              <div className="absolute inset-x-1 bottom-1 flex gap-[3px] sm:gap-1.5 select-none">
+                {points.map((p, i) => {
+                  const showLabel =
+                    i === 0 || i === points.length - 1 || (i + 1) % 7 === 0;
+                  return (
+                    <div key={`${p.date}-label`} className="flex-1 text-center">
+                      {showLabel ? (
+                        <span className="text-[9px] font-medium tabular-nums text-zinc-400">
+                          {formatDate(p.date)}
+                        </span>
+                      ) : null}
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
+            </div>
+          </div>
         </div>
       </div>
 
-      {isEmpty && (
-        <p className="mt-4 text-center text-sm text-zinc-500">
+      {isEmpty ? (
+        <p className="py-6 text-center text-sm text-zinc-500">
           No completions or failures in the last 30 days yet.
         </p>
+      ) : (
+        <div className="grid grid-cols-2 gap-3 border-t border-zinc-100 pt-4 mt-2 shrink-0 select-none">
+          <div className="rounded-lg border border-zinc-200/60 bg-zinc-50/50 px-4 py-2.5">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Total outcomes</p>
+            <div className="mt-1 flex items-baseline gap-2">
+              <span className="text-xl font-bold text-zinc-800 tabular-nums">{totalCompletions}</span>
+              <span className="text-[11px] text-emerald-600 font-semibold uppercase tracking-wide">passed</span>
+              <span className="text-xs text-zinc-300">/</span>
+              <span className="text-xl font-bold text-zinc-800 tabular-nums">{totalFailures}</span>
+              <span className="text-[11px] text-red-500 font-semibold uppercase tracking-wide">failed</span>
+            </div>
+          </div>
+          
+          <div className="rounded-lg border border-zinc-200/60 bg-zinc-50/50 px-4 py-2.5">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Peak day activity</p>
+            <div className="mt-1 flex items-baseline gap-1.5">
+              <span className="text-xl font-bold text-[#2e3192] tabular-nums">
+                {peakDay.val}
+              </span>
+              <span className="text-xs text-zinc-500 font-medium truncate">
+                {peakDay.val > 0 ? `on ${formatDate(peakDay.date)}` : "attempts"}
+              </span>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -473,26 +539,26 @@ export function AnalyticsDashboard({ initialBatchId }: AnalyticsDashboardProps) 
 
       {/* Charts row */}
       <section className="grid gap-5 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
+        <Card className="flex flex-col h-[490px]">
+          <CardHeader className="shrink-0 pb-3">
             <h2 className="text-sm font-semibold text-zinc-900">Cross-batch comparison</h2>
             <p className="mt-0.5 text-xs text-zinc-500">
               Compliance, pass rate, and average score by training batch.
             </p>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex-1 overflow-y-auto min-h-0 pr-4 pb-4 scrollbar-thin">
             <BatchComparisonChart batches={data.batches} />
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
+        <Card className="flex flex-col h-[490px]">
+          <CardHeader className="shrink-0 pb-3">
             <h2 className="text-sm font-semibold text-zinc-900">Completion trends</h2>
             <p className="mt-0.5 text-xs text-zinc-500">
               Daily completions and failures over the last 30 days.
             </p>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex-1 flex flex-col justify-between min-h-0 pb-4">
             <TimeSeriesChart points={data.timeSeries} />
           </CardContent>
         </Card>

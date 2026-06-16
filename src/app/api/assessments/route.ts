@@ -1,5 +1,4 @@
 import { getSql } from "@/lib/db";
-import { copyMcqsFromModule } from "@/lib/services/mcq-copy-service";
 import { sendModuleInvitationEmails } from "@/lib/services/training-notification-service";
 import {
   generateAndStoreModuleMcqs,
@@ -106,10 +105,10 @@ export async function POST(req: NextRequest) {
       VALUES (${title}, ${resolvedPdfUrl}, ${resolvedSlideCount}, ${uploadedBy ?? null}, ${id}, ${contentHash})
     `;
 
-    // Reuse flow: copy existing MCQs from a published source module and complete instantly.
+    // Reuse flow: update batch assignments for the existing module directly (no copying)
     if (reuseModuleId) {
       const sourceRows = await sql`
-        SELECT id FROM training_modules WHERE id = ${String(reuseModuleId)} LIMIT 1
+        SELECT id, pdf_url FROM training_modules WHERE id = ${String(reuseModuleId)} LIMIT 1
       `;
       if (sourceRows.length === 0) {
         return NextResponse.json(
@@ -118,31 +117,42 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const copied = await copyMcqsFromModule(sql, String(reuseModuleId), id);
-      if (copied === 0) {
-        return NextResponse.json(
-          { ok: false, message: "Source module has no reusable questions yet." },
-          { status: 400 },
-        );
-      }
-
+      // Delete existing batch links for this module
       await sql`
-        UPDATE training_modules
-        SET mcq_generation_status = 'completed', updated_at = NOW()
-        WHERE id = ${id}
+        DELETE FROM module_batches WHERE module_id = ${String(reuseModuleId)}
       `;
 
-      void sendModuleInvitationEmails(sql, id).catch((err) => {
-        console.error("[assessments reuse invite emails]", err);
+      // Insert new batch links
+      if (batchIds.includes("all")) {
+        const rows = await sql`SELECT id FROM batches`;
+        for (const row of rows) {
+          await sql`
+            INSERT INTO module_batches (module_id, batch_id)
+            VALUES (${String(reuseModuleId)}, ${row.id})
+            ON CONFLICT DO NOTHING
+          `;
+        }
+      } else {
+        for (const batchId of batchIds as string[]) {
+          await sql`
+            INSERT INTO module_batches (module_id, batch_id)
+            VALUES (${String(reuseModuleId)}, ${batchId})
+            ON CONFLICT DO NOTHING
+          `;
+        }
+      }
+
+      // Send invitations to newly added users in these batches (skips already notified)
+      void sendModuleInvitationEmails(sql, String(reuseModuleId)).catch((err) => {
+        console.error("[assessments reuse update invite emails]", err);
       });
 
       return NextResponse.json({
         ok: true,
-        id,
-        pdfUrl: resolvedPdfUrl,
+        id: reuseModuleId,
+        pdfUrl: sourceRows[0].pdf_url,
         queued: false,
         reused: true,
-        mcqCount: copied,
         generationStatus: "completed",
       });
     }

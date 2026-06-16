@@ -18,7 +18,7 @@ import type { McqQuestion, TrainingModule, WarningHistoryEntry, ReviewRequest, M
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
 import { ProctorRulesModal } from "@/components/employee/proctor-rules-modal";
-import { ChevronLeft, ChevronRight, Clock, FileText, Maximize2, Minimize2, ShieldCheck } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clock, Maximize2, Minimize2, ShieldCheck } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuthStore } from "@/lib/auth-store";
@@ -1176,7 +1176,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -12 }}
               transition={{ duration: 0.2 }}
-              className="flex min-h-0 flex-1 flex-col p-1 sm:p-2"
+              className="flex min-h-0 flex-1 flex-col"
             >
               {quizOnlyMode ? (
                 <div className="mx-auto flex h-full w-full max-w-3xl flex-col items-center justify-center gap-4 p-4">
@@ -1209,19 +1209,8 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
                   )}
                 </div>
               ) : module.contentType === "pdf" && module.pdfUrl ? (
-                <div className="mx-auto flex h-full min-h-0 w-full max-w-[min(100%,96vw)] flex-col overflow-hidden rounded-lg border border-zinc-700/80 bg-zinc-950 shadow-2xl">
-                  <div className="flex shrink-0 items-center justify-between border-b border-zinc-800 px-4 py-1.5">
-                    <p className="text-xs font-semibold uppercase tracking-widest text-[#f15a24]">
-                      Page {slideIndex + 1} of {numPages}
-                    </p>
-                    <div className="flex items-center gap-2 text-zinc-200">
-                      <FileText className="h-3.5 w-3.5 text-[#f15a24]" strokeWidth={1.75} />
-                      <span className="max-w-[min(40vw,320px)] truncate text-xs font-semibold text-white">
-                        {module.title}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="relative min-h-0 flex-1 overflow-hidden bg-zinc-900">
+                <div className="flex h-full min-h-0 w-full flex-col overflow-hidden">
+                  <div className="relative min-h-0 flex-1 overflow-hidden">
                     <PdfPageViewer
                       pdfUrl={module.pdfUrl!}
                       pageNumber={slideIndex + 1}

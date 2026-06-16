@@ -28,7 +28,8 @@ function invitationHtml(params: {
   <p style="margin:28px 0">
     <a href="${loginUrl}" style="display:inline-block;background:#2e3192;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600">Start training</a>
   </p>
-  <p style="font-size:13px;color:#71717a">Sign in with your @relanto.ai Microsoft work account to begin.</p>
+  <p style="font-size:13px;color:#71717a;margin-bottom:6px">Sign in with your @relanto.ai Microsoft work account to begin.</p>
+  <p style="font-size:12px;color:#71717a">In case of any technical issues, please contact Relanto Academy at <a href="mailto:relanto.academy@relanto.ai" style="color:#2e3192;text-decoration:underline">relanto.academy@relanto.ai</a></p>
   <p style="font-size:12px;color:#a1a1aa;margin-top:32px">© Relanto — Compliance Agent</p>
 </body></html>`;
 }

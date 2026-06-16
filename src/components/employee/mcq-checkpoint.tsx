@@ -134,12 +134,13 @@ export function MCQCheckpoint({
       : 0;
   const signalState = submitted ? (wasCorrect ? "success" : "warning") : "active";
 
-  const handleSubmit = async () => {
-    if (!selected || validating || submitted) return;
+  const handleSubmit = async (overrideOptionId?: string) => {
+    const optionToSubmit = overrideOptionId || selected;
+    if (!optionToSubmit || validating || submitted) return;
 
     if (question.id === "gate-fallback") {
       setWasCorrect(true);
-      setCorrectOptionId(selected);
+      setCorrectOptionId(optionToSubmit);
       setAnswerExplanation(
         "This checkpoint confirms you can continue when no generated question is available.",
       );
@@ -157,7 +158,7 @@ export function MCQCheckpoint({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            optionId: selected,
+            optionId: optionToSubmit,
             userEmail,
             moduleTitle,
             batchId,
@@ -396,7 +397,12 @@ export function MCQCheckpoint({
                 <button
                   type="button"
                   disabled={submitted || validating}
-                  onClick={() => setSelected(opt.id)}
+                  onClick={() => {
+                    setSelected(opt.id);
+                    if (!submitted && !validating) {
+                      void handleSubmit(opt.id);
+                    }
+                  }}
                   className={cn(
                     "relative flex w-full cursor-pointer items-start gap-3 overflow-hidden rounded-md border text-left transition-all duration-150",
                     compactOptions
@@ -503,21 +509,16 @@ export function MCQCheckpoint({
         )}
       >
         {!submitted ? (
-          <Button
-            variant="primary"
-            className="w-full"
-            onClick={handleSubmit}
-            disabled={!selected || validating}
-          >
-            {validating ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Checking answer...
-              </>
-            ) : (
-              "Submit answer"
-            )}
-          </Button>
+          validating ? (
+            <Button variant="primary" className="w-full" disabled>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Checking answer...
+            </Button>
+          ) : (
+            <div className="py-1.5 text-center text-sm font-medium text-zinc-500">
+              Select an option above to answer
+            </div>
+          )
         ) : (
           <Button variant="primary" className="w-full" onClick={handleContinue}>
             Continue to next slide
