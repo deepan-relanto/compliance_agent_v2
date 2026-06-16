@@ -55,6 +55,7 @@ const PdfPageViewer = dynamic(
 );
 
 const SLIDES_BETWEEN_GATES = 3;
+const SLIDE_READ_SECONDS = 5;
 
 const FALLBACK_MCQ: McqQuestion = {
   id: "gate-fallback",
@@ -132,6 +133,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
   // useState lazy initializer runs once at mount. Reading localStorage here
   // is safe because SlideViewer is a client-only component (ssr:false import).
   const [slideIndex, setSlideIndex] = useState(0);
+  const [slideReadCountdown, setSlideReadCountdown] = useState(SLIDE_READ_SECONDS);
 
   const [nextClickCount, setNextClickCount] = useState(0);
   const [mcqOpen, setMcqOpen] = useState(false);
@@ -255,6 +257,20 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     [nextClickCount],
   );
   const quizOnlyMode = quizOnlyModeFromModule || forceQuizOnlyRetake;
+
+  useEffect(() => {
+    if (!sessionStarted || quizOnlyMode) {
+      setSlideReadCountdown(SLIDE_READ_SECONDS);
+      return;
+    }
+
+    setSlideReadCountdown(SLIDE_READ_SECONDS);
+    const id = window.setInterval(() => {
+      setSlideReadCountdown((remaining) => Math.max(0, remaining - 1));
+    }, 1000);
+
+    return () => window.clearInterval(id);
+  }, [slideIndex, sessionStarted, quizOnlyMode]);
 
   /** Proctor tab/focus/fullscreen checks only during active slide/quiz training. */
   const proctorMonitorsActive = useMemo(
@@ -681,6 +697,9 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
       setMcqOpen(true);
       return;
     }
+    if (slideReadCountdown > 0) {
+      return;
+    }
     if (isLastSlide) {
       void handleFinishAttempt();
       return;
@@ -717,6 +736,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     totalSlides,
     slideIndex,
     quizOnlyIndex,
+    slideReadCountdown,
   ]);
 
   const closeAfterCompletion = useCallback(() => {
@@ -864,6 +884,12 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
   /** Block slide navigation during checkpoint, warning, or result modal */
   const slideNavLocked =
     checkpointOpen || !!activeWarningReason || showScoreResult;
+  const slideReadLocked = !quizOnlyMode && slideReadCountdown > 0;
+  const nextActionLabel =
+    reviewOnlyMode && isLastSlide ? "Done" : isLastSlide ? "Finish" : "Next";
+  const nextButtonLabel = slideReadLocked
+    ? `${nextActionLabel} in ${slideReadCountdown}s`
+    : nextActionLabel;
 
   useEffect(() => {
     if (checkpointOpen) {
@@ -1288,12 +1314,13 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
           </div>
           <Button
             size="sm"
-            disabled={slideNavLocked}
+            disabled={slideNavLocked || slideReadLocked}
             onClick={tryAdvance}
-            className="cursor-pointer bg-[#f15a24] hover:bg-[#d94e1f] text-white disabled:cursor-not-allowed disabled:opacity-40"
+            className="min-w-[7.75rem] cursor-pointer justify-center bg-[#f15a24] hover:bg-[#d94e1f] text-white disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {reviewOnlyMode && isLastSlide ? "Done" : isLastSlide ? "Finish" : "Next"}
-            <ChevronRight className="h-4 w-4" />
+            {slideReadLocked ? <Clock className="h-4 w-4" /> : null}
+            {nextButtonLabel}
+            {!slideReadLocked ? <ChevronRight className="h-4 w-4" /> : null}
           </Button>
         </footer>
       )}
