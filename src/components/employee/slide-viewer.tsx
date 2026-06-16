@@ -1086,9 +1086,9 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -12 }}
               transition={{ duration: 0.2 }}
-              className="relative z-[80] flex flex-1 items-center justify-center p-6 sm:p-10 pointer-events-auto"
+              className="relative z-[80] flex flex-col flex-1 items-center justify-start md:justify-center overflow-y-auto p-4 sm:p-6 pointer-events-auto w-full h-full"
             >
-              <div className="training-form-zone w-full max-w-lg overflow-hidden rounded-xl border border-zinc-200/90 bg-white shadow-[var(--shadow-elevated)]">
+              <div className="training-form-zone my-auto w-full max-w-lg overflow-hidden rounded-xl border border-zinc-200/90 bg-white shadow-[var(--shadow-elevated)]">
                 <BrandPanelHeader
                   eyebrow="Step 1 of 2 · Compliance attestation"
                   title="Training acknowledgement"
@@ -1096,12 +1096,12 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
                   icon={ShieldCheck}
                   compact
                 />
-                <div className="space-y-6 p-6 sm:p-8">
-                <div className="rounded-lg border border-zinc-100 bg-zinc-50/90 p-4 space-y-3">
+                <div className="space-y-4 p-5 sm:p-6">
+                <div className="rounded-lg border border-zinc-100 bg-zinc-50/90 p-3.5 space-y-2">
                   <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-[0.14em]">
                     I acknowledge that:
                   </p>
-                  <ul className="space-y-2.5 text-xs text-zinc-600 leading-relaxed pl-1">
+                  <ul className="space-y-1.5 text-xs text-zinc-600 leading-normal pl-1">
                     <li className="flex items-start gap-2">
                       <span className="text-[#f15a24] font-bold mt-0.5">•</span>
                       <span>I have completed this training material.</span>
@@ -1251,9 +1251,9 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
               key="final"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="relative z-[80] flex flex-1 items-center justify-center p-6 pointer-events-auto"
+              className="relative z-[80] flex flex-col flex-1 items-center justify-start md:justify-center overflow-y-auto p-4 sm:p-6 pointer-events-auto w-full h-full"
             >
-              <div className="training-form-zone w-full max-w-2xl space-y-5 px-2 sm:px-0">
+              <div className="training-form-zone my-auto w-full max-w-2xl space-y-4 px-2 sm:px-0">
                 <div className="overflow-hidden rounded-xl border border-zinc-200/90 bg-white shadow-[var(--shadow-card)]">
                   <BrandPanelHeader
                     eyebrow="Step 2 of 2 · Final feedback"
