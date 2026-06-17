@@ -553,7 +553,7 @@ export function MCQCheckpoint({
             }
           }}
         >
-          <div className="flex h-[min(92dvh,920px)] w-full max-w-4xl min-h-0">
+          <div className="flex h-[min(82dvh,760px)] w-full max-w-3xl min-h-0">
             {card}
           </div>
         </motion.div>

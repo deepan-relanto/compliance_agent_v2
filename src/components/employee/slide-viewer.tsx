@@ -771,7 +771,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     setRetakeLoading(false);
     if (!res.ok) return;
 
-    proctorHook.suppressFullscreenUntilRef.current = Date.now() + 2500;
+    proctorHook.ignoreNextFullscreenEntryRef.current = true;
     resetForScoreRetake(user.username, module.id);
     loadIntegrityState();
     setShowScoreResult(false);
@@ -860,9 +860,9 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
 
   useEffect(() => {
     if (checkpointOpen) {
-      proctorHook.suppressFullscreenUntilRef.current = 0;
+      proctorHook.ignoreNextFullscreenEntryRef.current = false;
     }
-  }, [checkpointOpen, proctorHook.suppressFullscreenUntilRef]);
+  }, [checkpointOpen, proctorHook.ignoreNextFullscreenEntryRef]);
   const passedPendingAcknowledgement =
     showAcknowledgement && Boolean(scoreResult?.passed);
 

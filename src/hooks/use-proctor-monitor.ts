@@ -14,7 +14,6 @@ import {
 import type { ModuleStatus, WarningHistoryEntry } from "@/lib/types";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const FULLSCREEN_SUPPRESS_MS = 1200;
 const BLUR_FOCUS_LOSS_MS = 1500;
 
 interface UseProctorMonitorOptions {
@@ -46,7 +45,7 @@ export function useProctorMonitor({
   const [warningCount, setWarningCount] = useState(0);
   const [warningHistory, setWarningHistory] = useState<WarningHistoryEntry[]>([]);
 
-  const suppressFullscreenUntilRef = useRef(0);
+  const ignoreNextFullscreenEntryRef = useRef(false);
   const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isExitingRef = useRef(false);
   const enabledRef = useRef(enabled);
@@ -135,7 +134,7 @@ export function useProctorMonitor({
   );
 
   const handleWarningContinue = useCallback(async () => {
-    suppressFullscreenUntilRef.current = Date.now() + FULLSCREEN_SUPPRESS_MS;
+    ignoreNextFullscreenEntryRef.current = true;
     clearBlurTimeout();
     setActiveReason(null);
 
@@ -151,14 +150,24 @@ export function useProctorMonitor({
   const activeReasonRef = useRef<ProctorViolationReason | null>(null);
   activeReasonRef.current = activeReason;
 
+  const escTriggeredExitRef = useRef(false);
+
   const handleEscapeViolation = useCallback(async () => {
     if (!enabledRef.current || isExitingRef.current || !usernameRef.current || blockEscape) {
       return;
     }
     if (activeReasonRef.current) return;
 
-    suppressFullscreenUntilRef.current = Date.now() + FULLSCREEN_SUPPRESS_MS;
     clearBlurTimeout();
+
+    // Record the violation immediately — don't wait for fullscreenchange
+    const recorded = recordViolation("Exited Fullscreen");
+
+    // If we recorded a new warning, the fullscreenchange from the browser's
+    // native ESC-exit will see escTriggeredExitRef and skip double-counting.
+    if (recorded) {
+      escTriggeredExitRef.current = true;
+    }
 
     if (document.fullscreenElement) {
       try {
@@ -167,8 +176,6 @@ export function useProctorMonitor({
         /* ignore */
       }
     }
-
-    recordViolation("Exited Fullscreen");
   }, [blockEscape, clearBlurTimeout, recordViolation]);
 
   const hydrateFromProgress = useCallback(
@@ -212,11 +219,23 @@ export function useProctorMonitor({
 
     const onFullscreenChange = () => {
       if (!enabledRef.current || isExitingRef.current) return;
-      if (Date.now() < suppressFullscreenUntilRef.current) return;
 
-      if (document.fullscreenElement === null) {
-        recordViolation("Exited Fullscreen");
+      if (document.fullscreenElement !== null) {
+        // Fullscreen was ENTERED — ignore if we requested it (e.g. after Continue)
+        if (ignoreNextFullscreenEntryRef.current) {
+          ignoreNextFullscreenEntryRef.current = false;
+        }
+        return;
       }
+
+      // Fullscreen was EXITED
+      if (escTriggeredExitRef.current) {
+        // The keydown handler already recorded this violation — skip to avoid double-count
+        escTriggeredExitRef.current = false;
+        return;
+      }
+
+      recordViolation("Exited Fullscreen");
     };
 
     document.addEventListener("fullscreenchange", onFullscreenChange);
@@ -294,7 +313,7 @@ export function useProctorMonitor({
     recordViolation,
     hydrateFromProgress,
     isExitingRef,
-    suppressFullscreenUntilRef,
+    ignoreNextFullscreenEntryRef,
   };
 }
 
