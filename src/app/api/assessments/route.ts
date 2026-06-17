@@ -1,6 +1,10 @@
 import { getSql } from "@/lib/db";
 import { sendModuleInvitationEmails } from "@/lib/services/training-notification-service";
 import {
+  findAssignmentBatchConflicts,
+  formatAssignmentConflictMessage,
+} from "@/lib/services/assignment-duplicate-service";
+import {
   generateAndStoreModuleMcqs,
   hashPdfFile,
 } from "@/lib/services/mcq-generation-service";
@@ -36,10 +40,21 @@ export async function POST(req: NextRequest) {
 
     const sql = getSql();
 
+    const resolvedBatchIds: string[] = batchIds.includes("all")
+      ? (await sql`SELECT id FROM batches`).map((row) => row.id as string)
+      : (batchIds as string[]);
+
+    if (resolvedBatchIds.length === 0) {
+      return NextResponse.json(
+        { ok: false, message: "Select at least one batch." },
+        { status: 400 },
+      );
+    }
+
     // Reuse flow: update batch assignments for the existing module directly (no copying)
     if (reuseModuleId) {
       const sourceRows = await sql`
-        SELECT id, pdf_url FROM training_modules WHERE id = ${String(reuseModuleId)} LIMIT 1
+        SELECT id, title, pdf_url FROM training_modules WHERE id = ${String(reuseModuleId)} LIMIT 1
       `;
       if (sourceRows.length === 0) {
         return NextResponse.json(
@@ -48,29 +63,59 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Delete existing batch links for this module
+      const source = sourceRows[0];
+      const assignmentTitle = String(title ?? source.title).trim();
+      if (!assignmentTitle) {
+        return NextResponse.json(
+          { ok: false, message: "Assignment name is required." },
+          { status: 400 },
+        );
+      }
+
+      const titleChanged =
+        assignmentTitle.trim().toLowerCase() !==
+        String(source.title).trim().toLowerCase();
+
+      const conflicts = await findAssignmentBatchConflicts(sql, {
+        title: assignmentTitle,
+        batchIds: resolvedBatchIds,
+        excludeModuleId: titleChanged ? String(reuseModuleId) : null,
+      });
+      if (conflicts.length > 0) {
+        return NextResponse.json(
+          {
+            ok: false,
+            message: formatAssignmentConflictMessage(conflicts, assignmentTitle),
+            conflicts,
+          },
+          { status: 409 },
+        );
+      }
+
+      if (titleChanged) {
+        await sql`
+          UPDATE training_modules
+          SET title = ${assignmentTitle}, updated_at = NOW()
+          WHERE id = ${String(reuseModuleId)}
+        `;
+        await sql`
+          UPDATE assessment_progress
+          SET module_title = ${assignmentTitle}, updated_at = NOW()
+          WHERE module_id = ${String(reuseModuleId)}
+        `;
+      }
+
+      // Replace batch links with the admin's current selection
       await sql`
         DELETE FROM module_batches WHERE module_id = ${String(reuseModuleId)}
       `;
 
-      // Insert new batch links
-      if (batchIds.includes("all")) {
-        const rows = await sql`SELECT id FROM batches`;
-        for (const row of rows) {
-          await sql`
-            INSERT INTO module_batches (module_id, batch_id)
-            VALUES (${String(reuseModuleId)}, ${row.id})
-            ON CONFLICT DO NOTHING
-          `;
-        }
-      } else {
-        for (const batchId of batchIds as string[]) {
-          await sql`
-            INSERT INTO module_batches (module_id, batch_id)
-            VALUES (${String(reuseModuleId)}, ${batchId})
-            ON CONFLICT DO NOTHING
-          `;
-        }
+      for (const batchId of resolvedBatchIds) {
+        await sql`
+          INSERT INTO module_batches (module_id, batch_id)
+          VALUES (${String(reuseModuleId)}, ${batchId})
+          ON CONFLICT DO NOTHING
+        `;
       }
 
       // Re-push: always resend invites to learners in the selected batches
@@ -104,6 +149,22 @@ export async function POST(req: NextRequest) {
     let contentHash: string;
     const resolvedPdfUrl = pdfUrl as string;
     const resolvedSlideCount = slideCount ?? 1;
+    const assignmentTitle = String(title).trim();
+
+    const conflicts = await findAssignmentBatchConflicts(sql, {
+      title: assignmentTitle,
+      batchIds: resolvedBatchIds,
+    });
+    if (conflicts.length > 0) {
+      return NextResponse.json(
+        {
+          ok: false,
+          message: formatAssignmentConflictMessage(conflicts, assignmentTitle),
+          conflicts,
+        },
+        { status: 409 },
+      );
+    }
 
     try {
       contentHash = await hashPdfFile(pdfUrl);
@@ -124,7 +185,7 @@ export async function POST(req: NextRequest) {
       )
       VALUES (
         ${id},
-        ${title},
+        ${assignmentTitle},
         ${description ?? ""},
         ${resolvedSlideCount},
         ${durationMinutes ?? 20},
@@ -146,16 +207,15 @@ export async function POST(req: NextRequest) {
     `;
 
     if (batchIds.includes("all")) {
-      const rows = await sql`SELECT id FROM batches`;
-      for (const row of rows) {
+      for (const batchId of resolvedBatchIds) {
         await sql`
           INSERT INTO module_batches (module_id, batch_id)
-          VALUES (${id}, ${row.id})
+          VALUES (${id}, ${batchId})
           ON CONFLICT DO NOTHING
         `;
       }
     } else {
-      for (const batchId of batchIds as string[]) {
+      for (const batchId of resolvedBatchIds) {
         await sql`
           INSERT INTO module_batches (module_id, batch_id)
           VALUES (${id}, ${batchId})
@@ -166,7 +226,7 @@ export async function POST(req: NextRequest) {
 
     await sql`
       INSERT INTO upload_files (original_name, pdf_url, page_count, uploaded_by, module_id, content_hash)
-      VALUES (${title}, ${resolvedPdfUrl}, ${resolvedSlideCount}, ${uploadedBy ?? null}, ${id}, ${contentHash})
+      VALUES (${assignmentTitle}, ${resolvedPdfUrl}, ${resolvedSlideCount}, ${uploadedBy ?? null}, ${id}, ${contentHash})
     `;
 
     const mode = String(questionMode ?? "ai").toLowerCase();
@@ -185,7 +245,7 @@ export async function POST(req: NextRequest) {
 
     void generateAndStoreModuleMcqs(sql, {
       moduleId: id,
-      moduleTitle: title,
+      moduleTitle: assignmentTitle,
       pdfUrl: resolvedPdfUrl,
       pageCount: resolvedSlideCount,
       contentHash,

@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { useAuthStore } from "@/lib/auth-store";
 import type { BatchInfo } from "@/lib/types";
 import type { LibraryModule } from "@/lib/types";
@@ -14,7 +15,7 @@ import {
   Loader2,
   RefreshCcw,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 function mapBatch(row: Record<string, unknown>): BatchInfo {
   return {
@@ -35,6 +36,7 @@ export function ReuseContentPanel() {
   const [batches, setBatches] = useState<BatchInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [assignmentTitle, setAssignmentTitle] = useState("");
   const [selectedBatchIds, setSelectedBatchIds] = useState<string[]>([]);
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +72,18 @@ export function ReuseContentPanel() {
 
   const selected = library.find((m) => m.id === selectedId);
 
+  const titleUnchangedFromSelected = useMemo(() => {
+    if (!selected) return true;
+    return (
+      assignmentTitle.trim().toLowerCase() === selected.title.trim().toLowerCase()
+    );
+  }, [assignmentTitle, selected]);
+
+  const alreadyAssignedBatchIds = useMemo(() => {
+    if (!selected || !titleUnchangedFromSelected) return new Set<string>();
+    return new Set(selected.batches.map((batch) => batch.id));
+  }, [selected, titleUnchangedFromSelected]);
+
   const toggleBatch = (batchId: string) => {
     setSelectedBatchIds((prev) =>
       prev.includes(batchId) ? prev.filter((id) => id !== batchId) : [...prev, batchId],
@@ -78,8 +92,29 @@ export function ReuseContentPanel() {
 
   async function handlePublish() {
     if (!selected) return;
+    const trimmedTitle = assignmentTitle.trim();
+    if (!trimmedTitle) {
+      setError("Enter an assignment name.");
+      return;
+    }
     if (selectedBatchIds.length === 0) {
       setError("Select at least one batch.");
+      return;
+    }
+    if (
+      titleUnchangedFromSelected &&
+      selectedBatchIds.some((batchId) => alreadyAssignedBatchIds.has(batchId))
+    ) {
+      const labels = batches
+        .filter(
+          (batch) =>
+            selectedBatchIds.includes(batch.id) &&
+            alreadyAssignedBatchIds.has(batch.id),
+        )
+        .map((batch) => batch.label);
+      setError(
+        `Assignment "${trimmedTitle}" is already assigned to ${labels.map((label) => `"${label}"`).join(", ")}. Change the assignment name to push it to the same batch again.`,
+      );
       return;
     }
     setError(null);
@@ -90,7 +125,7 @@ export function ReuseContentPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id: selected.id,
-          title: selected.title,
+          title: trimmedTitle,
           pdfUrl: selected.pdfUrl,
           batchIds: selectedBatchIds,
           uploadedBy: user?.username ?? "admin@relnto.com",
@@ -115,6 +150,7 @@ export function ReuseContentPanel() {
 
   function handleReset() {
     setSelectedId(null);
+    setAssignmentTitle("");
     setSelectedBatchIds([]);
     setError(null);
     setDone(false);
@@ -133,7 +169,7 @@ export function ReuseContentPanel() {
           <p className="mt-2 text-sm text-zinc-500">
             The PDF and checkpoint questions are now assigned to the selected batches.
             {doneMessage ? ` ${doneMessage}` : " Invitation emails were sent to learners in those batches."}
-            {" "}You can push the same content again anytime to resend invites or update batch access.
+            {" "}Change the assignment name if you need to push the same PDF to a batch that already has it under a different name.
           </p>
           <Button variant="secondary" className="mt-8" onClick={handleReset}>
             <RefreshCcw className="h-4 w-4" />
@@ -178,6 +214,7 @@ export function ReuseContentPanel() {
                     type="button"
                     onClick={() => {
                       setSelectedId(item.id);
+                      setAssignmentTitle(item.title);
                       setSelectedBatchIds(item.batches.map((b) => b.id));
                       setError(null);
                     }}
@@ -216,13 +253,37 @@ export function ReuseContentPanel() {
             <h2 className="text-base font-semibold text-zinc-900">Assign to batches</h2>
           </CardHeader>
           <CardContent className="space-y-5">
+            <div className="space-y-2">
+              <label
+                htmlFor="reuse-assignment-title"
+                className="text-sm font-medium text-zinc-700"
+              >
+                Assignment name
+              </label>
+              <Input
+                id="reuse-assignment-title"
+                value={assignmentTitle}
+                onChange={(e) => {
+                  setAssignmentTitle(e.target.value);
+                  setError(null);
+                }}
+                placeholder="Name shown to learners and used for batch assignment"
+              />
+              <p className="text-xs text-zinc-500">
+                Same name + same batch is blocked. Rename the assignment to push the same PDF and questions to a batch again.
+              </p>
+            </div>
+
             <div className="rounded-md border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-600">
-              Reusing: <span className="font-medium text-zinc-900">{selected.title}</span>
+              Reusing PDF &amp; questions from:{" "}
+              <span className="font-medium text-zinc-900">{selected.title}</span>
             </div>
 
             <div className="grid gap-2 sm:grid-cols-2">
               {batches.map((batch) => {
                 const checked = selectedBatchIds.includes(batch.id);
+                const alreadyAssigned =
+                  titleUnchangedFromSelected && alreadyAssignedBatchIds.has(batch.id);
                 return (
                   <label
                     key={batch.id}
@@ -231,6 +292,7 @@ export function ReuseContentPanel() {
                       checked
                         ? "border-[#2e3192]/40 bg-[#2e3192]/5"
                         : "border-zinc-200",
+                      alreadyAssigned && checked && "border-amber-300 bg-amber-50/80",
                     )}
                   >
                     <input
@@ -239,7 +301,14 @@ export function ReuseContentPanel() {
                       onChange={() => toggleBatch(batch.id)}
                       className="h-4 w-4 rounded border-zinc-300 text-[#2e3192]"
                     />
-                    <span className="font-medium text-zinc-800">{batch.label}</span>
+                    <span>
+                      <span className="font-medium text-zinc-800">{batch.label}</span>
+                      {alreadyAssigned && checked && (
+                        <span className="mt-0.5 block text-[11px] font-medium text-amber-700">
+                          Already assigned under this name
+                        </span>
+                      )}
+                    </span>
                   </label>
                 );
               })}
