@@ -189,6 +189,69 @@ export async function sendModuleInvitationEmails(
   };
 }
 
+function retakeHtml(params: {
+  displayName: string;
+  moduleTitle: string;
+  loginUrl: string;
+}): string {
+  const { displayName, moduleTitle, loginUrl } = params;
+  return `
+<!DOCTYPE html>
+<html><body style="font-family:Segoe UI,Arial,sans-serif;color:#18181b;line-height:1.6;max-width:560px;margin:0 auto;padding:24px">
+  <div style="height:4px;background:linear-gradient(90deg,#2e3192,#f15a24);border-radius:2px;margin-bottom:24px"></div>
+  <p style="font-size:12px;font-weight:700;letter-spacing:0.12em;color:#f15a24;text-transform:uppercase">Relanto Compliance Agent</p>
+  <h1 style="font-size:22px;margin:8px 0 16px">Retake approved</h1>
+  <p>Hi ${displayName},</p>
+  <p>Your administrator approved a new attempt for <strong>${moduleTitle}</strong>. Your previous warnings were cleared — you may begin again from the start.</p>
+  <p style="margin:28px 0">
+    <a href="${loginUrl}" style="display:inline-block;background:#2e3192;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600">Start retake</a>
+  </p>
+  <p style="font-size:13px;color:#71717a">Sign in with your @relanto.ai Microsoft work account to continue.</p>
+  <p style="font-size:12px;color:#a1a1aa;margin-top:32px">© Relanto — Compliance Agent</p>
+</body></html>`;
+}
+
+export async function sendRetakeApprovalEmail(
+  sql: Sql,
+  userEmail: string,
+  moduleId: string,
+): Promise<{ ok: boolean; message: string }> {
+  const cfg = getGraphMailConfig();
+  if (!cfg.isConfigured) {
+    return { ok: false, message: "Mail not configured." };
+  }
+
+  const email = userEmail.trim().toLowerCase();
+  const modules = await sql`
+    SELECT title FROM training_modules WHERE id = ${moduleId} LIMIT 1
+  `;
+  if (modules.length === 0) {
+    return { ok: false, message: "Module not found." };
+  }
+
+  const users = await sql`
+    SELECT display_name FROM users WHERE LOWER(email) = LOWER(${email}) LIMIT 1
+  `;
+  const displayName =
+    (users[0]?.display_name as string | null)?.trim() || firstNameFromEmail(email);
+  const moduleTitle = modules[0].title as string;
+  const loginUrl = trainingLoginUrl(moduleId, cfg.baseUrl);
+
+  try {
+    await sendGraphMail({
+      to: email,
+      subject: `Retake approved: ${moduleTitle} — Relanto Compliance Training`,
+      htmlBody: retakeHtml({ displayName, moduleTitle, loginUrl }),
+      textBody: `Hi ${displayName}, your retake for "${moduleTitle}" was approved. Start here: ${loginUrl}`,
+    });
+    return { ok: true, message: "Retake approval email sent." };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Send failed";
+    console.error("[training-notification retake]", email, err);
+    return { ok: false, message };
+  }
+}
+
 export async function sendModuleCompletionEmail(
   sql: Sql,
   userEmail: string,

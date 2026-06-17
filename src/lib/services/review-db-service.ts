@@ -1,4 +1,5 @@
 import type { getSql } from "@/lib/db";
+import { sendRetakeApprovalEmail } from "@/lib/services/training-notification-service";
 import type { ReviewRequest } from "@/lib/types";
 
 type Sql = ReturnType<typeof getSql>;
@@ -260,6 +261,10 @@ export async function approveReviewRequestDb(
     adminUsername,
     `Reset progress and warnings for ${request.username} on ${moduleTitle} (Set to not_started)`,
   );
+
+  void sendRetakeApprovalEmail(sql, request.username, request.moduleId).catch((err) => {
+    console.error("[review approve retake email]", request.username, err);
+  });
 }
 
 export async function rejectReviewRequestDb(

@@ -410,12 +410,15 @@ export function mergeServerProgress(
     scorePercent: number | null;
     failedReason?: string | null;
     completedAt?: string | null;
+    warningCount?: number;
   }[],
 ): void {
   const all = readAll();
   for (const e of entries) {
     const k = key(username, e.moduleId);
     const existing = all[k];
+    const serverWarningsCleared =
+      e.warningCount != null && e.warningCount === 0;
     all[k] = {
       username,
       moduleId: e.moduleId,
@@ -432,14 +435,24 @@ export function mergeServerProgress(
       completedAt: e.completedAt
         ? new Date(e.completedAt).getTime()
         : existing?.completedAt,
-      warningCount: existing?.warningCount ?? 0,
-      warningHistory: existing?.warningHistory ?? [],
+      warningCount: e.warningCount ?? existing?.warningCount ?? 0,
+      warningHistory: serverWarningsCleared ? [] : (existing?.warningHistory ?? []),
       retakeCount: e.retakeCount,
-      failedReason: e.failedReason ?? existing?.failedReason,
+      failedReason:
+        e.status === "not_started"
+          ? undefined
+          : (e.failedReason ?? existing?.failedReason),
+      failedAt: serverWarningsCleared ? undefined : existing?.failedAt,
+      lastFailureAt: serverWarningsCleared ? undefined : existing?.lastFailureAt,
+      lastFailureReason: serverWarningsCleared
+        ? undefined
+        : existing?.lastFailureReason,
       archivedWarnings: existing?.archivedWarnings ?? [],
       mcqCorrect: e.mcqCorrect,
       mcqTotal: e.mcqTotal,
       scorePercent: e.scorePercent,
+      acknowledgement:
+        e.status === "not_started" ? undefined : existing?.acknowledgement,
     };
   }
   writeAll(all);
@@ -500,7 +513,13 @@ export function resetLocalAttempt(username: string, moduleId: string): void {
     mcqCorrect: 0,
     scorePercent: null,
     failedReason: undefined,
+    failedAt: undefined,
+    lastFailureAt: undefined,
+    lastFailureReason: undefined,
+    warningCount: 0,
+    warningHistory: [],
     completedAt: undefined,
+    acknowledgement: undefined,
     lastAccessedAt: Date.now(),
   };
   writeAll(all);

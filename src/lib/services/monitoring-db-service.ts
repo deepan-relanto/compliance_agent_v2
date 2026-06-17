@@ -100,7 +100,8 @@ export async function listMonitoringViolationsPaged(
     sql`SELECT COUNT(*)::int AS total FROM assessment_progress`,
     sql`
       SELECT
-        ap.user_email, ap.module_id, ap.module_title, ap.batch_id, b.label as batch_label,
+        ap.user_email, ap.module_id, ap.module_title, ap.batch_id,
+        COALESCE(b.label, ub.label) AS batch_label,
         ap.current_slide, ap.total_slides, ap.status,
         ap.warning_count, ap.warning_history, ap.archived_warnings,
         ap.retake_count, ap.failed_at, ap.failed_reason,
@@ -109,6 +110,8 @@ export async function listMonitoringViolationsPaged(
         ap.last_accessed_at, ap.completed_at
       FROM assessment_progress ap
       LEFT JOIN batches b ON b.id = ap.batch_id
+      LEFT JOIN users u ON LOWER(u.email) = LOWER(ap.user_email)
+      LEFT JOIN batches ub ON ub.id = u.batch_id
       ORDER BY ap.warning_count DESC, ap.last_accessed_at DESC
       LIMIT ${pageSize} OFFSET ${offset}
     `,
@@ -119,7 +122,7 @@ export async function listMonitoringViolationsPaged(
     moduleId: r.module_id as string,
     moduleTitle: r.module_title as string,
     batchId: r.batch_id as string,
-    batchLabel: r.batch_label as string | undefined,
+    batchLabel: (r.batch_label as string | null) ?? undefined,
     currentSlide: Number(r.current_slide ?? 0),
     totalSlides: Number(r.total_slides ?? 1),
     status: r.status as AssessmentProgress["status"],

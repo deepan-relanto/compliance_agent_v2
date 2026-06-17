@@ -212,6 +212,30 @@ export async function startTrainingSessionDb(
     currentSlide?: number;
   },
 ): Promise<ProgressRow> {
+  const userRows = await sql`
+    SELECT batch_id FROM users
+    WHERE LOWER(email) = LOWER(${params.userEmail})
+    LIMIT 1
+  `;
+  const resolvedBatchId =
+    (userRows[0]?.batch_id as string | null)?.trim() || params.batchId;
+
+  // Normalize impossible state: max retakes used but no finalized score.
+  await sql`
+    UPDATE assessment_progress
+    SET status = 'failed',
+        failed_reason = 'Maximum score retakes reached. Please contact your administrator.',
+        last_failure_at = NOW(),
+        last_failure_reason = 'Maximum score retakes reached.',
+        updated_at = NOW()
+    WHERE user_email = ${params.userEmail}
+      AND module_id = ${params.moduleId}
+      AND retake_count >= 2
+      AND score_percent IS NULL
+      AND status = 'in_progress'
+      AND completed_at IS NULL
+  `;
+
   if (params.freshStart) {
     await sql`
       UPDATE assessment_progress
@@ -246,7 +270,7 @@ export async function startTrainingSessionDb(
       ${params.userEmail},
       ${params.moduleId},
       ${params.moduleTitle},
-      ${params.batchId},
+      ${resolvedBatchId},
       ${slideValue},
       ${params.totalSlides},
       'in_progress',

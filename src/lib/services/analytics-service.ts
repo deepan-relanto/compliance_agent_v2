@@ -21,6 +21,30 @@ type Sql = ReturnType<typeof getSql>;
 
 const TIME_SERIES_DAYS = 30;
 
+function parseAcknowledgement(raw: unknown): {
+  accepted: boolean;
+  timestamp: string | null;
+} {
+  if (!raw) return { accepted: false, timestamp: null };
+  try {
+    const value = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (!value || typeof value !== "object") {
+      return { accepted: false, timestamp: null };
+    }
+    const accepted = Boolean((value as { accepted?: boolean }).accepted);
+    const ts = (value as { timestamp?: number }).timestamp;
+    return {
+      accepted,
+      timestamp:
+        accepted && typeof ts === "number"
+          ? new Date(ts).toISOString()
+          : null,
+    };
+  } catch {
+    return { accepted: false, timestamp: null };
+  }
+}
+
 function fillTimeSeries(
   rows: { date: string; completions: number; failures: number }[],
 ): TimeSeriesPoint[] {
@@ -130,22 +154,24 @@ export async function getAnalytics(sql: Sql): Promise<AnalyticsPayload> {
       sql`
         SELECT
           ap.user_email,
+          ap.module_id,
           ap.module_title,
           ap.batch_id,
-          b.label AS batch_label,
+          COALESCE(b.label, ub.label) AS batch_label,
           ap.status,
           LEAST(ap.score_percent, 100) AS score_percent,
           ap.mcq_correct,
           ap.mcq_total,
           ap.retake_count,
+          ap.acknowledgement,
           ap.completed_at,
           ap.updated_at
         FROM assessment_progress ap
         LEFT JOIN batches b ON b.id = ap.batch_id
-        WHERE ap.score_percent IS NOT NULL
-           OR ap.status IN ('completed', 'failed', 'permanently_failed', 'in_progress')
+        LEFT JOIN users u ON LOWER(u.email) = LOWER(ap.user_email)
+        LEFT JOIN batches ub ON ub.id = u.batch_id
         ORDER BY COALESCE(ap.completed_at, ap.updated_at) DESC
-        LIMIT 100
+        LIMIT 500
       `,
     ]);
 
@@ -210,8 +236,10 @@ export async function getAnalytics(sql: Sql): Promise<AnalyticsPayload> {
     const storedScorePercent =
       r.score_percent != null ? Number(r.score_percent) : null;
     const status = r.status as string;
+    const ack = parseAcknowledgement(r.acknowledgement);
     return {
       userEmail: r.user_email as string,
+      moduleId: r.module_id as string,
       moduleTitle: r.module_title as string,
       batchId: r.batch_id as string,
       batchLabel: (r.batch_label as string) ?? r.batch_id,
@@ -225,6 +253,8 @@ export async function getAnalytics(sql: Sql): Promise<AnalyticsPayload> {
       mcqCorrect,
       mcqTotal,
       retakeCount: Number(r.retake_count ?? 0),
+      acknowledged: ack.accepted,
+      acknowledgedAt: ack.timestamp,
       completedAt: (r.completed_at as string) ?? null,
       updatedAt: r.updated_at as string,
     };

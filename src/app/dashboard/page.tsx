@@ -71,6 +71,7 @@ export default function DashboardPage() {
                 scorePercent: e.scorePercent,
                 failedReason: e.failedReason,
                 completedAt: e.completedAt,
+                warningCount: e.warningCount,
               })),
             );
           }

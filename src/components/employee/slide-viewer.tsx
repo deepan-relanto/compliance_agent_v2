@@ -31,6 +31,7 @@ import {
   saveAcknowledgement,
   applyScoreResult,
   resetForScoreRetake,
+  mergeServerProgress,
 } from "@/lib/progress-store";
 import {
   syncAcknowledgement,
@@ -38,6 +39,7 @@ import {
   syncProgressComplete,
   finalizeAssessmentScore,
   requestScoreRetake,
+  fetchUserProgress,
 } from "@/lib/progress-api";
 import { PASS_THRESHOLD_PERCENT, POINTS_PER_MCQ } from "@/lib/constants";
 import { getAllReviewRequests } from "@/lib/review-store";
@@ -220,16 +222,56 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
   const loadIntegrityState = useCallback(async () => {
     if (!user?.username) return;
 
+    try {
+      const entries = await fetchUserProgress(user.username);
+      const serverEntry = entries.find((e) => e.moduleId === module.id);
+      if (serverEntry) {
+        mergeServerProgress(user.username, [
+          {
+            moduleId: serverEntry.moduleId,
+            moduleTitle: serverEntry.moduleTitle,
+            batchId: serverEntry.batchId,
+            currentSlide: serverEntry.currentSlide,
+            totalSlides: serverEntry.totalSlides,
+            status: serverEntry.status,
+            retakeCount: serverEntry.retakeCount,
+            mcqCorrect: serverEntry.mcqCorrect,
+            mcqTotal: serverEntry.mcqTotal,
+            scorePercent: serverEntry.scorePercent,
+            failedReason: serverEntry.failedReason,
+            completedAt: serverEntry.completedAt,
+            warningCount: serverEntry.warningCount,
+          },
+        ]);
+      }
+    } catch {
+      /* fall back to local snapshot below */
+    }
+
     const prog = getProgress(user.username, module.id);
     if (prog) {
       setRetakeCount(prog.retakeCount ?? 0);
       setDbStatus(prog.status);
       setIsFailed(isProctorLocked(prog));
+      setLiveWarningCount(prog.warningCount ?? 0);
+      setLiveWarningHistory(prog.warningHistory ?? []);
+    } else {
+      setRetakeCount(0);
+      setDbStatus("not_started");
+      setIsFailed(false);
+      setLiveWarningCount(0);
+      setLiveWarningHistory([]);
     }
 
     try {
       const latest = await fetchLatestReviewRequest(user.username, module.id);
       setReviewRequest(latest);
+      if (latest?.status === "Approved" && prog?.status === "not_started") {
+        setIsFailed(false);
+        setLiveWarningCount(0);
+        setLiveWarningHistory([]);
+        setDbStatus("not_started");
+      }
     } catch {
       const requests = getAllReviewRequests();
       const userReqs = requests.filter(
@@ -1462,13 +1504,15 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
       )}
 
       {/* ── Failed Lock Screen Overlay ─────────────────────────────────────── */}
-      {isFailed && (() => {
+      {isFailed && dbStatus !== "not_started" && (() => {
         const retakesRemaining = Math.max(0, 2 - retakeCount);
         const isPendingReview = reviewRequest?.status === "Pending";
         const isRejectedReview = reviewRequest?.status === "Rejected";
+        const isApprovedRetake = reviewRequest?.status === "Approved";
         const isPermanentlyFailed =
-          dbStatus === "permanently_failed" ||
-          (liveWarningCount >= 3 && retakesRemaining <= 0);
+          !isApprovedRetake &&
+          (dbStatus === "permanently_failed" ||
+            (liveWarningCount >= 3 && retakesRemaining <= 0));
 
         const handleSubmitReview = async (e: React.FormEvent) => {
           e.preventDefault();

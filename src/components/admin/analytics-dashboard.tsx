@@ -355,12 +355,18 @@ function StatusBreakdownChart({
   );
 }
 
-type StatusFilter = "all" | "completed" | "failed" | "in_progress";
+type StatusFilter =
+  | "all"
+  | "not_started"
+  | "in_progress"
+  | "failed"
+  | "completed";
 
 export function AnalyticsDashboard({ initialBatchId }: AnalyticsDashboardProps) {
   const { data: rawData, error: rawError, isLoading, mutate, isValidating } = useSWR("/api/analytics", fetcher);
   
   const [batchFilter, setBatchFilter] = useState<string>(initialBatchId ?? "all");
+  const [moduleFilter, setModuleFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [historyPage, setHistoryPage] = useState(1);
@@ -375,12 +381,24 @@ export function AnalyticsDashboard({ initialBatchId }: AnalyticsDashboardProps) 
     await mutate();
   };
 
+  const moduleOptions = useMemo(() => {
+    if (!data) return [];
+    const map = new Map<string, string>();
+    for (const m of data.modules) map.set(m.moduleId, m.moduleTitle);
+    for (const r of data.history) map.set(r.moduleId, r.moduleTitle);
+    return [...map.entries()]
+      .map(([id, title]) => ({ id, title }))
+      .sort((a, b) => a.title.localeCompare(b.title));
+  }, [data]);
+
   const filteredHistory = useMemo(() => {
     if (!data) return [];
     const term = searchTerm.trim().toLowerCase();
     return data.history.filter((r) => {
       if (batchFilter !== "all" && r.batchId !== batchFilter) return false;
+      if (moduleFilter !== "all" && r.moduleId !== moduleFilter) return false;
       if (statusFilter === "completed" && r.status !== "completed") return false;
+      if (statusFilter === "not_started" && r.status !== "not_started") return false;
       if (
         statusFilter === "failed" &&
         r.status !== "failed" &&
@@ -397,12 +415,36 @@ export function AnalyticsDashboard({ initialBatchId }: AnalyticsDashboardProps) 
         return false;
       return true;
     });
-  }, [data, batchFilter, statusFilter, searchTerm]);
+  }, [data, batchFilter, moduleFilter, statusFilter, searchTerm]);
 
-  // Reset history page when filters change
+  const exportFilterSummary = useMemo(() => {
+    const parts: string[] = [];
+    if (batchFilter !== "all") {
+      parts.push(`batch=${data?.batches.find((b) => b.id === batchFilter)?.label ?? batchFilter}`);
+    }
+    if (moduleFilter !== "all") {
+      parts.push(
+        `assessment=${moduleOptions.find((m) => m.id === moduleFilter)?.title ?? moduleFilter}`,
+      );
+    }
+    if (statusFilter !== "all") {
+      parts.push(`status=${STATUS_LABELS[statusFilter] ?? statusFilter}`);
+    }
+    if (searchTerm.trim()) parts.push(`search="${searchTerm.trim()}"`);
+    return parts.length ? parts.join("; ") : undefined;
+  }, [batchFilter, moduleFilter, statusFilter, searchTerm, data, moduleOptions]);
+
+  const exportOptions = useMemo(
+    () => ({
+      historyRows: filteredHistory,
+      filterSummary: exportFilterSummary,
+    }),
+    [filteredHistory, exportFilterSummary],
+  );
+
   useEffect(() => {
     setHistoryPage(1);
-  }, [batchFilter, statusFilter, searchTerm]);
+  }, [batchFilter, moduleFilter, statusFilter, searchTerm]);
 
   const paginatedHistory = useMemo(() => {
     const start = (historyPage - 1) * HISTORY_PAGE_SIZE;
@@ -417,10 +459,11 @@ export function AnalyticsDashboard({ initialBatchId }: AnalyticsDashboardProps) 
   const filterPillCount = useMemo(() => {
     let n = 0;
     if (batchFilter !== "all") n++;
+    if (moduleFilter !== "all") n++;
     if (statusFilter !== "all") n++;
     if (searchTerm.trim()) n++;
     return n;
-  }, [batchFilter, statusFilter, searchTerm]);
+  }, [batchFilter, moduleFilter, statusFilter, searchTerm]);
 
   const statusTotal = useMemo(
     () => data?.statusBreakdown.reduce((a, s) => a + s.count, 0) ?? 0,
@@ -468,11 +511,12 @@ export function AnalyticsDashboard({ initialBatchId }: AnalyticsDashboardProps) 
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={() => exportAnalyticsCsv(data)}>
+            <Button variant="outline" size="sm" onClick={() => exportAnalyticsCsv(data, exportOptions)}>
               <FileSpreadsheet className="h-3.5 w-3.5" />
               Export CSV
+              {exportFilterSummary ? ` (${filteredHistory.length})` : ""}
             </Button>
-            <Button variant="outline" size="sm" onClick={() => exportAnalyticsPdf(data)}>
+            <Button variant="outline" size="sm" onClick={() => exportAnalyticsPdf(data, exportOptions)}>
               <Download className="h-3.5 w-3.5" />
               Export PDF
             </Button>
@@ -729,6 +773,7 @@ export function AnalyticsDashboard({ initialBatchId }: AnalyticsDashboardProps) 
                     type="button"
                     onClick={() => {
                       setBatchFilter("all");
+                      setModuleFilter("all");
                       setStatusFilter("all");
                       setSearchTerm("");
                     }}
@@ -752,12 +797,18 @@ export function AnalyticsDashboard({ initialBatchId }: AnalyticsDashboardProps) 
                 All
               </FilterPill>
               <FilterPill
-                active={statusFilter === "completed"}
-                onClick={() => setStatusFilter("completed")}
-                tone="success"
+                active={statusFilter === "not_started"}
+                onClick={() => setStatusFilter("not_started")}
               >
-                <CheckCircle2 className="h-3 w-3" />
-                Completed
+                Not started
+              </FilterPill>
+              <FilterPill
+                active={statusFilter === "in_progress"}
+                onClick={() => setStatusFilter("in_progress")}
+                tone="brand"
+              >
+                <Activity className="h-3 w-3" />
+                In progress
               </FilterPill>
               <FilterPill
                 active={statusFilter === "failed"}
@@ -768,12 +819,12 @@ export function AnalyticsDashboard({ initialBatchId }: AnalyticsDashboardProps) 
                 Failed
               </FilterPill>
               <FilterPill
-                active={statusFilter === "in_progress"}
-                onClick={() => setStatusFilter("in_progress")}
-                tone="brand"
+                active={statusFilter === "completed"}
+                onClick={() => setStatusFilter("completed")}
+                tone="success"
               >
-                <Activity className="h-3 w-3" />
-                In progress
+                <CheckCircle2 className="h-3 w-3" />
+                Completed
               </FilterPill>
             </div>
 
@@ -788,6 +839,18 @@ export function AnalyticsDashboard({ initialBatchId }: AnalyticsDashboardProps) 
                   className="h-9 w-56 rounded-lg border border-zinc-200 bg-white pl-8 pr-3 text-sm text-zinc-700 placeholder:text-zinc-400 focus:border-[#2e3192]/40 focus:outline-none focus:ring-2 focus:ring-[#2e3192]/15"
                 />
               </div>
+              <select
+                value={moduleFilter}
+                onChange={(e) => setModuleFilter(e.target.value)}
+                className="h-9 max-w-[220px] rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-700 focus:border-[#2e3192]/40 focus:outline-none focus:ring-2 focus:ring-[#2e3192]/15"
+              >
+                <option value="all">All assessments</option>
+                {moduleOptions.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.title}
+                  </option>
+                ))}
+              </select>
               <select
                 value={batchFilter}
                 onChange={(e) => setBatchFilter(e.target.value)}
@@ -817,7 +880,7 @@ export function AnalyticsDashboard({ initialBatchId }: AnalyticsDashboardProps) 
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] text-left text-sm">
+              <table className="w-full min-w-[860px] text-left text-sm">
                 <thead className="border-b border-zinc-100 bg-zinc-50/80 text-xs font-semibold uppercase tracking-wide text-zinc-500">
                   <tr>
                     <th className="px-6 py-3">Learner</th>
@@ -825,6 +888,7 @@ export function AnalyticsDashboard({ initialBatchId }: AnalyticsDashboardProps) 
                     <th className="px-6 py-3">Batch</th>
                     <th className="px-6 py-3">Score</th>
                     <th className="px-6 py-3">Status</th>
+                    <th className="px-6 py-3">Acknowledged</th>
                     <th className="px-6 py-3">Date</th>
                   </tr>
                 </thead>
@@ -835,7 +899,7 @@ export function AnalyticsDashboard({ initialBatchId }: AnalyticsDashboardProps) 
                       displayScore != null && displayScore >= PASS_THRESHOLD_PERCENT;
                     return (
                       <tr
-                        key={`${row.userEmail}-${row.moduleTitle}-${row.updatedAt}`}
+                        key={`${row.userEmail}-${row.moduleId}-${row.updatedAt}`}
                         className="hover:bg-zinc-50/50"
                       >
                         <td className="select-text px-6 py-3 font-mono text-xs text-zinc-600">
@@ -865,7 +929,16 @@ export function AnalyticsDashboard({ initialBatchId }: AnalyticsDashboardProps) 
                           )}
                         </td>
                         <td className="px-6 py-3 capitalize text-zinc-600">
-                          {row.status.replace(/_/g, " ")}
+                          {STATUS_LABELS[row.status] ?? row.status.replace(/_/g, " ")}
+                        </td>
+                        <td className="px-6 py-3">
+                          {row.acknowledged ? (
+                            <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                              Yes
+                            </span>
+                          ) : (
+                            <span className="text-xs text-zinc-400">No</span>
+                          )}
                         </td>
                         <td className="px-6 py-3 text-xs tabular-nums text-zinc-500">
                           {new Date(row.completedAt ?? row.updatedAt).toLocaleDateString(
