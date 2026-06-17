@@ -14,7 +14,7 @@ import { BrandPanelHeader } from "@/components/employee/brand-panel-header";
 import { isValidSignatureName, normalizeSignatureName } from "@/lib/signature-canvas";
 import { RelantoLogo } from "@/components/brand/relanto-logo";
 import { Button } from "@/components/ui/button";
-import type { McqQuestion, TrainingModule, WarningHistoryEntry, ReviewRequest, ModuleStatus } from "@/lib/types";
+import type { McqQuestion, TrainingModule, ReviewRequest, ModuleStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
 import { ProctorRulesModal } from "@/components/employee/proctor-rules-modal";
@@ -27,7 +27,6 @@ import {
   isProctorLocked,
   markCompleted,
   getProgress,
-  addWarning,
   saveAcknowledgement,
   applyScoreResult,
   resetForScoreRetake,
@@ -40,7 +39,6 @@ import {
   syncAcknowledgement,
   syncProgressStart,
   syncProgressComplete,
-  syncProctorWarning,
   finalizeAssessmentScore,
   requestScoreRetake,
   fetchUserProgress,
@@ -51,6 +49,8 @@ import {
   fetchLatestReviewRequest,
   submitReviewRequestApi,
 } from "@/lib/review-api";
+import { useProctorMonitor, toProctorViolationReason } from "@/hooks/use-proctor-monitor";
+import { ProctorWarningModal } from "@/components/employee/proctor-warning-modal";
 
 // Isolated client-only PDF renderer — dynamically imported so pdfjs-dist is
 // never bundled into the SSR pass (fixes "Object.defineProperty called on
@@ -172,17 +172,12 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     isValidSignatureName(normalizeSignatureName(signatureName)) && !!signatureDataUrl;
 
   // ── Integrity Monitoring State ──────────────────────────────────────────
-  const [liveWarningCount, setLiveWarningCount] = useState(0);
-
-  const [liveWarningHistory, setLiveWarningHistory] = useState<WarningHistoryEntry[]>([]);
-
   const [isFailed, setIsFailed] = useState(false);
-
-  const [activeWarningReason, setActiveWarningReason] = useState<string | null>(null);
 
   // ── Integrity Enhancement States ─────────────────────────────────────────
   const [retakeCount, setRetakeCount] = useState<number>(0);
   const [dbStatus, setDbStatus] = useState<ModuleStatus>("in_progress");
+
   const [reviewRequest, setReviewRequest] = useState<ReviewRequest | null>(null);
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [explanation, setExplanation] = useState("");
@@ -210,6 +205,28 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
   const [bestStreak, setBestStreak] = useState(0);
   const [earnedBadges, setEarnedBadges] = useState<GamificationBadge[]>([]);
   const [badgePopup, setBadgePopup] = useState<GamificationBadge | null>(null);
+
+  const proctorHook = useProctorMonitor({
+    enabled:
+      sessionStarted &&
+      !reviewOnlyMode &&
+      !showAcknowledgement &&
+      !showFinalQa &&
+      !showScoreResult &&
+      !showExitModal &&
+      !isFailed,
+    username: user?.username,
+    moduleId: module.id,
+    moduleTitle: module.title,
+    batchId: user?.batchId ?? "",
+    totalSlides,
+    reviewOnlyMode,
+    onLockout: () => setIsFailed(true),
+    onStatusChange: (status) => setDbStatus(status),
+  });
+  const liveWarningCount = proctorHook.warningCount;
+  const liveWarningHistory = proctorHook.warningHistory;
+  const activeWarningReason = toProctorViolationReason(proctorHook.activeReason);
 
   const loadIntegrityState = useCallback(async () => {
     if (!user?.username) return;
@@ -246,8 +263,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
         );
         if (cleared) {
           setIsFailed(false);
-          setLiveWarningCount(0);
-          setLiveWarningHistory([]);
+          proctorHook.hydrateFromProgress(null);
           setRetakeCount(0);
           setDbStatus("not_started");
         }
@@ -270,8 +286,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
       setRetakeCount(prog.retakeCount ?? 0);
       setDbStatus(prog.status);
       setIsFailed(isProctorLocked(prog));
-      setLiveWarningCount(prog.warningCount ?? 0);
-      setLiveWarningHistory(prog.warningHistory ?? []);
+      proctorHook.hydrateFromProgress(prog);
       if (typeof prog.mcqCorrect === "number" && prog.mcqCorrect > 0) {
         setCorrectAnswers(prog.mcqCorrect);
       }
@@ -305,8 +320,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
       setRetakeCount(0);
       setDbStatus("not_started");
       setIsFailed(false);
-      setLiveWarningCount(0);
-      setLiveWarningHistory([]);
+      proctorHook.hydrateFromProgress(null);
     }
 
     try {
@@ -314,8 +328,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
       setReviewRequest(latest);
       if (latest?.status === "Approved" && prog?.status === "not_started") {
         setIsFailed(false);
-        setLiveWarningCount(0);
-        setLiveWarningHistory([]);
+        proctorHook.hydrateFromProgress(null);
         setDbStatus("not_started");
       }
     } catch {
@@ -325,15 +338,14 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
       );
       setReviewRequest(userReqs.length > 0 ? userReqs[0] : null);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.username, module.id, moduleMcqs.length, ackPendingMode, quizOnlyModeFromModule, reviewOnlyMode]);
 
   useEffect(() => {
     loadIntegrityState();
   }, [loadIntegrityState]);
 
-  const isExitingRef = useRef(false);
-  const focusTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const proctorGraceUntilRef = useRef(0);
+  const isExitingRef = proctorHook.isExitingRef;
   const earnedBadgeIdsRef = useRef<Set<string>>(new Set());
   const badgeQueueRef = useRef<GamificationBadge[]>([]);
   const badgeShowingRef = useRef(false);
@@ -361,26 +373,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     return () => window.clearInterval(id);
   }, [slideIndex, sessionStarted, quizOnlyMode]);
 
-  /** Proctor tab/focus/fullscreen checks during active training (slides or quiz retake). */
-  const proctorMonitorsActive = useMemo(
-    () =>
-      sessionStarted &&
-      !reviewOnlyMode &&
-      !showAcknowledgement &&
-      !showFinalQa &&
-      !showScoreResult &&
-      !showExitModal &&
-      !isFailed,
-    [
-      sessionStarted,
-      reviewOnlyMode,
-      showAcknowledgement,
-      showFinalQa,
-      showScoreResult,
-      showExitModal,
-      isFailed,
-    ],
-  );
+  /** Proctor monitors active is now managed by the useProctorMonitor hook. */
 
   const activeQuiz = quizOnlyMode ? moduleMcqs[quizOnlyIndex] : null;
   const totalQuestions = moduleMcqs.length;
@@ -534,230 +527,17 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     }
   }, [autoStartSession, sessionStartMs]);
 
-  const handleWarningContinue = useCallback(async () => {
-    proctorGraceUntilRef.current = Date.now() + 2500;
-    setActiveWarningReason(null);
-    if (focusTimeoutRef.current) {
-      clearTimeout(focusTimeoutRef.current);
-      focusTimeoutRef.current = null;
-    }
+  const handleWarningContinue = proctorHook.handleWarningContinue;
 
-    const shouldRestoreFullscreen =
-      sessionStarted &&
-      !reviewOnlyMode &&
-      !showAcknowledgement &&
-      !showFinalQa &&
-      !showScoreResult;
-
-    if (!shouldRestoreFullscreen) return;
-
-    try {
-      if (!document.fullscreenElement) {
-        await document.documentElement.requestFullscreen();
-      }
-      setIsFullscreen(true);
-    } catch {
-      setIsFullscreen(false);
-    }
-  }, [
-    sessionStarted,
-    reviewOnlyMode,
-    showAcknowledgement,
-    showFinalQa,
-    showScoreResult,
-  ]);
-
-  const triggerWarning = useCallback((reason: string) => {
-    if (
-      !proctorMonitorsActive ||
-      isExitingRef.current ||
-      !user?.username
-    ) {
-      return;
-    }
-
-    const currentProgress = getProgress(user.username, module.id);
-
-    // Only block further warnings after completion or permanent lock — not stale local state.
-    if (currentProgress?.status === "completed") {
-      return;
-    }
-    if (
-      currentProgress &&
-      (currentProgress.status === "permanently_failed" ||
-        (isProctorLocked(currentProgress) && (currentProgress.warningCount ?? 0) >= 3))
-    ) {
-      setIsFailed(true);
-      return;
-    }
-
-    const previousCount = currentProgress?.warningCount ?? 0;
-
-    // Call addWarning in store (includes the 5s cooldown check inside)
-    const updated = addWarning(user.username, module.id, reason);
-    if (typeof updated.warningCount !== "number") return;
-
-    setLiveWarningCount(updated.warningCount);
-    setLiveWarningHistory(updated.warningHistory);
-    setDbStatus(updated.status);
-
-    void syncProctorWarning({
-      userEmail: user.username,
-      moduleId: module.id,
-      warningCount: updated.warningCount,
-      warningHistory: updated.warningHistory,
-      status: updated.status,
-      failedReason: updated.failedReason ?? null,
-    });
-
-    if (isProctorLocked(updated)) {
-      setIsFailed(true);
-      setActiveWarningReason(null);
-    } else if (updated.warningCount > previousCount) {
-      setActiveWarningReason(reason);
-    }
-  }, [
-    proctorMonitorsActive,
-    user?.username,
-    module.id,
-  ]);
-
-  const handleEscapeProctor = useCallback(async () => {
-    if (
-      !proctorMonitorsActive ||
-      isExitingRef.current ||
-      isFailed ||
-      !user?.username ||
-      showExitModal ||
-      showAcknowledgement ||
-      showFinalQa ||
-      showScoreResult
-    ) {
-      return;
-    }
-
-    proctorGraceUntilRef.current = Date.now() + 3000;
-    if (focusTimeoutRef.current) {
-      clearTimeout(focusTimeoutRef.current);
-      focusTimeoutRef.current = null;
-    }
-
-    if (document.fullscreenElement) {
-      try {
-        await document.exitFullscreen();
-      } catch {
-        /* ignore */
-      }
-    }
-    setIsFullscreen(false);
-    triggerWarning("Exited Fullscreen");
-  }, [
-    proctorMonitorsActive,
-    isFailed,
-    user?.username,
-    showExitModal,
-    showAcknowledgement,
-    showFinalQa,
-    showScoreResult,
-    triggerWarning,
-  ]);
-
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      if (activeWarningReason) return;
-      e.preventDefault();
-      e.stopPropagation();
-      void handleEscapeProctor();
-    };
-    window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [handleEscapeProctor, activeWarningReason]);
-
+  // All proctor monitoring (ESC, fullscreen, visibility, blur, beforeunload) is handled
+  // by useProctorMonitor hook. Only fullscreen tracking for the UI toggle:
   useEffect(() => {
     const onFsChange = () => {
-      if (!proctorMonitorsActive || isExitingRef.current || isFailed) return;
-      if (Date.now() < proctorGraceUntilRef.current) return;
-      if (document.fullscreenElement === null) {
-        setIsFullscreen(false);
-        triggerWarning("Exited Fullscreen");
-      } else {
-        setIsFullscreen(true);
-      }
+      setIsFullscreen(document.fullscreenElement !== null);
     };
     document.addEventListener("fullscreenchange", onFsChange);
     return () => document.removeEventListener("fullscreenchange", onFsChange);
-  }, [triggerWarning, isFailed, proctorMonitorsActive]);
-
-  // ── Tab Switch / Visibility Monitoring ───────────────────────────────────
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (!proctorMonitorsActive || isExitingRef.current || isFailed) return;
-      if (Date.now() < proctorGraceUntilRef.current) return;
-      if (document.visibilityState === "hidden") {
-        if (focusTimeoutRef.current) {
-          clearTimeout(focusTimeoutRef.current);
-          focusTimeoutRef.current = null;
-        }
-        triggerWarning("Switched Browser Tab");
-      }
-    };
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, [triggerWarning, isFailed, proctorMonitorsActive]);
-
-  // ── Window Focus Defocus Grace Period Monitoring ────────────────────────
-  useEffect(() => {
-    const handleBlur = () => {
-      if (!proctorMonitorsActive || isExitingRef.current || isFailed) return;
-      if (Date.now() < proctorGraceUntilRef.current) return;
-      if (document.visibilityState === "hidden") return;
-      if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current);
-      focusTimeoutRef.current = setTimeout(() => {
-        if (document.visibilityState === "hidden") return;
-        triggerWarning("Window Lost Focus");
-      }, 3000);
-    };
-
-    const handleFocus = () => {
-      if (focusTimeoutRef.current) {
-        clearTimeout(focusTimeoutRef.current);
-        focusTimeoutRef.current = null;
-      }
-    };
-
-    window.addEventListener("blur", handleBlur);
-    window.addEventListener("focus", handleFocus);
-    return () => {
-      window.removeEventListener("blur", handleBlur);
-      window.removeEventListener("focus", handleFocus);
-      if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current);
-    };
-  }, [triggerWarning, isFailed, proctorMonitorsActive]);
-
-  // ── Navigation (Refresh / Leave page) Monitoring ─────────────────────────
-  useEffect(() => {
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (reviewOnlyMode || isExitingRef.current || !user?.username) return;
-      const currentProgress = getProgress(user.username, module.id);
-      if (
-        currentProgress &&
-        (currentProgress.status === "completed" || isProctorLocked(currentProgress))
-      ) {
-        return;
-      }
-
-      // Record warning synchronously in localStorage before exit
-      addWarning(user.username, module.id, "Attempted Navigation");
-
-      e.preventDefault();
-      e.returnValue = "";
-      return "";
-    };
-
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [reviewOnlyMode, user?.username, module.id]);
+  }, []);
 
   // ── Progress tracking ────────────────────────────────────────────────────
   // Mark in_progress when the viewer mounts (user opened the assessment).
@@ -991,7 +771,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     setRetakeLoading(false);
     if (!res.ok) return;
 
-    proctorGraceUntilRef.current = Date.now() + 2500;
+    proctorHook.suppressFullscreenUntilRef.current = Date.now() + 2500;
     resetForScoreRetake(user.username, module.id);
     loadIntegrityState();
     setShowScoreResult(false);
@@ -1080,9 +860,9 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
 
   useEffect(() => {
     if (checkpointOpen) {
-      proctorGraceUntilRef.current = 0;
+      proctorHook.suppressFullscreenUntilRef.current = 0;
     }
-  }, [checkpointOpen]);
+  }, [checkpointOpen, proctorHook.suppressFullscreenUntilRef]);
   const passedPendingAcknowledgement =
     showAcknowledgement && Boolean(scoreResult?.passed);
 
@@ -1564,48 +1344,12 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
 
       {/* ── Warning Notification Modal overlay ────────────────────────────── */}
       {activeWarningReason && (
-        <div
-          className="fixed inset-0 z-[220] flex items-center justify-center bg-zinc-900/60 backdrop-blur-xs p-4 pointer-events-auto"
-          onKeyDown={(e) => {
-            if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-              e.preventDefault();
-              e.stopPropagation();
-            }
-            if (e.key === "Enter") {
-              e.preventDefault();
-              void handleWarningContinue();
-            }
-          }}
-        >
-          <div className="pointer-events-auto w-full max-w-sm rounded-lg border border-amber-200 bg-white p-6 shadow-xl text-center space-y-5 animate-in fade-in zoom-in-95 duration-250">
-            <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-amber-100">
-              <span className="text-lg font-bold text-amber-600">!</span>
-            </div>
-            <div className="space-y-1.5">
-              <h3 className="text-lg font-bold text-zinc-900">Warning {liveWarningCount} of 3</h3>
-              <p className="text-sm text-zinc-500 leading-relaxed text-balance">
-                {activeWarningReason === "Exited Fullscreen" && "You exited fullscreen mode."}
-                {activeWarningReason === "Switched Browser Tab" && "You switched browser tabs."}
-                {activeWarningReason === "Window Lost Focus" && "The assessment lost window focus."}
-                {activeWarningReason === "Attempted Navigation" && "You attempted to navigate away."}
-              </p>
-              <p className="text-xs text-amber-600 font-semibold">
-                Warnings Remaining: {3 - liveWarningCount}
-              </p>
-              <p className="text-xs text-zinc-400 mt-2">
-                If you accumulate 3 warnings, the assessment will automatically fail.
-              </p>
-            </div>
-            <Button
-              type="button"
-              autoFocus
-              className="w-full cursor-pointer bg-[#2e3192] text-white hover:bg-[#3d42a8]"
-              onClick={() => void handleWarningContinue()}
-            >
-              Continue assessment
-            </Button>
-          </div>
-        </div>
+        <ProctorWarningModal
+          open={true}
+          reason={activeWarningReason}
+          warningCount={liveWarningCount}
+          onContinue={() => void handleWarningContinue()}
+        />
       )}
 
       {/* ── Exit Confirmation Modal overlay ─────────────────────────────── */}

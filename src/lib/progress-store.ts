@@ -9,7 +9,6 @@
 
 import type { ModuleStatus, WarningHistoryEntry, AssessmentAcknowledgement } from "./types";
 import { logAudit } from "./audit-store";
-import { isPassingScore } from "./constants";
 
 export interface AssessmentProgress {
   username: string;
@@ -37,7 +36,8 @@ export interface AssessmentProgress {
 }
 
 const STORE_KEY = "compliance-progress";
-const WARNING_COOLDOWN_MS = 5000;
+const SAME_REASON_COOLDOWN_MS = 1000;
+const ANY_REASON_DEBOUNCE_MS = 350;
 
 
 // ── Low-level helpers ─────────────────────────────────────────────────────────
@@ -319,9 +319,16 @@ export function addWarning(
     return existing;
   }
   if (existing.warningHistory && existing.warningHistory.length > 0) {
-    const lastWarning = existing.warningHistory[existing.warningHistory.length - 1];
-    const diff = Date.now() - lastWarning.timestamp;
-    if (diff < WARNING_COOLDOWN_MS) {
+    const now = Date.now();
+    const lastAny = existing.warningHistory[existing.warningHistory.length - 1];
+    if (lastAny && now - lastAny.timestamp < ANY_REASON_DEBOUNCE_MS) {
+      return existing;
+    }
+
+    const lastSameReason = [...existing.warningHistory]
+      .reverse()
+      .find((entry) => entry.reason === reason);
+    if (lastSameReason && now - lastSameReason.timestamp < SAME_REASON_COOLDOWN_MS) {
       return existing;
     }
   }
