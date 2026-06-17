@@ -110,8 +110,6 @@ export function MCQCheckpoint({
   const [validating, setValidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const checkpointBannerHeight = "h-28";
-
   useEffect(() => {
     if (!open) {
       setSelected(null);
@@ -212,6 +210,9 @@ export function MCQCheckpoint({
   const modalMode = !panelMode;
   const compactLayout = modalMode && submitted;
 
+  const bannerHeight = compactLayout ? "min-h-[4.5rem]" : "min-h-[6.5rem]";
+  const signalWidth = compactLayout ? "w-32 min-w-[8rem]" : "w-36 min-w-[9rem]";
+
   const blockCheckpointShortcuts = useCallback((e: KeyboardEvent) => {
     if (!shouldBlockCheckpointKey(e)) return;
     e.preventDefault();
@@ -225,32 +226,36 @@ export function MCQCheckpoint({
   }, [open, panelMode, blockCheckpointShortcuts]);
 
   const securityBanner = modalMode ? (
-    <div className="mb-3 shrink-0 flex-shrink-0">
-      <div className="flex flex-nowrap items-stretch gap-3 overflow-x-auto">
+    <div className={cn("mb-3 shrink-0", compactLayout && "mb-2")}>
+      <div className="flex flex-nowrap items-stretch gap-2.5 sm:gap-3">
         <div
           className={cn(
-            "flex min-w-0 flex-1 items-center gap-3 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3",
-            checkpointBannerHeight,
+            "flex min-w-0 flex-1 items-center gap-2.5 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3",
+            bannerHeight,
           )}
         >
           <ShieldCheck className="h-5 w-5 shrink-0 text-[#2e3192]" strokeWidth={1.75} />
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-zinc-500">
+            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500 sm:text-xs">
               Secure checkpoint
             </p>
-            <p className="mt-1 text-sm leading-snug text-zinc-600">
-              Choose the response that best follows the training policy and required approval path.
-            </p>
+            {!compactLayout && (
+              <p className="mt-1 text-xs leading-snug text-zinc-600 sm:text-sm">
+                Choose the response that best follows the training policy and required approval path.
+              </p>
+            )}
+            {compactLayout && (
+              <p className="mt-0.5 text-xs leading-snug text-zinc-500">
+                Review your answer and continue when ready.
+              </p>
+            )}
           </div>
         </div>
         <CheckpointSignal
           key={signalState}
           state={signalState}
           progress={checkpointProgress}
-          className={cn(
-            checkpointBannerHeight,
-            "w-40 min-w-[10rem] shrink-0 flex-shrink-0",
-          )}
+          className={cn(bannerHeight, signalWidth, "shrink-0")}
         />
       </div>
     </div>
@@ -274,7 +279,7 @@ export function MCQCheckpoint({
       <div
         className={cn(
           "flex shrink-0 flex-col gap-2 border-b border-zinc-100 bg-zinc-50/90 sm:flex-row sm:items-center sm:justify-between",
-          modalMode ? "px-5 py-3" : "gap-3 px-4 py-3 sm:px-6 sm:py-4",
+          modalMode ? "px-4 py-2.5 sm:px-6 sm:py-3" : "gap-3 px-4 py-3 sm:px-6 sm:py-4",
         )}
       >
         <div className="flex items-center gap-2">
@@ -312,8 +317,8 @@ export function MCQCheckpoint({
 
       <div
         className={cn(
-          "min-h-0 flex-1 overflow-y-auto overscroll-contain",
-          modalMode ? "px-5 py-4 sm:px-6" : "p-4 sm:p-5",
+          "min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]",
+          modalMode ? "px-4 py-3.5 sm:px-6 sm:py-4" : "p-4 sm:p-5",
         )}
       >
         {securityBanner}
@@ -323,7 +328,7 @@ export function MCQCheckpoint({
             <div
               className={cn(
                 "flex flex-col justify-center rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3",
-                checkpointBannerHeight,
+                bannerHeight,
               )}
             >
               <div className="flex items-center gap-2">
@@ -350,7 +355,7 @@ export function MCQCheckpoint({
               key={signalState}
               state={signalState}
               progress={checkpointProgress}
-              className={cn(checkpointBannerHeight, "shrink-0 flex-shrink-0")}
+              className={cn(bannerHeight, "shrink-0")}
             />
           </div>
         )}
@@ -360,20 +365,20 @@ export function MCQCheckpoint({
             className={cn(
               "font-semibold tracking-tight text-zinc-900",
               compactLayout
-                ? "text-base leading-snug sm:text-lg"
-                : "text-lg leading-snug sm:text-xl",
+                ? "text-[clamp(0.95rem,2.2vw,1.125rem)] leading-snug"
+                : "text-[clamp(1rem,2.5vw,1.25rem)] leading-snug",
             )}
           >
             {displayPrompt}
           </h2>
           {!submitted && (
-            <p className="mt-1.5 text-sm text-zinc-500">
+            <p className="mt-1.5 text-xs text-zinc-500 sm:text-sm">
               Answer this checkpoint to unlock the next step.
             </p>
           )}
         </div>
 
-        <ul className="mt-4 space-y-2.5">
+        <ul className={cn("mt-3", compactLayout ? "space-y-2" : "space-y-2.5 sm:mt-4")}>
           {question.options.map((opt) => {
             const isSelected = selected === opt.id;
             const showCorrect =
@@ -397,8 +402,10 @@ export function MCQCheckpoint({
                   disabled={submitted || validating}
                   onClick={() => setSelected(opt.id)}
                   className={cn(
-                    "relative flex w-full cursor-pointer items-start gap-3 overflow-hidden rounded-lg border text-left transition-all duration-150",
-                    compactLayout ? "px-3.5 py-2.5 text-sm" : "px-4 py-3.5 text-base",
+                    "relative flex w-full cursor-pointer items-start gap-2.5 overflow-hidden rounded-lg border text-left transition-all duration-150 sm:gap-3",
+                    compactLayout
+                      ? "px-3 py-2 text-[0.8125rem] leading-snug sm:px-3.5 sm:py-2.5 sm:text-sm"
+                      : "px-3.5 py-3 text-sm sm:px-4 sm:py-3.5 sm:text-base",
                     "hover:border-zinc-300 hover:bg-zinc-50 hover:shadow-sm",
                     isSelected && !submitted
                       ? "border-[#2e3192]/45 bg-[#2e3192]/5 text-zinc-900 shadow-sm"
@@ -447,8 +454,8 @@ export function MCQCheckpoint({
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             className={cn(
-              "mt-3 rounded-lg border",
-              compactLayout ? "p-3.5" : "p-4",
+              "mt-3 rounded-lg border sm:mt-4",
+              compactLayout ? "p-3" : "p-3.5 sm:p-4",
               wasCorrect
                 ? "border-emerald-200 bg-emerald-50 text-emerald-950"
                 : "border-red-200 bg-red-50 text-red-950",
@@ -489,13 +496,12 @@ export function MCQCheckpoint({
             </div>
           </motion.div>
         )}
-        <div className="h-1 shrink-0" aria-hidden="true" />
       </div>
 
       <div
         className={cn(
           "shrink-0 border-t border-zinc-100 bg-white",
-          modalMode ? "px-5 py-3 sm:px-6" : "p-4 sm:px-6 sm:pb-5",
+          modalMode ? "px-4 py-3 sm:px-6" : "p-4 sm:px-6 sm:pb-5",
         )}
       >
         {!submitted ? (
@@ -545,7 +551,7 @@ export function MCQCheckpoint({
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.99, y: 4 }}
           transition={{ type: "spring", stiffness: 400, damping: 30 }}
-          className="fixed inset-0 z-[201] flex items-center justify-center overflow-hidden p-3 sm:p-4"
+          className="fixed inset-0 z-[201] flex items-center justify-center overflow-y-auto p-4 sm:p-6"
           onKeyDown={(e) => {
             if (shouldBlockCheckpointKey(e.nativeEvent)) {
               e.preventDefault();
@@ -553,10 +559,8 @@ export function MCQCheckpoint({
             }
           }}
         >
-          <div className="w-full max-w-4xl origin-center scale-[0.82]">
-            <div className="flex h-[min(92dvh,920px)] w-full min-h-0">
-              {card}
-            </div>
+          <div className="flex w-full max-w-[42rem] max-h-[min(88dvh,820px)] min-h-0 flex-col">
+            {card}
           </div>
         </motion.div>
       </AnimatePresence>
