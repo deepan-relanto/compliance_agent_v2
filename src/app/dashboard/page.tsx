@@ -7,7 +7,7 @@ import { PageSection } from "@/components/ui/page-section";
 import { StatCard } from "@/components/ui/stat-card";
 import { useAuthStore } from "@/lib/auth-store";
 import type { ServerProgressEntry } from "@/lib/progress-api";
-import { getProgressForUser, mergeServerProgress, clearStaleLocalProgress } from "@/lib/progress-store";
+import { getProgressForUser, mergeServerProgress, clearStaleLocalProgress, clearAllLocalProgressForUser } from "@/lib/progress-store";
 import type { ModuleStatus, TrainingModule } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
@@ -74,11 +74,13 @@ export default function DashboardPage() {
                 warningCount: e.warningCount,
               })),
             );
+            clearStaleLocalProgress(user.username, {
+              serverModuleIds: (serverEntries as ServerProgressEntry[]).map((e) => e.moduleId),
+              assignedModuleIds: data.modules.map((m: TrainingModule) => m.id),
+            });
+          } else {
+            clearAllLocalProgressForUser(user.username);
           }
-          clearStaleLocalProgress(user.username, {
-            serverModuleIds: (serverEntries as ServerProgressEntry[]).map((e) => e.moduleId),
-            assignedModuleIds: data.modules.map((m: TrainingModule) => m.id),
-          });
           const progressEntries = getProgressForUser(user.username);
           const progressMap = Object.fromEntries(
             progressEntries.map((p) => [p.moduleId, p.status]),

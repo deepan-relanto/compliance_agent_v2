@@ -147,6 +147,8 @@ export interface LibraryModule {
   mcqGenerationStatus: string;
   batches: { id: string; label: string }[];
   canReuse: boolean;
+  /** Earliest module title sharing the same PDF content hash (for cloned assignments). */
+  sourceTitle?: string | null;
 }
 
 // Re-export store types so consumers can import from a single @/lib/types

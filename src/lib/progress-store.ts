@@ -102,12 +102,35 @@ export function markInProgress(
   const k = key(username, moduleId);
   const existing = all[k];
 
-  if (existing && (existing.status === "completed" || isProctorLocked(existing))) {
+  if (!existing) {
+    all[k] = {
+      username,
+      moduleId,
+      moduleTitle,
+      batchId,
+      currentSlide: 0,
+      totalSlides,
+      status: "in_progress",
+      lastAccessedAt: Date.now(),
+      warningCount: 0,
+      warningHistory: [],
+      retakeCount: 0,
+      archivedWarnings: [],
+    };
+    writeAll(all);
+    logAudit("Assessment Started", username, `Started initial attempt of ${moduleTitle}`);
     return;
   }
 
-  const isNew = !existing;
-  const isRetake = existing?.status === "not_started" && (existing?.retakeCount ?? 0) > 0;
+  if (existing.status === "completed") {
+    return;
+  }
+
+  if (isProctorLocked(existing)) {
+    return;
+  }
+
+  const isRetake = existing.status === "not_started" && (existing.retakeCount ?? 0) > 0;
 
   all[k] = {
     username,
@@ -134,10 +157,8 @@ export function markInProgress(
   };
   writeAll(all);
 
-  if (isNew) {
-    logAudit("Assessment Started", username, `Started initial attempt of ${moduleTitle}`);
-  } else if (isRetake) {
-    logAudit("Retake Started", username, `Started Retake #${existing?.retakeCount} of ${moduleTitle}`);
+  if (isRetake) {
+    logAudit("Retake Started", username, `Started Retake #${existing.retakeCount} of ${moduleTitle}`);
   }
 }
 
@@ -297,8 +318,6 @@ export function addWarning(
   ) {
     return existing;
   }
-
-  // Cooldown check: ignore if warning logged within last 5 seconds
   if (existing.warningHistory && existing.warningHistory.length > 0) {
     const lastWarning = existing.warningHistory[existing.warningHistory.length - 1];
     const diff = Date.now() - lastWarning.timestamp;
@@ -467,6 +486,18 @@ export function mergeServerProgress(
   writeAll(all);
 }
 
+/** Remove all local progress for a user (after server-side reset). */
+export function clearAllLocalProgressForUser(username: string): void {
+  const all = readAll();
+  let changed = false;
+  for (const [entryKey, entry] of Object.entries(all)) {
+    if (entry.username !== username) continue;
+    delete all[entryKey];
+    changed = true;
+  }
+  if (changed) writeAll(all);
+}
+
 /**
  * Drop stale browser progress when the server has no row or admin reset the learner.
  * Prevents permanently_failed localStorage from surviving DB clears.
@@ -490,11 +521,7 @@ export function clearStaleLocalProgress(
     if (assignedIds && !assignedIds.has(entry.moduleId)) continue;
 
     const hasServerRow = serverIds.has(entry.moduleId);
-    const shouldClear =
-      !hasServerRow &&
-      (isProctorLocked(entry) ||
-        entry.status === "permanently_failed" ||
-        entry.status === "failed");
+    const shouldClear = !hasServerRow;
 
     if (shouldClear) {
       delete all[entryKey];

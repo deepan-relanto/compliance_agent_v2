@@ -39,10 +39,20 @@ export async function GET() {
       });
     }
 
+    const sourceTitleByHash = new Map<string, string>();
+    for (const m of [...modules].reverse()) {
+      const hash = m.content_hash as string | null;
+      if (!hash) continue;
+      sourceTitleByHash.set(hash, m.title as string);
+    }
+
     const library = await Promise.all(
       modules.map(async (m) => {
         const pdfUrl = m.pdf_url as string;
         const pdfAvailable = await pdfExists(pdfUrl);
+        const contentHash = m.content_hash as string | null;
+        const sourceTitle =
+          contentHash != null ? (sourceTitleByHash.get(contentHash) ?? null) : null;
 
         return {
           id: m.id as string,
@@ -50,11 +60,13 @@ export async function GET() {
           description: m.description as string,
           slideCount: Number(m.slide_count),
           pdfUrl,
-          contentHash: m.content_hash as string | null,
+          contentHash,
           mcqGenerationStatus: m.mcq_generation_status as string,
           mcqCount: Number(m.mcq_count ?? 0),
           createdAt: m.created_at,
           batches: batchesByModule[m.id as string] ?? [],
+          sourceTitle:
+            sourceTitle && sourceTitle !== (m.title as string) ? sourceTitle : null,
           canReuse:
             pdfAvailable &&
             Number(m.mcq_count ?? 0) > 0 &&

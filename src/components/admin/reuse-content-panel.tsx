@@ -42,6 +42,7 @@ export function ReuseContentPanel() {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [doneMessage, setDoneMessage] = useState<string | null>(null);
+  const [publishedAssignmentTitle, setPublishedAssignmentTitle] = useState<string | null>(null);
 
   const loadLibrary = useCallback(async () => {
     setLoading(true);
@@ -72,17 +73,24 @@ export function ReuseContentPanel() {
 
   const selected = library.find((m) => m.id === selectedId);
 
-  const titleUnchangedFromSelected = useMemo(() => {
-    if (!selected) return true;
-    return (
-      assignmentTitle.trim().toLowerCase() === selected.title.trim().toLowerCase()
-    );
-  }, [assignmentTitle, selected]);
-
   const alreadyAssignedBatchIds = useMemo(() => {
-    if (!selected || !titleUnchangedFromSelected) return new Set<string>();
-    return new Set(selected.batches.map((batch) => batch.id));
-  }, [selected, titleUnchangedFromSelected]);
+    const norm = assignmentTitle.trim().toLowerCase();
+    if (!norm) return new Set<string>();
+    const ids = new Set<string>();
+    for (const item of library) {
+      if (item.title.trim().toLowerCase() !== norm) continue;
+      for (const batch of item.batches) {
+        ids.add(batch.id);
+      }
+    }
+    return ids;
+  }, [library, assignmentTitle]);
+
+  const titleMatchesExistingAssignment = useMemo(() => {
+    const norm = assignmentTitle.trim().toLowerCase();
+    if (!norm) return false;
+    return library.some((item) => item.title.trim().toLowerCase() === norm);
+  }, [library, assignmentTitle]);
 
   const toggleBatch = (batchId: string) => {
     setSelectedBatchIds((prev) =>
@@ -102,7 +110,7 @@ export function ReuseContentPanel() {
       return;
     }
     if (
-      titleUnchangedFromSelected &&
+      titleMatchesExistingAssignment &&
       selectedBatchIds.some((batchId) => alreadyAssignedBatchIds.has(batchId))
     ) {
       const labels = batches
@@ -139,8 +147,14 @@ export function ReuseContentPanel() {
       }
       const inviteMsg =
         typeof json.invites?.message === "string" ? json.invites.message : null;
-      setDoneMessage(inviteMsg);
+      setPublishedAssignmentTitle(trimmedTitle);
+      setDoneMessage(
+        json.cloned
+          ? `Created new assignment "${trimmedTitle}" with a fresh module id.`
+          : inviteMsg,
+      );
       setDone(true);
+      void loadLibrary();
     } catch {
       setError("Could not reach the server.");
     } finally {
@@ -155,6 +169,7 @@ export function ReuseContentPanel() {
     setError(null);
     setDone(false);
     setDoneMessage(null);
+    setPublishedAssignmentTitle(null);
     void loadLibrary();
   }
 
@@ -167,9 +182,15 @@ export function ReuseContentPanel() {
             Training pushed to batches
           </h2>
           <p className="mt-2 text-sm text-zinc-500">
-            The PDF and checkpoint questions are now assigned to the selected batches.
+            {publishedAssignmentTitle ? (
+              <>
+                Assignment <span className="font-medium text-zinc-800">&ldquo;{publishedAssignmentTitle}&rdquo;</span> is saved in the reuse library and assigned to the selected batches.
+              </>
+            ) : (
+              <>The PDF and checkpoint questions are now assigned to the selected batches.</>
+            )}
             {doneMessage ? ` ${doneMessage}` : " Invitation emails were sent to learners in those batches."}
-            {" "}Renaming the assignment creates a new module with fresh learner progress while reusing the same PDF and questions.
+            {" "}Renaming creates a new assignment entry with fresh learner progress while reusing the same PDF and questions.
           </p>
           <Button variant="secondary" className="mt-8" onClick={handleReset}>
             <RefreshCcw className="h-4 w-4" />
@@ -229,6 +250,11 @@ export function ReuseContentPanel() {
                       <FileText className="h-5 w-5 shrink-0 text-[#2e3192]" />
                       <div className="min-w-0">
                         <p className="font-medium text-zinc-900">{item.title}</p>
+                        {item.sourceTitle && (
+                          <p className="mt-0.5 text-[11px] text-zinc-500">
+                            Same PDF as: {item.sourceTitle}
+                          </p>
+                        )}
                         <p className="mt-1 text-xs text-zinc-500">
                           {item.slideCount} pages · {item.mcqCount} questions
                         </p>
@@ -283,7 +309,7 @@ export function ReuseContentPanel() {
               {batches.map((batch) => {
                 const checked = selectedBatchIds.includes(batch.id);
                 const alreadyAssigned =
-                  titleUnchangedFromSelected && alreadyAssignedBatchIds.has(batch.id);
+                  titleMatchesExistingAssignment && alreadyAssignedBatchIds.has(batch.id);
                 return (
                   <label
                     key={batch.id}

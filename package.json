@@ -19,6 +19,7 @@
     "db:clear-feedback": "node scripts/db-clear-feedback.mjs",
     "db:clear-monitoring": "node scripts/db-clear-monitoring.mjs",
     "db:clear-batches-monitoring": "node scripts/db-clear-batches-monitoring.mjs",
+    "db:clear-assignments-monitoring": "node scripts/db-clear-assignments-monitoring.mjs",
     "db:reset-user-progress": "node scripts/db-reset-user-progress.mjs",
     "db:clear-all": "node scripts/db-clear-all.mjs",
     "db:reset": "node scripts/db-reset.mjs",

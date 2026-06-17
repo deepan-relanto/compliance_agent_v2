@@ -34,6 +34,7 @@ import {
   mergeServerProgress,
   clearLocalModuleProgressIfServerAbsent,
   clearStaleLocalProgress,
+  clearAllLocalProgressForUser,
 } from "@/lib/progress-store";
 import {
   syncAcknowledgement,
@@ -171,23 +172,11 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     isValidSignatureName(normalizeSignatureName(signatureName)) && !!signatureDataUrl;
 
   // ── Integrity Monitoring State ──────────────────────────────────────────
-  const [liveWarningCount, setLiveWarningCount] = useState<number>(() => {
-    if (!user?.username) return 0;
-    const progress = getProgress(user.username, module.id);
-    return progress?.warningCount ?? 0;
-  });
+  const [liveWarningCount, setLiveWarningCount] = useState(0);
 
-  const [liveWarningHistory, setLiveWarningHistory] = useState<WarningHistoryEntry[]>(() => {
-    if (!user?.username) return [];
-    const progress = getProgress(user.username, module.id);
-    return progress?.warningHistory ?? [];
-  });
+  const [liveWarningHistory, setLiveWarningHistory] = useState<WarningHistoryEntry[]>([]);
 
-  const [isFailed, setIsFailed] = useState<boolean>(() => {
-    if (!user?.username) return false;
-    const progress = getProgress(user.username, module.id);
-    return progress ? isProctorLocked(progress) : false;
-  });
+  const [isFailed, setIsFailed] = useState(false);
 
   const [activeWarningReason, setActiveWarningReason] = useState<string | null>(null);
 
@@ -264,10 +253,14 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
         }
       }
 
-      clearStaleLocalProgress(user.username, {
-        serverModuleIds: entries.map((e) => e.moduleId),
-        assignedModuleIds: [module.id],
-      });
+      if (entries.length === 0) {
+        clearAllLocalProgressForUser(user.username);
+      } else {
+        clearStaleLocalProgress(user.username, {
+          serverModuleIds: entries.map((e) => e.moduleId),
+          assignedModuleIds: [module.id],
+        });
+      }
     } catch {
       /* fall back to local snapshot below */
     }
@@ -516,6 +509,15 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
   }, [sessionStarted, sessionStartMs]);
 
   const handleBeginSession = () => {
+    if (user?.username) {
+      markInProgress(
+        user.username,
+        module.id,
+        module.title,
+        user.batchId,
+        totalSlides,
+      );
+    }
     setShowProctorRules(false);
     setSessionStarted(true);
     setSessionStartMs(Date.now());
@@ -574,17 +576,26 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
       return;
     }
 
-    // Check progress status before logging warning
     const currentProgress = getProgress(user.username, module.id);
+
+    // Only block further warnings after completion or permanent lock — not stale local state.
+    if (currentProgress?.status === "completed") {
+      return;
+    }
     if (
       currentProgress &&
-      (currentProgress.status === "completed" || isProctorLocked(currentProgress))
+      (currentProgress.status === "permanently_failed" ||
+        (isProctorLocked(currentProgress) && (currentProgress.warningCount ?? 0) >= 3))
     ) {
+      setIsFailed(true);
       return;
     }
 
+    const previousCount = currentProgress?.warningCount ?? 0;
+
     // Call addWarning in store (includes the 5s cooldown check inside)
     const updated = addWarning(user.username, module.id, reason);
+    if (typeof updated.warningCount !== "number") return;
 
     setLiveWarningCount(updated.warningCount);
     setLiveWarningHistory(updated.warningHistory);
@@ -602,15 +613,13 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     if (isProctorLocked(updated)) {
       setIsFailed(true);
       setActiveWarningReason(null);
-    } else if (updated.warningCount !== liveWarningCount) {
-      // Show warning modal only if warning count was actually incremented (i.e. not on cooldown)
+    } else if (updated.warningCount > previousCount) {
       setActiveWarningReason(reason);
     }
   }, [
     proctorMonitorsActive,
     user?.username,
     module.id,
-    liveWarningCount,
   ]);
 
   const handleEscapeProctor = useCallback(async () => {
