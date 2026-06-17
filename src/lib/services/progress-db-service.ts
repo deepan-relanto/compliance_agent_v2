@@ -835,6 +835,39 @@ export async function listProgressForUser(sql: Sql, userEmail: string) {
   });
 }
 
+/** Persist proctor warning state from the client session to Neon. */
+export async function syncProctorWarningDb(
+  sql: Sql,
+  params: {
+    userEmail: string;
+    moduleId: string;
+    warningCount: number;
+    warningHistory: { reason: string; timestamp: number }[];
+    status: string;
+    failedReason?: string | null;
+  },
+): Promise<void> {
+  await sql`
+    UPDATE assessment_progress
+    SET warning_count = ${params.warningCount},
+        warning_history = ${JSON.stringify(params.warningHistory)}::jsonb,
+        status = ${params.status},
+        failed_reason = ${params.failedReason ?? null},
+        last_failure_at = CASE
+          WHEN ${params.status} IN ('failed', 'permanently_failed') THEN NOW()
+          ELSE last_failure_at
+        END,
+        last_failure_reason = CASE
+          WHEN ${params.status} IN ('failed', 'permanently_failed')
+            THEN ${params.failedReason ?? null}
+          ELSE last_failure_reason
+        END,
+        last_accessed_at = NOW(),
+        updated_at = NOW()
+    WHERE user_email = ${params.userEmail} AND module_id = ${params.moduleId}
+  `;
+}
+
 export async function listProgressForBatch(sql: Sql, batchId: string) {
   const rows = await sql`
     SELECT user_email, module_id, module_title, batch_id, current_slide, total_slides,

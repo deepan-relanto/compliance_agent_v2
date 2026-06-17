@@ -37,6 +37,7 @@ import {
   syncAcknowledgement,
   syncProgressStart,
   syncProgressComplete,
+  syncProctorWarning,
   finalizeAssessmentScore,
   requestScoreRetake,
   fetchUserProgress,
@@ -498,7 +499,6 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     const shouldRestoreFullscreen =
       sessionStarted &&
       !reviewOnlyMode &&
-      !quizOnlyMode &&
       !showAcknowledgement &&
       !showFinalQa &&
       !showScoreResult;
@@ -516,7 +516,6 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
   }, [
     sessionStarted,
     reviewOnlyMode,
-    quizOnlyMode,
     showAcknowledgement,
     showFinalQa,
     showScoreResult,
@@ -545,11 +544,20 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
 
     setLiveWarningCount(updated.warningCount);
     setLiveWarningHistory(updated.warningHistory);
+    setDbStatus(updated.status);
+
+    void syncProctorWarning({
+      userEmail: user.username,
+      moduleId: module.id,
+      warningCount: updated.warningCount,
+      warningHistory: updated.warningHistory,
+      status: updated.status,
+      failedReason: updated.failedReason ?? null,
+    });
 
     if (isProctorLocked(updated)) {
       setIsFailed(true);
       setActiveWarningReason(null);
-      void loadIntegrityState();
     } else if (updated.warningCount !== liveWarningCount) {
       // Show warning modal only if warning count was actually incremented (i.e. not on cooldown)
       setActiveWarningReason(reason);
@@ -559,8 +567,59 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     user?.username,
     module.id,
     liveWarningCount,
-    loadIntegrityState,
   ]);
+
+  const handleEscapeProctor = useCallback(async () => {
+    if (
+      !proctorMonitorsActive ||
+      isExitingRef.current ||
+      isFailed ||
+      !user?.username ||
+      showExitModal ||
+      showAcknowledgement ||
+      showFinalQa ||
+      showScoreResult
+    ) {
+      return;
+    }
+
+    proctorGraceUntilRef.current = Date.now() + 3000;
+    if (focusTimeoutRef.current) {
+      clearTimeout(focusTimeoutRef.current);
+      focusTimeoutRef.current = null;
+    }
+
+    if (document.fullscreenElement) {
+      try {
+        await document.exitFullscreen();
+      } catch {
+        /* ignore */
+      }
+    }
+    setIsFullscreen(false);
+    triggerWarning("Exited Fullscreen");
+  }, [
+    proctorMonitorsActive,
+    isFailed,
+    user?.username,
+    showExitModal,
+    showAcknowledgement,
+    showFinalQa,
+    showScoreResult,
+    triggerWarning,
+  ]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (activeWarningReason) return;
+      e.preventDefault();
+      e.stopPropagation();
+      void handleEscapeProctor();
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [handleEscapeProctor, activeWarningReason]);
 
   useEffect(() => {
     const onFsChange = () => {
@@ -583,6 +642,10 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
       if (!proctorMonitorsActive || isExitingRef.current || isFailed) return;
       if (Date.now() < proctorGraceUntilRef.current) return;
       if (document.visibilityState === "hidden") {
+        if (focusTimeoutRef.current) {
+          clearTimeout(focusTimeoutRef.current);
+          focusTimeoutRef.current = null;
+        }
         triggerWarning("Switched Browser Tab");
       }
     };
@@ -595,10 +658,12 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     const handleBlur = () => {
       if (!proctorMonitorsActive || isExitingRef.current || isFailed) return;
       if (Date.now() < proctorGraceUntilRef.current) return;
+      if (document.visibilityState === "hidden") return;
       if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current);
       focusTimeoutRef.current = setTimeout(() => {
+        if (document.visibilityState === "hidden") return;
         triggerWarning("Window Lost Focus");
-      }, 3000); // 3-second grace period
+      }, 3000);
     };
 
     const handleFocus = () => {
@@ -1446,7 +1511,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
       {/* ── Warning Notification Modal overlay ────────────────────────────── */}
       {activeWarningReason && (
         <div
-          className="fixed inset-0 z-[85] flex items-center justify-center bg-zinc-900/60 backdrop-blur-xs p-4 pointer-events-auto"
+          className="fixed inset-0 z-[220] flex items-center justify-center bg-zinc-900/60 backdrop-blur-xs p-4 pointer-events-auto"
           onKeyDown={(e) => {
             if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
               e.preventDefault();

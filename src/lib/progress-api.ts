@@ -114,6 +114,21 @@ export async function syncProgressComplete(
   return Boolean(data.ok);
 }
 
+export async function syncProctorWarning(params: {
+  userEmail: string;
+  moduleId: string;
+  warningCount: number;
+  warningHistory: { reason: string; timestamp: number }[];
+  status: string;
+  failedReason?: string | null;
+}): Promise<void> {
+  await fetch("/api/progress/warning", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+}
+
 export async function syncAcknowledgement(params: {
   userEmail: string;
   moduleId: string;

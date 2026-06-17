@@ -42,8 +42,8 @@ export function CheckpointSignal({
   return (
     <div
       className={cn(
-        "relative h-28 overflow-hidden rounded-lg border border-zinc-200 bg-white",
-        className,
+        "relative shrink-0 flex-shrink-0 overflow-hidden rounded-lg border border-zinc-200 bg-white",
+        className ?? "h-28 w-full",
       )}
     >
       <div

@@ -417,8 +417,15 @@ export function mergeServerProgress(
   for (const e of entries) {
     const k = key(username, e.moduleId);
     const existing = all[k];
-    const serverWarningsCleared =
-      e.warningCount != null && e.warningCount === 0;
+    const localWarnings = existing?.warningCount ?? 0;
+    const serverWarnings = e.warningCount ?? localWarnings;
+    const mergedWarnings = Math.max(localWarnings, serverWarnings);
+    const serverWarningsCleared = mergedWarnings === 0;
+    const keepLocalProctorLock =
+      existing != null && isProctorLocked(existing) && !isProctorLocked({
+        status: e.status,
+        scorePercent: e.scorePercent,
+      });
     all[k] = {
       username,
       moduleId: e.moduleId,
@@ -426,16 +433,18 @@ export function mergeServerProgress(
       batchId: e.batchId,
       currentSlide: e.currentSlide,
       totalSlides: e.totalSlides,
-      status: normalizeLearnerStatus(
-        e.status,
-        e.scorePercent,
-        e.completedAt ? new Date(e.completedAt).getTime() : undefined,
-      ),
+      status: keepLocalProctorLock
+        ? existing!.status
+        : normalizeLearnerStatus(
+            e.status,
+            e.scorePercent,
+            e.completedAt ? new Date(e.completedAt).getTime() : undefined,
+          ),
       lastAccessedAt: existing?.lastAccessedAt ?? Date.now(),
       completedAt: e.completedAt
         ? new Date(e.completedAt).getTime()
         : existing?.completedAt,
-      warningCount: e.warningCount ?? existing?.warningCount ?? 0,
+      warningCount: mergedWarnings,
       warningHistory: serverWarningsCleared ? [] : (existing?.warningHistory ?? []),
       retakeCount: e.retakeCount,
       failedReason:
