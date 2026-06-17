@@ -120,6 +120,8 @@ export function useProctorMonitor({
 
       const previousCount = progress?.warningCount ?? 0;
       const updated = addWarning(user, moduleId, reason);
+      if (typeof updated.warningCount !== "number") return false;
+
       const applied = applyProgress(updated);
       if (!applied) return false;
 
@@ -132,6 +134,31 @@ export function useProctorMonitor({
     },
     [applyProgress, batchId, moduleId, moduleTitle, onLockout, totalSlides],
   );
+
+  const activeReasonRef = useRef<ProctorViolationReason | null>(null);
+  activeReasonRef.current = activeReason;
+
+  const escTriggeredExitRef = useRef(false);
+
+  const handleEscapeViolation = useCallback(() => {
+    if (!enabledRef.current || isExitingRef.current || !usernameRef.current || blockEscape) {
+      return false;
+    }
+    if (activeReasonRef.current) return false;
+
+    clearBlurTimeout();
+
+    const recorded = recordViolation("Exited Fullscreen");
+    if (recorded) {
+      escTriggeredExitRef.current = true;
+    }
+
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => undefined);
+    }
+
+    return recorded;
+  }, [blockEscape, clearBlurTimeout, recordViolation]);
 
   const handleWarningContinue = useCallback(async () => {
     ignoreNextFullscreenEntryRef.current = true;
@@ -146,37 +173,6 @@ export function useProctorMonitor({
       /* browser may block until user gesture — continue anyway */
     }
   }, [clearBlurTimeout]);
-
-  const activeReasonRef = useRef<ProctorViolationReason | null>(null);
-  activeReasonRef.current = activeReason;
-
-  const escTriggeredExitRef = useRef(false);
-
-  const handleEscapeViolation = useCallback(async () => {
-    if (!enabledRef.current || isExitingRef.current || !usernameRef.current || blockEscape) {
-      return;
-    }
-    if (activeReasonRef.current) return;
-
-    clearBlurTimeout();
-
-    // Record the violation immediately — don't wait for fullscreenchange
-    const recorded = recordViolation("Exited Fullscreen");
-
-    // If we recorded a new warning, the fullscreenchange from the browser's
-    // native ESC-exit will see escTriggeredExitRef and skip double-counting.
-    if (recorded) {
-      escTriggeredExitRef.current = true;
-    }
-
-    if (document.fullscreenElement) {
-      try {
-        await document.exitFullscreen();
-      } catch {
-        /* ignore */
-      }
-    }
-  }, [blockEscape, clearBlurTimeout, recordViolation]);
 
   const hydrateFromProgress = useCallback(
     (progress: {
@@ -206,12 +202,12 @@ export function useProctorMonitor({
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       e.preventDefault();
-      e.stopPropagation();
-      void handleEscapeViolation();
+      e.stopImmediatePropagation();
+      handleEscapeViolation();
     };
 
-    window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
   }, [handleEscapeViolation, reviewOnlyMode]);
 
   useEffect(() => {
@@ -310,6 +306,7 @@ export function useProctorMonitor({
     warningCount,
     warningHistory,
     handleWarningContinue,
+    handleEscapeViolation,
     recordViolation,
     hydrateFromProgress,
     isExitingRef,

@@ -858,11 +858,6 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     ? `${nextActionLabel} in ${slideReadCountdown}s`
     : nextActionLabel;
 
-  useEffect(() => {
-    if (checkpointOpen) {
-      proctorHook.ignoreNextFullscreenEntryRef.current = false;
-    }
-  }, [checkpointOpen, proctorHook.ignoreNextFullscreenEntryRef]);
   const passedPendingAcknowledgement =
     showAcknowledgement && Boolean(scoreResult?.passed);
 
@@ -871,8 +866,13 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
       if (!sessionStarted) return;
       if (quizOnlyMode) return;
       if (checkpointOpen) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          proctorHook.handleEscapeViolation();
+          return;
+        }
         if (
-          e.key === "Escape" ||
           e.key === "Tab" ||
           e.key.startsWith("Arrow") ||
           e.altKey ||
@@ -921,6 +921,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     tryAdvance,
     quizOnlyMode,
     reviewOnlyMode,
+    proctorHook.handleEscapeViolation,
   ]);
 
   useEffect(() => {
