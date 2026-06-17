@@ -491,7 +491,7 @@ export function mergeServerProgress(
         : serverReset
           ? undefined
           : existing?.completedAt,
-      warningCount: serverReset ? serverWarnings : Math.max(existing?.warningCount ?? 0, serverWarnings),
+      warningCount: serverWarnings,
       warningHistory: serverReset ? [] : (existing?.warningHistory ?? []),
       retakeCount: e.retakeCount,
       failedReason:

@@ -235,9 +235,13 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
   const loadIntegrityState = useCallback(async () => {
     if (!user?.username) return;
 
+    let serverEntry:
+      | Awaited<ReturnType<typeof fetchUserProgress>>[number]
+      | undefined;
+
     try {
       const entries = await fetchUserProgress(user.username);
-      const serverEntry = entries.find((e) => e.moduleId === module.id);
+      serverEntry = entries.find((e) => e.moduleId === module.id);
       if (serverEntry) {
         mergeServerProgress(user.username, [
           {
@@ -260,17 +264,11 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
           setCorrectAnswers(serverEntry.mcqCorrect);
         }
       } else {
-        const cleared = clearLocalModuleProgressIfServerAbsent(
-          user.username,
-          module.id,
-          false,
-        );
-        if (cleared) {
-          setIsFailed(false);
-          proctorHook.hydrateFromProgress(null);
-          setRetakeCount(0);
-          setDbStatus("not_started");
-        }
+        clearLocalModuleProgressIfServerAbsent(user.username, module.id, false);
+        setIsFailed(false);
+        proctorHook.hydrateFromProgress(null);
+        setRetakeCount(0);
+        setDbStatus("not_started");
       }
 
       if (entries.length === 0) {
@@ -285,8 +283,13 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
       /* fall back to local snapshot below */
     }
 
+    const serverFresh =
+      !serverEntry ||
+      (serverEntry.status === "not_started" &&
+        (serverEntry.warningCount ?? 0) === 0);
+
     const prog = getProgress(user.username, module.id);
-    if (prog) {
+    if (prog && !serverFresh) {
       setRetakeCount(prog.retakeCount ?? 0);
       setDbStatus(prog.status);
       setIsFailed(isProctorLocked(prog));
@@ -329,11 +332,15 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
 
     try {
       const latest = await fetchLatestReviewRequest(user.username, module.id);
-      setReviewRequest(latest);
-      if (latest?.status === "Approved" && prog?.status === "not_started") {
-        setIsFailed(false);
-        proctorHook.hydrateFromProgress(null);
-        setDbStatus("not_started");
+      if (serverFresh && latest?.status === "Pending") {
+        setReviewRequest(null);
+      } else {
+        setReviewRequest(latest);
+        if (latest?.status === "Approved" && (serverFresh || prog?.status === "not_started")) {
+          setIsFailed(false);
+          proctorHook.hydrateFromProgress(null);
+          setDbStatus("not_started");
+        }
       }
     } catch {
       const requests = getAllReviewRequests();
@@ -1444,7 +1451,9 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
         const isPermanentlyFailed =
           !isApprovedRetake &&
           (dbStatus === "permanently_failed" ||
-            (liveWarningCount >= 3 && retakesRemaining <= 0));
+            (dbStatus === "failed" &&
+              liveWarningCount >= 3 &&
+              retakesRemaining <= 0));
 
         const handleSubmitReview = async (e: React.FormEvent) => {
           e.preventDefault();
@@ -1495,7 +1504,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
               <div className="space-y-4 p-5 sm:p-6">
                 <div className="flex flex-wrap items-center justify-center gap-2 text-center">
                   <span className="inline-flex items-center rounded-md border border-[#f15a24]/25 bg-[#fff7f3] px-2.5 py-1 text-xs font-semibold text-[#f15a24]">
-                    Warnings: {liveWarningCount} / 3
+                    Warnings: {Math.min(liveWarningCount, 3)} / 3
                   </span>
                   {!isPermanentlyFailed && !isPendingReview && (
                     <span className="inline-flex items-center rounded-md border border-[#2e3192]/15 bg-[#2e3192]/5 px-2.5 py-1 text-xs font-medium text-[#2e3192]">
@@ -1537,7 +1546,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
                   </div>
                 )}
 
-                {isPendingReview && (
+                {isPendingReview && !isPermanentlyFailed && (
                   <div className="rounded-lg border border-[#2e3192]/20 bg-[#2e3192]/5 p-3 text-left">
                     <p className="text-xs font-semibold text-[#2e3192]">
                       A review request is already under review

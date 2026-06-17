@@ -815,6 +815,50 @@ export async function startScoreRetakeDb(
   return { ok: true };
 }
 
+/** Wipe learner attempt data when an assignment is (re)published to batches. */
+export async function resetLearnerDataForModuleAssignment(
+  sql: Sql,
+  moduleId: string,
+  batchIds: string[],
+): Promise<{ progress: number; reviews: number; feedback: number }> {
+  if (batchIds.length === 0) {
+    return { progress: 0, reviews: 0, feedback: 0 };
+  }
+
+  const progress = await sql`
+    DELETE FROM assessment_progress
+    WHERE module_id = ${moduleId}
+      AND user_email IN (
+        SELECT email FROM users WHERE batch_id = ANY(${batchIds})
+      )
+    RETURNING id
+  `;
+
+  const reviews = await sql`
+    DELETE FROM review_requests
+    WHERE module_id = ${moduleId}
+      AND username IN (
+        SELECT email FROM users WHERE batch_id = ANY(${batchIds})
+      )
+    RETURNING id
+  `;
+
+  const feedback = await sql`
+    DELETE FROM feedback_entries
+    WHERE assessment_id = ${moduleId}
+      AND user_id IN (
+        SELECT email FROM users WHERE batch_id = ANY(${batchIds})
+      )
+    RETURNING id
+  `;
+
+  return {
+    progress: progress.length,
+    reviews: reviews.length,
+    feedback: feedback.length,
+  };
+}
+
 export async function listProgressForUser(sql: Sql, userEmail: string) {
   const rows = await sql`
     SELECT user_email, module_id, module_title, batch_id, current_slide, total_slides,

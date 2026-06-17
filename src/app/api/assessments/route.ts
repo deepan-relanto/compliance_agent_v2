@@ -10,6 +10,7 @@ import {
   generateAndStoreModuleMcqs,
   hashPdfFile,
 } from "@/lib/services/mcq-generation-service";
+import { resetLearnerDataForModuleAssignment } from "@/lib/services/progress-db-service";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -155,6 +156,8 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      await resetLearnerDataForModuleAssignment(sql, targetModuleId, resolvedBatchIds);
+
       const inviteResult = await sendModuleInvitationEmails(sql, targetModuleId, {
         forceResend: true,
       }).catch((err) => {
@@ -258,6 +261,8 @@ export async function POST(req: NextRequest) {
         `;
       }
     }
+
+    await resetLearnerDataForModuleAssignment(sql, id, resolvedBatchIds);
 
     await sql`
       INSERT INTO upload_files (original_name, pdf_url, page_count, uploaded_by, module_id, content_hash)
