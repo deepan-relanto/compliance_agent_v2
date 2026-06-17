@@ -127,6 +127,10 @@ export function markInProgress(
     lastFailureAt: existing?.lastFailureAt,
     lastFailureReason: existing?.lastFailureReason,
     archivedWarnings: existing?.archivedWarnings ?? [],
+    mcqCorrect: existing?.mcqCorrect,
+    mcqTotal: existing?.mcqTotal,
+    scorePercent: existing?.scorePercent,
+    acknowledgement: existing?.acknowledgement,
   };
   writeAll(all);
 

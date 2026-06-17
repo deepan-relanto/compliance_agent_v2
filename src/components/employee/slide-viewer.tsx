@@ -42,7 +42,7 @@ import {
   requestScoreRetake,
   fetchUserProgress,
 } from "@/lib/progress-api";
-import { PASS_THRESHOLD_PERCENT, POINTS_PER_MCQ } from "@/lib/constants";
+import { PASS_THRESHOLD_PERCENT, POINTS_PER_MCQ, isPassingScore } from "@/lib/constants";
 import { getAllReviewRequests } from "@/lib/review-store";
 import {
   fetchLatestReviewRequest,
@@ -262,6 +262,32 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
       if (typeof prog.mcqCorrect === "number" && prog.mcqCorrect > 0) {
         setCorrectAnswers(prog.mcqCorrect);
       }
+
+      const storedScore = prog.scorePercent;
+      const storedMcqCorrect = prog.mcqCorrect ?? 0;
+      const storedMcqTotal = prog.mcqTotal ?? moduleMcqs.length;
+      const pendingScoreFailure =
+        storedScore != null &&
+        !isPassingScore(storedScore) &&
+        !isProctorLocked(prog) &&
+        !quizOnlyModeFromModule &&
+        !ackPendingMode &&
+        !reviewOnlyMode;
+
+      if (pendingScoreFailure) {
+        const retakes = prog.retakeCount ?? 0;
+        setShowProctorRules(false);
+        setSessionStarted(true);
+        setSessionStartMs((current) => current ?? Date.now());
+        setScoreResult({
+          scorePercent: storedScore,
+          passed: false,
+          canRetake: retakes < 2,
+          mcqCorrect: storedMcqCorrect,
+          mcqTotal: storedMcqTotal,
+        });
+        setShowScoreResult(true);
+      }
     } else {
       setRetakeCount(0);
       setDbStatus("not_started");
@@ -286,7 +312,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
       );
       setReviewRequest(userReqs.length > 0 ? userReqs[0] : null);
     }
-  }, [user?.username, module.id]);
+  }, [user?.username, module.id, moduleMcqs.length, ackPendingMode, quizOnlyModeFromModule, reviewOnlyMode]);
 
   useEffect(() => {
     loadIntegrityState();
@@ -322,12 +348,11 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     return () => window.clearInterval(id);
   }, [slideIndex, sessionStarted, quizOnlyMode]);
 
-  /** Proctor tab/focus/fullscreen checks only during active slide/quiz training. */
+  /** Proctor tab/focus/fullscreen checks during active training (slides or quiz retake). */
   const proctorMonitorsActive = useMemo(
     () =>
       sessionStarted &&
       !reviewOnlyMode &&
-      !quizOnlyMode &&
       !showAcknowledgement &&
       !showFinalQa &&
       !showScoreResult &&
@@ -336,7 +361,6 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     [
       sessionStarted,
       reviewOnlyMode,
-      quizOnlyMode,
       showAcknowledgement,
       showFinalQa,
       showScoreResult,
@@ -454,14 +478,14 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
   }, []);
 
   useEffect(() => {
-    if (!sessionStarted || reviewOnlyMode || quizOnlyModeFromModule) return;
+    if (!sessionStarted || reviewOnlyMode) return;
     enterFullscreen();
     return () => {
       if (document.fullscreenElement) {
         document.exitFullscreen().catch(() => undefined);
       }
     };
-  }, [sessionStarted, reviewOnlyMode, quizOnlyModeFromModule, enterFullscreen]);
+  }, [sessionStarted, reviewOnlyMode, enterFullscreen]);
 
   useEffect(() => {
     if (!sessionStarted || sessionStartMs === null) return;
@@ -952,6 +976,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     setShowAcknowledgement(false);
     setForceQuizOnlyRetake(true);
     resetGamificationState();
+    void enterFullscreen();
     if (moduleMcqs.length) {
       setGateMcq(moduleMcqs[0]);
       setMcqOpen(true);

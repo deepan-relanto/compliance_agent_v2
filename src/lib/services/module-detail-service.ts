@@ -1,5 +1,5 @@
 import { getSql } from "@/lib/db";
-import { PASS_THRESHOLD_PERCENT, isPassingScore } from "@/lib/constants";
+import { isPassingScore } from "@/lib/constants";
 import { clientPdfUrl } from "@/lib/pdf-url";
 import { dedupeMcqsByPrompt, gateCountForSlides } from "@/lib/mcq-dedupe";
 
@@ -114,14 +114,16 @@ export async function loadModuleDetail(
     !hasAck &&
     progressStatus !== "permanently_failed";
   const retakeCount = Number(progress?.retake_count ?? 0);
+  // Quiz-only retake only after the learner explicitly starts a score retake
+  // (retake_count incremented and score cleared). A stored failing score alone
+  // must not skip the slide deck — the client shows the fail / retake screen first.
   const isScoreRetake =
     !isCompleted &&
     !passedPendingAck &&
     progressStatus !== "permanently_failed" &&
-    ((scorePercent != null && scorePercent < PASS_THRESHOLD_PERCENT) ||
-      (retakeCount > 0 &&
-        scorePercent == null &&
-        (progressStatus === "in_progress" || rawStatus === "failed")));
+    retakeCount > 0 &&
+    scorePercent == null &&
+    (progressStatus === "in_progress" || rawStatus === "failed");
   const viewerMode:
     | "standard"
     | "quiz_only_retake"
