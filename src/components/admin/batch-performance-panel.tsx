@@ -39,10 +39,20 @@ function formatActivityDate(iso: string): string {
   });
 }
 
-type CompletionFilter = "all" | "completed" | "incomplete";
+type StatusFilter =
+  | "all"
+  | "not_started"
+  | "in_progress"
+  | "completed"
+  | "failed"
+  | "permanently_failed";
 
-function isCompletedStatus(status: string): boolean {
-  return status === "completed";
+function matchesStatusFilter(status: string, filter: StatusFilter): boolean {
+  if (filter === "all") return true;
+  if (filter === "failed") {
+    return status === "failed" || status === "permanently_failed";
+  }
+  return status === filter;
 }
 
 function FilterPill({
@@ -84,13 +94,15 @@ interface BatchPerformancePanelProps {
 
 export function BatchPerformancePanel({ data }: BatchPerformancePanelProps) {
   const [search, setSearch] = useState("");
-  const [completionFilter, setCompletionFilter] = useState<CompletionFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [moduleFilter, setModuleFilter] = useState<string>("all");
 
   const flatRows = useMemo(() => {
     const rows: {
       key: string;
       email: string;
       displayName: string;
+      moduleId: string;
       moduleTitle: string;
       status: string;
       scorePercent: number | null;
@@ -106,6 +118,7 @@ export function BatchPerformancePanel({ data }: BatchPerformancePanelProps) {
           key: `${learner.email}-none`,
           email: learner.email,
           displayName: learner.displayName,
+          moduleId: "none",
           moduleTitle: "—",
           status: "not_started",
           scorePercent: null,
@@ -121,6 +134,7 @@ export function BatchPerformancePanel({ data }: BatchPerformancePanelProps) {
           key: `${learner.email}-${a.moduleId}`,
           email: learner.email,
           displayName: learner.displayName,
+          moduleId: a.moduleId,
           moduleTitle: a.moduleTitle,
           status: a.status,
           scorePercent: a.scorePercent,
@@ -137,24 +151,50 @@ export function BatchPerformancePanel({ data }: BatchPerformancePanelProps) {
         });
       }
     }
-    return rows;
+    return rows.sort((a, b) => {
+      const ta = a.lastActivity ? new Date(a.lastActivity).getTime() : 0;
+      const tb = b.lastActivity ? new Date(b.lastActivity).getTime() : 0;
+      return tb - ta;
+    });
   }, [data.learners]);
 
-  const completionCounts = useMemo(() => {
-    let completed = 0;
-    let incomplete = 0;
+  const statusCounts = useMemo(() => {
+    const counts: Record<StatusFilter, number> = {
+      all: flatRows.length,
+      not_started: 0,
+      in_progress: 0,
+      completed: 0,
+      failed: 0,
+      permanently_failed: 0,
+    };
     for (const r of flatRows) {
-      if (isCompletedStatus(r.status)) completed++;
-      else incomplete++;
+      if (r.status === "not_started") counts.not_started++;
+      else if (r.status === "in_progress") counts.in_progress++;
+      else if (r.status === "completed") counts.completed++;
+      else if (r.status === "failed") counts.failed++;
+      else if (r.status === "permanently_failed") counts.permanently_failed++;
     }
-    return { completed, incomplete, all: flatRows.length };
+    return counts;
+  }, [flatRows]);
+
+  const assessmentFacets = useMemo(() => {
+    const map = new Map<string, { title: string; count: number }>();
+    for (const r of flatRows) {
+      if (r.moduleId === "none") continue;
+      const existing = map.get(r.moduleId);
+      if (existing) existing.count++;
+      else map.set(r.moduleId, { title: r.moduleTitle, count: 1 });
+    }
+    return [...map.entries()]
+      .map(([id, { title, count }]) => ({ id, title, count }))
+      .sort((a, b) => a.title.localeCompare(b.title));
   }, [flatRows]);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     return flatRows.filter((r) => {
-      if (completionFilter === "completed" && !isCompletedStatus(r.status)) return false;
-      if (completionFilter === "incomplete" && isCompletedStatus(r.status)) return false;
+      if (!matchesStatusFilter(r.status, statusFilter)) return false;
+      if (moduleFilter !== "all" && r.moduleId !== moduleFilter) return false;
       if (!term) return true;
       return (
         r.email.toLowerCase().includes(term) ||
@@ -162,7 +202,7 @@ export function BatchPerformancePanel({ data }: BatchPerformancePanelProps) {
         r.moduleTitle.toLowerCase().includes(term)
       );
     });
-  }, [flatRows, search, completionFilter]);
+  }, [flatRows, search, statusFilter, moduleFilter]);
 
   const { summary, batch } = data;
 
@@ -226,36 +266,75 @@ export function BatchPerformancePanel({ data }: BatchPerformancePanelProps) {
               </Button>
             </div>
           </div>
-          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+          <div className="mt-4 flex flex-col gap-3">
             <div className="flex flex-wrap items-center gap-2">
               <FilterPill
-                active={completionFilter === "all"}
-                onClick={() => setCompletionFilter("all")}
+                active={statusFilter === "all"}
+                onClick={() => setStatusFilter("all")}
               >
-                All ({completionCounts.all})
+                All ({statusCounts.all})
               </FilterPill>
               <FilterPill
-                active={completionFilter === "completed"}
-                onClick={() => setCompletionFilter("completed")}
+                active={statusFilter === "not_started"}
+                onClick={() => setStatusFilter("not_started")}
               >
-                Completed ({completionCounts.completed})
+                Not started ({statusCounts.not_started})
               </FilterPill>
               <FilterPill
-                active={completionFilter === "incomplete"}
-                onClick={() => setCompletionFilter("incomplete")}
+                active={statusFilter === "in_progress"}
+                onClick={() => setStatusFilter("in_progress")}
               >
-                Not completed ({completionCounts.incomplete})
+                In progress ({statusCounts.in_progress})
+              </FilterPill>
+              <FilterPill
+                active={statusFilter === "completed"}
+                onClick={() => setStatusFilter("completed")}
+              >
+                Completed ({statusCounts.completed})
+              </FilterPill>
+              <FilterPill
+                active={statusFilter === "failed"}
+                onClick={() => setStatusFilter("failed")}
+              >
+                Failed ({statusCounts.failed + statusCounts.permanently_failed})
               </FilterPill>
             </div>
-            <div className="relative w-full sm:max-w-xs">
-              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
-              <input
-                type="search"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search name or assessment…"
-                className="h-9 w-full rounded-lg border border-zinc-200 bg-white pl-8 pr-3 text-sm text-zinc-700 placeholder:text-zinc-400 focus:border-[#2e3192]/40 focus:outline-none focus:ring-2 focus:ring-[#2e3192]/15"
-              />
+            {assessmentFacets.length > 1 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+                  Assessment
+                </span>
+                <FilterPill
+                  active={moduleFilter === "all"}
+                  onClick={() => setModuleFilter("all")}
+                >
+                  All assessments
+                </FilterPill>
+                {assessmentFacets.map((facet) => (
+                  <FilterPill
+                    key={facet.id}
+                    active={moduleFilter === facet.id}
+                    onClick={() => setModuleFilter(facet.id)}
+                  >
+                    {facet.title} ({facet.count})
+                  </FilterPill>
+                ))}
+              </div>
+            )}
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+              <p className="text-xs text-zinc-500">
+                Sorted by latest activity first
+              </p>
+              <div className="relative w-full sm:max-w-xs">
+                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search name or assessment…"
+                  className="h-9 w-full rounded-lg border border-zinc-200 bg-white pl-8 pr-3 text-sm text-zinc-700 placeholder:text-zinc-400 focus:border-[#2e3192]/40 focus:outline-none focus:ring-2 focus:ring-[#2e3192]/15"
+                />
+              </div>
             </div>
           </div>
         </CardHeader>

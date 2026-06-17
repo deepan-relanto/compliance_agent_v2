@@ -383,6 +383,24 @@ export function addWarning(
   return all[k];
 }
 
+/** Fail an in-flight attempt when the learner exits or abandons the session. */
+export function failAssessmentForAbandonment(
+  username: string,
+  moduleId: string,
+  reason = "Assessment abandoned",
+): AssessmentProgress | null {
+  const existing = getProgress(username, moduleId);
+  if (!existing) return null;
+  if (
+    existing.status === "completed" ||
+    existing.status === "failed" ||
+    existing.status === "permanently_failed"
+  ) {
+    return existing;
+  }
+  return markAssessmentFailed(username, moduleId, reason);
+}
+
 export function markAssessmentFailed(
   username: string,
   moduleId: string,

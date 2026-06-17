@@ -114,6 +114,35 @@ export async function syncProgressComplete(
   return Boolean(data.ok);
 }
 
+export async function syncAbandonmentFailure(params: {
+  userEmail: string;
+  moduleId: string;
+  reason?: string;
+}): Promise<boolean> {
+  try {
+    const res = await fetch("/api/progress/abandon", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+      keepalive: true,
+    });
+    const data = await res.json();
+    return Boolean(data.ok);
+  } catch {
+    return false;
+  }
+}
+
+export function syncAbandonmentFailureBeacon(params: {
+  userEmail: string;
+  moduleId: string;
+  reason?: string;
+}): void {
+  if (typeof navigator === "undefined" || !navigator.sendBeacon) return;
+  const blob = new Blob([JSON.stringify(params)], { type: "application/json" });
+  navigator.sendBeacon("/api/progress/abandon", blob);
+}
+
 export async function syncProctorWarning(params: {
   userEmail: string;
   moduleId: string;

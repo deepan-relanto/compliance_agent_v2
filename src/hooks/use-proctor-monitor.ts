@@ -2,11 +2,12 @@
 
 import {
   addWarning,
+  failAssessmentForAbandonment,
   getProgress,
   isProctorLocked,
   markInProgress,
 } from "@/lib/progress-store";
-import { syncProctorWarning } from "@/lib/progress-api";
+import { syncAbandonmentFailure, syncAbandonmentFailureBeacon, syncProctorWarning } from "@/lib/progress-api";
 import {
   isProctorViolationReason,
   type ProctorViolationReason,
@@ -75,6 +76,42 @@ export function useProctorMonitor({
       blurTimeoutRef.current = null;
     }
   }, []);
+
+  const recordAbandonmentFailure = useCallback(
+    (reason = "Assessment abandoned", options?: { beacon?: boolean }) => {
+      const user = usernameRef.current;
+      if (!user || isExitingRef.current) return null;
+
+      const progress = getProgress(user, moduleId);
+      if (
+        !progress ||
+        progress.status === "completed" ||
+        progress.status === "failed" ||
+        progress.status === "permanently_failed"
+      ) {
+        return null;
+      }
+
+      const updated = failAssessmentForAbandonment(user, moduleId, reason);
+      if (!updated) return null;
+
+      onStatusChange?.(updated.status);
+
+      const payload = { userEmail: user, moduleId, reason };
+      if (options?.beacon) {
+        syncAbandonmentFailureBeacon(payload);
+      } else {
+        void syncAbandonmentFailure(payload);
+      }
+
+      if (isProctorLocked(updated)) {
+        onLockout();
+      }
+
+      return updated;
+    },
+    [moduleId, onLockout, onStatusChange],
+  );
 
   const syncWarningState = useCallback(
     (updated: ReturnType<typeof addWarning>) => {
@@ -342,25 +379,14 @@ export function useProctorMonitor({
   useEffect(() => {
     if (reviewOnlyMode || !username) return;
 
-    const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (isExitingRef.current) return;
-      const progress = getProgress(username, moduleId);
-      if (
-        progress &&
-        (progress.status === "completed" || isProctorLocked(progress))
-      ) {
-        return;
-      }
-
-      addWarning(username, moduleId, "Attempted Navigation");
-      e.preventDefault();
-      e.returnValue = "";
-      return "";
+    const onBeforeUnload = () => {
+      if (isExitingRef.current || !sessionActiveRef.current) return;
+      recordAbandonmentFailure("Assessment abandoned", { beacon: true });
     };
 
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [moduleId, reviewOnlyMode, username]);
+  }, [moduleId, recordAbandonmentFailure, reviewOnlyMode, username]);
 
   return {
     activeReason,
@@ -369,6 +395,7 @@ export function useProctorMonitor({
     handleWarningContinue,
     handleEscapeViolation,
     recordViolation,
+    recordAbandonmentFailure,
     hydrateFromProgress,
     isExitingRef,
     ignoreNextFullscreenEntryRef,

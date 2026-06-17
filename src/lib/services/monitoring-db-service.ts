@@ -84,40 +84,36 @@ export async function getMonitoringSummary(sql: Sql): Promise<MonitoringSummary>
   };
 }
 
+export type ViolationStatusFilter =
+  | "all"
+  | "in_progress"
+  | "completed"
+  | "failed"
+  | "permanently_failed"
+  | "with_warnings";
+
+export type MonitoringSort = "time" | "warnings";
+
+export interface MonitoringViolationQuery {
+  statusFilter?: ViolationStatusFilter;
+  moduleId?: string;
+  sort?: MonitoringSort;
+}
+
+export interface AssessmentFacet {
+  moduleId: string;
+  moduleTitle: string;
+  count: number;
+}
+
 export interface PaginatedViolations {
   records: AssessmentProgress[];
   total: number;
+  assessments: AssessmentFacet[];
 }
 
-/** Paginated violations (sorted by warning_count DESC, last_accessed_at DESC). */
-export async function listMonitoringViolationsPaged(
-  sql: Sql,
-  page: number,
-  pageSize: number,
-): Promise<PaginatedViolations> {
-  const offset = (page - 1) * pageSize;
-  const [countRows, rows] = await Promise.all([
-    sql`SELECT COUNT(*)::int AS total FROM assessment_progress`,
-    sql`
-      SELECT
-        ap.user_email, ap.module_id, ap.module_title, ap.batch_id,
-        COALESCE(b.label, ub.label) AS batch_label,
-        ap.current_slide, ap.total_slides, ap.status,
-        ap.warning_count, ap.warning_history, ap.archived_warnings,
-        ap.retake_count, ap.failed_at, ap.failed_reason,
-        ap.last_failure_at, ap.last_failure_reason,
-        ap.acknowledgement, ap.mcq_correct, ap.mcq_total, ap.score_percent,
-        ap.last_accessed_at, ap.completed_at
-      FROM assessment_progress ap
-      LEFT JOIN batches b ON b.id = ap.batch_id
-      LEFT JOIN users u ON LOWER(u.email) = LOWER(ap.user_email)
-      LEFT JOIN batches ub ON ub.id = u.batch_id
-      ORDER BY ap.warning_count DESC, ap.last_accessed_at DESC
-      LIMIT ${pageSize} OFFSET ${offset}
-    `,
-  ]);
-
-  const records: AssessmentProgress[] = rows.map((r) => ({
+function mapViolationRows(rows: Record<string, unknown>[]): AssessmentProgress[] {
+  return rows.map((r) => ({
     username: r.user_email as string,
     moduleId: r.module_id as string,
     moduleTitle: r.module_title as string,
@@ -141,27 +137,148 @@ export async function listMonitoringViolationsPaged(
     mcqTotal: Number(r.mcq_total ?? 0),
     scorePercent: r.score_percent != null ? Number(r.score_percent) : null,
   }));
-
-  return { records, total: Number(countRows[0]?.total ?? 0) };
 }
+
+/** Distinct assessments for filter pills (most recent activity first). */
+export async function getMonitoringAssessmentFacets(sql: Sql): Promise<AssessmentFacet[]> {
+  const rows = await sql`
+    SELECT
+      module_id,
+      module_title,
+      COUNT(*)::int AS count
+    FROM assessment_progress
+    GROUP BY module_id, module_title
+    ORDER BY MAX(last_accessed_at) DESC NULLS LAST
+  `;
+  return rows.map((r) => ({
+    moduleId: r.module_id as string,
+    moduleTitle: r.module_title as string,
+    count: Number(r.count ?? 0),
+  }));
+}
+
+/** Paginated violations — default sort: latest activity first. */
+export async function listMonitoringViolationsPaged(
+  sql: Sql,
+  page: number,
+  pageSize: number,
+  query: MonitoringViolationQuery = {},
+): Promise<PaginatedViolations> {
+  const statusFilter = query.statusFilter ?? "all";
+  const moduleId = query.moduleId?.trim() || null;
+  const sort = query.sort ?? "time";
+  const offset = (page - 1) * pageSize;
+
+  const countPromise = sql`
+    SELECT COUNT(*)::int AS total
+    FROM assessment_progress ap
+    WHERE
+      (
+        ${statusFilter} = 'all'
+        OR (${statusFilter} = 'with_warnings' AND ap.warning_count > 0)
+        OR (
+          ${statusFilter} NOT IN ('all', 'with_warnings')
+          AND ap.status = ${statusFilter}
+        )
+      )
+      AND (${moduleId}::text IS NULL OR ap.module_id = ${moduleId})
+  `;
+
+  const rowsPromise =
+    sort === "warnings"
+      ? sql`
+          SELECT
+            ap.user_email, ap.module_id, ap.module_title, ap.batch_id,
+            COALESCE(b.label, ub.label) AS batch_label,
+            ap.current_slide, ap.total_slides, ap.status,
+            ap.warning_count, ap.warning_history, ap.archived_warnings,
+            ap.retake_count, ap.failed_at, ap.failed_reason,
+            ap.last_failure_at, ap.last_failure_reason,
+            ap.acknowledgement, ap.mcq_correct, ap.mcq_total, ap.score_percent,
+            ap.last_accessed_at, ap.completed_at
+          FROM assessment_progress ap
+          LEFT JOIN batches b ON b.id = ap.batch_id
+          LEFT JOIN users u ON LOWER(u.email) = LOWER(ap.user_email)
+          LEFT JOIN batches ub ON ub.id = u.batch_id
+          WHERE
+            (
+              ${statusFilter} = 'all'
+              OR (${statusFilter} = 'with_warnings' AND ap.warning_count > 0)
+              OR (
+                ${statusFilter} NOT IN ('all', 'with_warnings')
+                AND ap.status = ${statusFilter}
+              )
+            )
+            AND (${moduleId}::text IS NULL OR ap.module_id = ${moduleId})
+          ORDER BY ap.warning_count DESC, ap.last_accessed_at DESC NULLS LAST
+          LIMIT ${pageSize} OFFSET ${offset}
+        `
+      : sql`
+          SELECT
+            ap.user_email, ap.module_id, ap.module_title, ap.batch_id,
+            COALESCE(b.label, ub.label) AS batch_label,
+            ap.current_slide, ap.total_slides, ap.status,
+            ap.warning_count, ap.warning_history, ap.archived_warnings,
+            ap.retake_count, ap.failed_at, ap.failed_reason,
+            ap.last_failure_at, ap.last_failure_reason,
+            ap.acknowledgement, ap.mcq_correct, ap.mcq_total, ap.score_percent,
+            ap.last_accessed_at, ap.completed_at
+          FROM assessment_progress ap
+          LEFT JOIN batches b ON b.id = ap.batch_id
+          LEFT JOIN users u ON LOWER(u.email) = LOWER(ap.user_email)
+          LEFT JOIN batches ub ON ub.id = u.batch_id
+          WHERE
+            (
+              ${statusFilter} = 'all'
+              OR (${statusFilter} = 'with_warnings' AND ap.warning_count > 0)
+              OR (
+                ${statusFilter} NOT IN ('all', 'with_warnings')
+                AND ap.status = ${statusFilter}
+              )
+            )
+            AND (${moduleId}::text IS NULL OR ap.module_id = ${moduleId})
+          ORDER BY ap.last_accessed_at DESC NULLS LAST, ap.warning_count DESC
+          LIMIT ${pageSize} OFFSET ${offset}
+        `;
+
+  const [countRows, rows, assessments] = await Promise.all([
+    countPromise,
+    rowsPromise,
+    getMonitoringAssessmentFacets(sql),
+  ]);
+
+  return {
+    records: mapViolationRows(rows),
+    total: Number(countRows[0]?.total ?? 0),
+    assessments,
+  };
+}
+
+export type ReviewStatusFilter = "all" | "Pending" | "Approved" | "Rejected";
 
 export interface PaginatedReviews {
   reviews: ReviewRequest[];
   total: number;
 }
 
-/** Paginated review requests. */
+/** Paginated review requests (latest submissions first). */
 export async function listMonitoringReviewsPaged(
   sql: Sql,
   page: number,
   pageSize: number,
+  statusFilter: ReviewStatusFilter = "all",
 ): Promise<PaginatedReviews> {
   const offset = (page - 1) * pageSize;
   const [countRows, rows] = await Promise.all([
-    sql`SELECT COUNT(*)::int AS total FROM review_requests`,
+    sql`
+      SELECT COUNT(*)::int AS total
+      FROM review_requests
+      WHERE (${statusFilter} = 'all' OR status = ${statusFilter})
+    `,
     sql`
       SELECT *
       FROM review_requests
+      WHERE (${statusFilter} = 'all' OR status = ${statusFilter})
       ORDER BY submitted_timestamp DESC
       LIMIT ${pageSize} OFFSET ${offset}
     `,
@@ -193,18 +310,36 @@ export interface PaginatedAuditLogs {
   total: number;
 }
 
-/** Paginated audit logs. */
+export type AuditActionFilter = "all" | "failures" | "retakes" | "reviews" | "warnings";
+
+const AUDIT_ACTION_GROUPS: Record<Exclude<AuditActionFilter, "all">, string[]> = {
+  failures: ["Assessment Failed", "Assessment Permanently Failed"],
+  retakes: ["Retake Started", "Retake Granted", "Assessment Reset", "Retake Limit Reached"],
+  reviews: ["Request Submitted", "Request Approved", "Request Rejected"],
+  warnings: ["Warning Issued"],
+};
+
+/** Paginated audit logs (latest events first). */
 export async function listMonitoringAuditLogsPaged(
   sql: Sql,
   page: number,
   pageSize: number,
+  actionFilter: AuditActionFilter = "all",
 ): Promise<PaginatedAuditLogs> {
   const offset = (page - 1) * pageSize;
+  const actionList =
+    actionFilter === "all" ? null : AUDIT_ACTION_GROUPS[actionFilter];
+
   const [countRows, rows] = await Promise.all([
-    sql`SELECT COUNT(*)::int AS total FROM audit_logs`,
+    sql`
+      SELECT COUNT(*)::int AS total
+      FROM audit_logs
+      WHERE (${actionList}::text[] IS NULL OR action = ANY(${actionList}))
+    `,
     sql`
       SELECT id, action, actor, details, timestamp
       FROM audit_logs
+      WHERE (${actionList}::text[] IS NULL OR action = ANY(${actionList}))
       ORDER BY timestamp DESC
       LIMIT ${pageSize} OFFSET ${offset}
     `,

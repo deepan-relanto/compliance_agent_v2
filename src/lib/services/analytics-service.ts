@@ -9,7 +9,8 @@ import type {
   TimeSeriesPoint,
 } from "@/lib/analytics-types";
 import { PASS_THRESHOLD_PERCENT } from "@/lib/constants";
-import { resolveDisplayScorePercent } from "@/lib/progress-score";
+import { countMcqAnswers, resolveDisplayScorePercent } from "@/lib/progress-score";
+import { normalizeProgressStatus } from "@/lib/services/progress-db-service";
 
 // NOTE: reconcileInvalidProgressScores / reconcilePassedProgressStatus are
 // intentionally NOT called here. Running heavy UPDATE+SELECT repair on every
@@ -165,12 +166,16 @@ export async function getAnalytics(sql: Sql): Promise<AnalyticsPayload> {
           ap.retake_count,
           ap.acknowledgement,
           ap.completed_at,
-          ap.updated_at
+          ap.updated_at,
+          ap.last_accessed_at,
+          ap.current_slide,
+          ap.warning_count,
+          ap.mcq_answers
         FROM assessment_progress ap
         LEFT JOIN batches b ON b.id = ap.batch_id
         LEFT JOIN users u ON LOWER(u.email) = LOWER(ap.user_email)
         LEFT JOIN batches ub ON ub.id = u.batch_id
-        ORDER BY COALESCE(ap.completed_at, ap.updated_at) DESC
+        ORDER BY COALESCE(ap.last_accessed_at, ap.completed_at, ap.updated_at) DESC
         LIMIT 500
       `,
     ]);
@@ -235,8 +240,21 @@ export async function getAnalytics(sql: Sql): Promise<AnalyticsPayload> {
     const mcqTotal = Number(r.mcq_total ?? 0);
     const storedScorePercent =
       r.score_percent != null ? Number(r.score_percent) : null;
-    const status = r.status as string;
+    const rawStatus = (r.status as string) ?? "not_started";
     const ack = parseAcknowledgement(r.acknowledgement);
+    const status = normalizeProgressStatus(
+      rawStatus,
+      storedScorePercent,
+      (r.completed_at as string) ?? null,
+      {
+        lastAccessedAt: (r.last_accessed_at as string) ?? null,
+        currentSlide: Number(r.current_slide ?? 0),
+        answerCount: countMcqAnswers(
+          r.mcq_answers as Record<string, boolean> | null,
+        ),
+        warningCount: Number(r.warning_count ?? 0),
+      },
+    );
     return {
       userEmail: r.user_email as string,
       moduleId: r.module_id as string,

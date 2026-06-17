@@ -56,9 +56,16 @@ export function cacheInvalidate(...keys: string[]): void {
 export const CACHE_KEYS = {
   analytics: "analytics:main",
   batches: "batches:list",
-  monitoringViolations: (page: number) => `monitoring:violations:${page}`,
-  monitoringReviews: (page: number) => `monitoring:reviews:${page}`,
-  monitoringAudit: (page: number) => `monitoring:audit:${page}`,
+  monitoringViolations: (
+    page: number,
+    statusFilter: string,
+    moduleId: string,
+    sort: string,
+  ) => `monitoring:violations:${page}:${statusFilter}:${moduleId}:${sort}`,
+  monitoringReviews: (page: number, statusFilter: string) =>
+    `monitoring:reviews:${page}:${statusFilter}`,
+  monitoringAudit: (page: number, actionFilter: string) =>
+    `monitoring:audit:${page}:${actionFilter}`,
   monitoringSummary: "monitoring:summary",
   batchPerformance: (id: string) => `batch:perf:${id}`,
 } as const;

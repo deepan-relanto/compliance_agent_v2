@@ -33,6 +33,26 @@ import { cn } from "@/lib/utils";
 
 type TabType = "violations" | "reviews" | "audit";
 
+type ViolationFilter =
+  | "all"
+  | "in_progress"
+  | "completed"
+  | "failed"
+  | "permanently_failed"
+  | "with_warnings";
+
+type ReviewFilter = "all" | "Pending" | "Approved" | "Rejected";
+
+type AuditFilter = "all" | "failures" | "retakes" | "reviews" | "warnings";
+
+type SortMode = "time" | "warnings";
+
+interface AssessmentFacet {
+  moduleId: string;
+  moduleTitle: string;
+  count: number;
+}
+
 interface Summary {
   activeAssessments: number;
   usersWithWarnings: number;
@@ -44,6 +64,51 @@ interface Summary {
 
 const PAGE_SIZE = 25;
 
+function FilterPill({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors",
+        active
+          ? "border-[#2e3192] bg-[#2e3192] text-white"
+          : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function buildMonitoringUrl(
+  tab: TabType,
+  page: number,
+  filter: string,
+  moduleId: string,
+  sort: SortMode,
+): string {
+  const params = new URLSearchParams({
+    tab,
+    page: String(page),
+    pageSize: String(PAGE_SIZE),
+    filter,
+  });
+  if (tab === "violations") {
+    if (moduleId && moduleId !== "all") params.set("moduleId", moduleId);
+    params.set("sort", sort);
+  }
+  return `/api/monitoring?${params.toString()}`;
+}
+
 export function MonitoringPanel() {
   const adminUser = useAuthStore((s) => s.user);
   const adminName = adminUser?.username || "Admin";
@@ -52,6 +117,11 @@ export function MonitoringPanel() {
   // Pagination and Tabs
   const [page, setPage] = useState(1);
   const [activeTab, setActiveTab] = useState<TabType>("violations");
+  const [violationFilter, setViolationFilter] = useState<ViolationFilter>("all");
+  const [assessmentFilter, setAssessmentFilter] = useState<string>("all");
+  const [reviewFilter, setReviewFilter] = useState<ReviewFilter>("all");
+  const [auditFilter, setAuditFilter] = useState<AuditFilter>("all");
+  const [sortMode, setSortMode] = useState<SortMode>("time");
   
   const [selectedRecord, setSelectedRecord] = useState<AssessmentProgress | null>(null);
   const [selectedReview, setSelectedReview] = useState<ReviewRequest | null>(null);
@@ -64,12 +134,23 @@ export function MonitoringPanel() {
   const { data: summaryData, mutate: mutateSummary } = useSWR("/api/monitoring?summary=1", fetcher);
   const summary = summaryData?.ok ? (summaryData as Summary) : null;
 
+  const activeFilter =
+    activeTab === "violations"
+      ? violationFilter
+      : activeTab === "reviews"
+        ? reviewFilter
+        : auditFilter;
+
   const { data: tabData, isLoading: tabLoading, isValidating: tabRefreshing, mutate: mutateTab } = useSWR(
-    `/api/monitoring?tab=${activeTab}&page=${page}&pageSize=${PAGE_SIZE}`,
-    fetcher
+    buildMonitoringUrl(activeTab, page, activeFilter, assessmentFilter, sortMode),
+    fetcher,
   );
 
   const records: AssessmentProgress[] = activeTab === "violations" && tabData?.ok && Array.isArray(tabData.records) ? tabData.records : [];
+  const assessments: AssessmentFacet[] =
+    activeTab === "violations" && tabData?.ok && Array.isArray(tabData.assessments)
+      ? tabData.assessments
+      : [];
   const reviews: ReviewRequest[] = activeTab === "reviews" && tabData?.ok && Array.isArray(tabData.reviews) ? tabData.reviews : [];
   const auditLogs: AuditLogEntry[] = activeTab === "audit" && tabData?.ok && Array.isArray(tabData.auditLogs) ? tabData.auditLogs : [];
   
@@ -86,6 +167,37 @@ export function MonitoringPanel() {
     setActiveTab(tab);
     setPage(1);
   };
+
+  const handleViolationFilterChange = (filter: ViolationFilter) => {
+    setViolationFilter(filter);
+    setPage(1);
+  };
+
+  const handleAssessmentFilterChange = (moduleId: string) => {
+    setAssessmentFilter(moduleId);
+    setPage(1);
+  };
+
+  const handleReviewFilterChange = (filter: ReviewFilter) => {
+    setReviewFilter(filter);
+    setPage(1);
+  };
+
+  const handleAuditFilterChange = (filter: AuditFilter) => {
+    setAuditFilter(filter);
+    setPage(1);
+  };
+
+  const handleSortChange = (sort: SortMode) => {
+    setSortMode(sort);
+    setPage(1);
+  };
+
+  const filtersActive =
+    (activeTab === "violations" &&
+      (violationFilter !== "all" || assessmentFilter !== "all" || sortMode !== "time")) ||
+    (activeTab === "reviews" && reviewFilter !== "all") ||
+    (activeTab === "audit" && auditFilter !== "all");
 
   // Derive summary metrics from loaded data or summary query
   const activeAssessments = summary?.activeAssessments ?? 0;
@@ -104,7 +216,6 @@ export function MonitoringPanel() {
         : totalAudit;
   const totalPages = Math.max(1, Math.ceil(currentTotal / PAGE_SIZE));
 
-  // Already sorted by DB query (warning_count DESC, last_accessed_at DESC)
   const sortedRecords = records;
 
   const handleApprove = async (reqId: string) => {
@@ -246,11 +357,85 @@ export function MonitoringPanel() {
       {/* ── TAB CONTENT: Violations & Activity ──────────────────────────── */}
       {activeTab === "violations" && (
         <Card className="shadow-[var(--shadow-card)] border-zinc-200">
-          <CardHeader className="pb-4">
-            <h2 className="text-sm font-semibold text-zinc-900">Live Assessment Activity</h2>
-            <p className="mt-0.5 text-xs text-zinc-500">
-              Real-time employee monitoring details sorted by violation warning counts.
-            </p>
+          <CardHeader className="space-y-4 pb-4">
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-900">Live Assessment Activity</h2>
+              <p className="mt-0.5 text-xs text-zinc-500">
+                Sorted by {sortMode === "time" ? "latest activity" : "warning count"}, newest first.
+              </p>
+            </div>
+            <div className="space-y-2.5">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="mr-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                  Status
+                </span>
+                <FilterPill active={violationFilter === "all"} onClick={() => handleViolationFilterChange("all")}>
+                  All
+                </FilterPill>
+                <FilterPill active={violationFilter === "in_progress"} onClick={() => handleViolationFilterChange("in_progress")}>
+                  Active
+                </FilterPill>
+                <FilterPill active={violationFilter === "completed"} onClick={() => handleViolationFilterChange("completed")}>
+                  Completed
+                </FilterPill>
+                <FilterPill active={violationFilter === "with_warnings"} onClick={() => handleViolationFilterChange("with_warnings")}>
+                  With warnings
+                </FilterPill>
+                <FilterPill active={violationFilter === "failed"} onClick={() => handleViolationFilterChange("failed")}>
+                  Failed
+                </FilterPill>
+                <FilterPill active={violationFilter === "permanently_failed"} onClick={() => handleViolationFilterChange("permanently_failed")}>
+                  Perm. failed
+                </FilterPill>
+              </div>
+              {assessments.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="mr-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                    Assessment
+                  </span>
+                  <FilterPill active={assessmentFilter === "all"} onClick={() => handleAssessmentFilterChange("all")}>
+                    All assessments
+                  </FilterPill>
+                  {assessments.map((a) => (
+                    <FilterPill
+                      key={a.moduleId}
+                      active={assessmentFilter === a.moduleId}
+                      onClick={() => handleAssessmentFilterChange(a.moduleId)}
+                    >
+                      {a.moduleTitle}
+                      <span className={cn("ml-1 tabular-nums", assessmentFilter === a.moduleId ? "text-white/80" : "text-zinc-400")}>
+                        ({a.count})
+                      </span>
+                    </FilterPill>
+                  ))}
+                </div>
+              )}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="mr-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                  Sort
+                </span>
+                <FilterPill active={sortMode === "time"} onClick={() => handleSortChange("time")}>
+                  Latest activity
+                </FilterPill>
+                <FilterPill active={sortMode === "warnings"} onClick={() => handleSortChange("warnings")}>
+                  Most warnings
+                </FilterPill>
+                {filtersActive && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setViolationFilter("all");
+                      setAssessmentFilter("all");
+                      setSortMode("time");
+                      setPage(1);
+                    }}
+                    className="ml-1 text-[11px] font-medium text-[#2e3192] hover:underline"
+                  >
+                    Clear filters
+                  </button>
+                )}
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="p-0">
             {tabLoading ? (
@@ -261,9 +446,13 @@ export function MonitoringPanel() {
             ) : sortedRecords.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
                 <ShieldCheck className="h-8 w-8 text-zinc-300" strokeWidth={1.5} />
-                <p className="text-sm font-medium text-zinc-500">No active assessments found</p>
+                <p className="text-sm font-medium text-zinc-500">
+                  {filtersActive ? "No records match these filters" : "No active assessments found"}
+                </p>
                 <p className="text-xs text-zinc-400">
-                  Integrity metrics will compile when users launch their training modules.
+                  {filtersActive
+                    ? "Try a different status or assessment filter."
+                    : "Integrity metrics will compile when users launch their training modules."}
                 </p>
               </div>
             ) : (
@@ -415,11 +604,30 @@ export function MonitoringPanel() {
       {/* ── TAB CONTENT: Review Requests ───────────────────────────────── */}
       {activeTab === "reviews" && (
         <Card className="shadow-[var(--shadow-card)] border-zinc-200">
-          <CardHeader className="pb-4">
-            <h2 className="text-sm font-semibold text-zinc-900">Submitted Review Requests</h2>
-            <p className="mt-0.5 text-xs text-zinc-500">
-              Approve retakes or reject requests submitted by failed users.
-            </p>
+          <CardHeader className="space-y-4 pb-4">
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-900">Submitted Review Requests</h2>
+              <p className="mt-0.5 text-xs text-zinc-500">
+                Newest submissions first. Approve retakes or reject requests from failed users.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="mr-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                Status
+              </span>
+              <FilterPill active={reviewFilter === "all"} onClick={() => handleReviewFilterChange("all")}>
+                All
+              </FilterPill>
+              <FilterPill active={reviewFilter === "Pending"} onClick={() => handleReviewFilterChange("Pending")}>
+                Pending
+              </FilterPill>
+              <FilterPill active={reviewFilter === "Approved"} onClick={() => handleReviewFilterChange("Approved")}>
+                Approved
+              </FilterPill>
+              <FilterPill active={reviewFilter === "Rejected"} onClick={() => handleReviewFilterChange("Rejected")}>
+                Rejected
+              </FilterPill>
+            </div>
           </CardHeader>
           <CardContent className="p-0">
             {tabLoading ? (
@@ -510,14 +718,41 @@ export function MonitoringPanel() {
       {/* ── TAB CONTENT: Audit Trail Logs ──────────────────────────────── */}
       {activeTab === "audit" && (
         <Card className="shadow-[var(--shadow-card)] border-zinc-200">
-          <CardHeader className="pb-4">
-            <h2 className="text-sm font-semibold text-zinc-900">Compliance Audit Trail Logs</h2>
-            <p className="mt-0.5 text-xs text-zinc-500">
-              Chronological log of integrity failure resets, retakes, and audit logs.
-            </p>
+          <CardHeader className="space-y-4 pb-4">
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-900">Compliance Audit Trail Logs</h2>
+              <p className="mt-0.5 text-xs text-zinc-500">
+                Chronological log of integrity events, newest first.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="mr-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                Event type
+              </span>
+              <FilterPill active={auditFilter === "all"} onClick={() => handleAuditFilterChange("all")}>
+                All events
+              </FilterPill>
+              <FilterPill active={auditFilter === "warnings"} onClick={() => handleAuditFilterChange("warnings")}>
+                Warnings
+              </FilterPill>
+              <FilterPill active={auditFilter === "failures"} onClick={() => handleAuditFilterChange("failures")}>
+                Failures
+              </FilterPill>
+              <FilterPill active={auditFilter === "retakes"} onClick={() => handleAuditFilterChange("retakes")}>
+                Retakes
+              </FilterPill>
+              <FilterPill active={auditFilter === "reviews"} onClick={() => handleAuditFilterChange("reviews")}>
+                Reviews
+              </FilterPill>
+            </div>
           </CardHeader>
           <CardContent className="p-0">
-            {auditLogs.length === 0 ? (
+            {tabLoading ? (
+              <div className="flex items-center justify-center gap-2 py-16 text-sm text-zinc-500">
+                <Loader2 className="h-4 w-4 animate-spin text-[#2e3192]" />
+                Loading audit logs…
+              </div>
+            ) : auditLogs.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
                 <FileClock className="h-8 w-8 text-zinc-300" strokeWidth={1.5} />
                 <p className="text-sm font-medium text-zinc-500">No audit logs recorded</p>

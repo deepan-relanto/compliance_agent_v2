@@ -75,6 +75,8 @@ export async function getBatchPerformance(
         ap.completed_at,
         ap.updated_at,
         ap.last_accessed_at,
+        ap.current_slide,
+        ap.warning_count,
         ap.mcq_answers
       FROM users u
       CROSS JOIN (
@@ -180,6 +182,12 @@ export async function getBatchPerformance(
       rawStatus,
       storedScorePercent,
       completedAt,
+      {
+        lastAccessedAt: (row.last_accessed_at as string) ?? null,
+        currentSlide: Number(row.current_slide ?? 0),
+        answerCount,
+        warningCount: Number(row.warning_count ?? 0),
+      },
     );
     const scorePercent = resolveDisplayScorePercent({
       status: displayStatus,
