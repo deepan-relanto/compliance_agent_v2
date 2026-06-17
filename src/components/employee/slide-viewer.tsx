@@ -30,6 +30,7 @@ import {
   saveAcknowledgement,
   applyScoreResult,
   resetForScoreRetake,
+  resetLocalAttempt,
   mergeServerProgress,
   clearLocalModuleProgressIfServerAbsent,
   clearStaleLocalProgress,
@@ -505,7 +506,21 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
   }, [sessionStarted, sessionStartMs]);
 
   const handleBeginSession = () => {
+    const isFullRetake =
+      (getProgress(user?.username ?? "", module.id)?.retakeCount ?? retakeCount) > 0 &&
+      !quizOnlyModeFromModule &&
+      !forceQuizOnlyRetake;
+
     if (user?.username) {
+      if (isFullRetake) {
+        resetLocalAttempt(user.username, module.id);
+        setForceQuizOnlyRetake(false);
+        answeredQuestionIdsRef.current.clear();
+        resetGamificationState();
+        setSlideIndex(0);
+        setQuizOnlyIndex(0);
+        setNextClickCount(0);
+      }
       markInProgress(
         user.username,
         module.id,
@@ -520,7 +535,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
         batchId: user.batchId,
         totalSlides,
         assignedMcqCount: moduleMcqs.length,
-        freshStart,
+        freshStart: isFullRetake || freshStart,
       });
     }
     setShowProctorRules(false);
@@ -1163,7 +1178,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
                     className="w-full rounded-lg border border-[#2e3192]/15 bg-gradient-to-r from-[#2e3192]/8 via-white to-[#3d42a8]/8 px-5 py-4 text-center shadow-[var(--shadow-card)]"
                   >
                     <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#f15a24]">
-                      Quiz-only retake · Round {(retakeCount || 0) + 1}
+                      Score retake · Round {(retakeCount || 0) + 1}
                     </p>
                     <h2 className="mt-1 text-lg font-semibold text-zinc-900">
                       You&apos;ve got this — checkpoints only
@@ -1546,7 +1561,38 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
                   </div>
                 )}
 
-                {!isPermanentlyFailed && !isPendingReview && (
+                {isApprovedRetake && !isPermanentlyFailed && (
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-left">
+                    <p className="text-xs font-semibold text-emerald-800">Retake approved</p>
+                    <p className="mt-1 text-[11px] leading-relaxed text-zinc-600">
+                      You can start again with the full training flow — slides, signature, and
+                      feedback.
+                    </p>
+                    <Button
+                      type="button"
+                      variant="accent"
+                      className="mt-3 w-full cursor-pointer text-xs font-semibold"
+                      onClick={() => {
+                        if (user?.username) {
+                          resetLocalAttempt(user.username, module.id);
+                        }
+                        setIsFailed(false);
+                        setShowReviewForm(false);
+                        setShowProctorRules(true);
+                        setSessionStarted(false);
+                        setSessionStartMs(null);
+                        setShowScoreResult(false);
+                        setScoreResult(null);
+                        setForceQuizOnlyRetake(false);
+                        proctorHook.hydrateFromProgress(null);
+                      }}
+                    >
+                      Begin full retake
+                    </Button>
+                  </div>
+                )}
+
+                {!isPermanentlyFailed && !isPendingReview && !isApprovedRetake && (
                   <div className="space-y-3 pt-0.5">
                     {!showReviewForm ? (
                       <Button

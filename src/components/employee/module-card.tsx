@@ -58,6 +58,7 @@ export function ModuleCard({ module }: ModuleCardProps) {
   }, [module.id, user?.username]);
   const [status, setStatus] = useState<ModuleStatus>(module.status);
   const [scorePercent, setScorePercent] = useState<number | null>(null);
+  const [retakeCount, setRetakeCount] = useState(0);
 
   useEffect(() => {
     if (!user?.username) return;
@@ -65,10 +66,12 @@ export function ModuleCard({ module }: ModuleCardProps) {
     if (p) {
       setStatus(p.status);
       setScorePercent(p.scorePercent ?? null);
+      setRetakeCount(p.retakeCount ?? 0);
     } else {
       const s = getModuleStatus(user.username, module.id);
       setStatus(s);
       setScorePercent(null);
+      setRetakeCount(0);
     }
   }, [user?.username, module.id, module.status]);
 
@@ -78,15 +81,20 @@ export function ModuleCard({ module }: ModuleCardProps) {
     scorePercent != null &&
     scorePercent <= PASS_THRESHOLD_PERCENT;
 
+  const isFullAssessmentRetake =
+    retakeCount > 0 && !canScoreRetake && status === "not_started";
+
   const badgeStatus = displayStatus(status, scorePercent);
 
   const ctaLabel = canScoreRetake
     ? "Retake quiz"
-    : status === "completed"
-      ? "Review"
-      : badgeStatus === "in_progress"
-        ? "Continue"
-        : "Start";
+    : isFullAssessmentRetake
+      ? "Retake assessment"
+      : status === "completed"
+        ? "Review"
+        : badgeStatus === "in_progress"
+          ? "Continue"
+          : "Start";
 
   const ctaVariant = canScoreRetake
     ? "primary"
@@ -161,7 +169,12 @@ export function ModuleCard({ module }: ModuleCardProps) {
           >
             {canScoreRetake && (
               <p className="mb-2 text-center text-[10px] font-medium leading-snug text-zinc-500 sm:text-left">
-                Quiz only — slides skipped
+                Low score — quiz questions only (slides skipped)
+              </p>
+            )}
+            {isFullAssessmentRetake && (
+              <p className="mb-2 text-center text-[10px] font-medium leading-snug text-zinc-500 sm:text-left">
+                Full retake — slides, signature, and feedback
               </p>
             )}
             <Button
@@ -182,6 +195,7 @@ export function ModuleCard({ module }: ModuleCardProps) {
                   return;
                 }
                 const needsFreshStart =
+                  isFullAssessmentRetake ||
                   status === "in_progress" ||
                   status === "not_started" ||
                   status === "failed";

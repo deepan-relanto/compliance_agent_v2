@@ -1,5 +1,5 @@
 import type { getSql } from "@/lib/db";
-import { PASS_THRESHOLD_PERCENT, isPassingScore } from "@/lib/constants";
+import { PASS_THRESHOLD_PERCENT, isPassingScore, SCORE_QUIZ_RETAKE_MARKER } from "@/lib/constants";
 import {
   computeScoreFromAnswers,
   countMcqAnswers,
@@ -267,6 +267,7 @@ export async function startTrainingSessionDb(
           mcq_correct = 0,
           score_percent = NULL,
           failed_reason = NULL,
+          last_failure_reason = NULL,
           completed_at = NULL,
           last_accessed_at = NOW(),
           updated_at = NOW()
@@ -652,6 +653,7 @@ export async function finalizeAssessmentDb(
           mcq_correct = ${mcqCorrect},
           mcq_total = ${mcqTotal},
           failed_reason = NULL,
+          last_failure_reason = NULL,
           completed_at = NULL,
           last_accessed_at = NOW(),
           updated_at = NOW()
@@ -804,6 +806,7 @@ export async function startScoreRetakeDb(
         completed_at = NULL,
         acknowledgement = NULL,
         retake_count = retake_count + 1,
+        last_failure_reason = ${SCORE_QUIZ_RETAKE_MARKER},
         last_accessed_at = NOW(),
         updated_at = NOW()
     WHERE user_email = ${userEmail} AND module_id = ${moduleId}

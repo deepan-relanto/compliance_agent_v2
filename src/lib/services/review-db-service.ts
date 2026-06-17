@@ -224,6 +224,8 @@ export async function approveReviewRequestDb(
         status = 'not_started',
         failed_at = NULL,
         failed_reason = NULL,
+        last_failure_at = NULL,
+        last_failure_reason = NULL,
         mcq_answers = ${JSON.stringify({})}::jsonb,
         mcq_correct = 0,
         score_percent = NULL,

@@ -1,5 +1,5 @@
 import { getSql } from "@/lib/db";
-import { isPassingScore } from "@/lib/constants";
+import { isPassingScore, SCORE_QUIZ_RETAKE_MARKER } from "@/lib/constants";
 import { clientPdfUrl } from "@/lib/pdf-url";
 import { dedupeMcqsByPrompt, gateCountForSlides } from "@/lib/mcq-dedupe";
 
@@ -62,7 +62,8 @@ export async function loadModuleDetail(
     `,
     userEmail
       ? sql`
-          SELECT status, retake_count, score_percent, completed_at, acknowledgement
+          SELECT status, retake_count, score_percent, completed_at, acknowledgement,
+                 last_failure_reason
           FROM assessment_progress
           WHERE user_email = ${userEmail} AND module_id = ${moduleId}
           LIMIT 1
@@ -113,17 +114,14 @@ export async function loadModuleDetail(
     isPassingScore(scorePercent) &&
     !hasAck &&
     progressStatus !== "permanently_failed";
-  const retakeCount = Number(progress?.retake_count ?? 0);
-  // Quiz-only retake only after the learner explicitly starts a score retake
-  // (retake_count incremented and score cleared). A stored failing score alone
-  // must not skip the slide deck — the client shows the fail / retake screen first.
+  const lastFailureReason = (progress?.last_failure_reason as string | null) ?? null;
+  // Quiz-only only after an explicit score retake — not every retake with retake_count > 0.
   const isScoreRetake =
     !isCompleted &&
     !passedPendingAck &&
     progressStatus !== "permanently_failed" &&
-    retakeCount > 0 &&
     scorePercent == null &&
-    (progressStatus === "in_progress" || rawStatus === "failed");
+    lastFailureReason === SCORE_QUIZ_RETAKE_MARKER;
   const viewerMode:
     | "standard"
     | "quiz_only_retake"

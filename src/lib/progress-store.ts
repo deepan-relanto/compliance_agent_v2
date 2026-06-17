@@ -8,6 +8,7 @@
  */
 
 import type { ModuleStatus, WarningHistoryEntry, AssessmentAcknowledgement } from "./types";
+import { SCORE_QUIZ_RETAKE_MARKER } from "./constants";
 import { logAudit } from "./audit-store";
 
 export interface AssessmentProgress {
@@ -657,6 +658,7 @@ export function resetForScoreRetake(username: string, moduleId: string): void {
     completedAt: undefined,
     acknowledgement: undefined,
     retakeCount: (existing.retakeCount ?? 0) + 1,
+    lastFailureReason: SCORE_QUIZ_RETAKE_MARKER,
     lastAccessedAt: Date.now(),
   };
   writeAll(all);
