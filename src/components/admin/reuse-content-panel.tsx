@@ -39,6 +39,7 @@ export function ReuseContentPanel() {
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [doneMessage, setDoneMessage] = useState<string | null>(null);
 
   const loadLibrary = useCallback(async () => {
     setLoading(true);
@@ -101,6 +102,9 @@ export function ReuseContentPanel() {
         setError(json.message ?? "Update failed.");
         return;
       }
+      const inviteMsg =
+        typeof json.invites?.message === "string" ? json.invites.message : null;
+      setDoneMessage(inviteMsg);
       setDone(true);
     } catch {
       setError("Could not reach the server.");
@@ -114,6 +118,7 @@ export function ReuseContentPanel() {
     setSelectedBatchIds([]);
     setError(null);
     setDone(false);
+    setDoneMessage(null);
     void loadLibrary();
   }
 
@@ -122,13 +127,17 @@ export function ReuseContentPanel() {
       <Card>
         <CardContent className="flex flex-col items-center px-8 py-14 text-center">
           <CheckCircle2 className="h-10 w-10 text-emerald-600" />
-          <h2 className="mt-4 text-xl font-semibold text-zinc-900">Batch assignments updated</h2>
+          <h2 className="mt-4 text-xl font-semibold text-zinc-900">
+            Training pushed to batches
+          </h2>
           <p className="mt-2 text-sm text-zinc-500">
-            The module batch assignments were successfully updated. New invitation emails have been sent to eligible users.
+            The PDF and checkpoint questions are now assigned to the selected batches.
+            {doneMessage ? ` ${doneMessage}` : " Invitation emails were sent to learners in those batches."}
+            {" "}You can push the same content again anytime to resend invites or update batch access.
           </p>
           <Button variant="secondary" className="mt-8" onClick={handleReset}>
             <RefreshCcw className="h-4 w-4" />
-            Manage another
+            Push to more batches
           </Button>
         </CardContent>
       </Card>
@@ -252,7 +261,7 @@ export function ReuseContentPanel() {
               ) : (
                 <>
                   <Layers className="h-3.5 w-3.5" />
-                  Publish to selected batches
+                  Push to selected batches
                 </>
               )}
             </Button>

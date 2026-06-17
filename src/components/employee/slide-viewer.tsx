@@ -243,6 +243,9 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
             warningCount: serverEntry.warningCount,
           },
         ]);
+        if (serverEntry.mcqCorrect > 0) {
+          setCorrectAnswers(serverEntry.mcqCorrect);
+        }
       }
     } catch {
       /* fall back to local snapshot below */
@@ -255,6 +258,9 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
       setIsFailed(isProctorLocked(prog));
       setLiveWarningCount(prog.warningCount ?? 0);
       setLiveWarningHistory(prog.warningHistory ?? []);
+      if (typeof prog.mcqCorrect === "number" && prog.mcqCorrect > 0) {
+        setCorrectAnswers(prog.mcqCorrect);
+      }
     } else {
       setRetakeCount(0);
       setDbStatus("not_started");
@@ -292,6 +298,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
   const badgeQueueRef = useRef<GamificationBadge[]>([]);
   const badgeShowingRef = useRef(false);
   const answeredQuestionIdsRef = useRef(new Set<string>());
+  const ackFlowCompletedRef = useRef(false);
 
   const isLastSlide = slideIndex === totalSlides - 1;
   const gateIndex = useMemo(
@@ -420,6 +427,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     earnedBadgeIdsRef.current = new Set();
     badgeQueueRef.current = [];
     badgeShowingRef.current = false;
+    answeredQuestionIdsRef.current = new Set();
   }, []);
 
   useEffect(() => {
@@ -817,6 +825,9 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
   }, [user?.username, module.id, module.title, closeAfterCompletion]);
 
   const goToFeedbackStep = useCallback(() => {
+    ackFlowCompletedRef.current = true;
+    setMcqOpen(false);
+    setForceQuizOnlyRetake(false);
     setShowAcknowledgement(false);
     setScoreResult(null);
     setShowFinalQa(true);
@@ -882,8 +893,16 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     }
   };
 
-  const handleCheckpointAnswered = useCallback((wasCorrect: boolean) => {
+  const handleCheckpointAnswered = useCallback((
+    wasCorrect: boolean,
+    meta?: { mcqCorrect?: number; mcqTotal?: number },
+  ) => {
     const questionId = gateMcq.id;
+
+    if (typeof meta?.mcqCorrect === "number") {
+      setCorrectAnswers(meta.mcqCorrect);
+    }
+
     if (answeredQuestionIdsRef.current.has(questionId)) return;
     answeredQuestionIdsRef.current.add(questionId);
 
@@ -891,7 +910,9 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     unlockBadge("starter");
 
     if (wasCorrect) {
-      setCorrectAnswers((count) => count + 1);
+      if (typeof meta?.mcqCorrect !== "number") {
+        setCorrectAnswers((count) => count + 1);
+      }
       setCurrentStreak((streak) => {
         const nextStreak = streak + 1;
         setBestStreak((best) => Math.max(best, nextStreak));
@@ -922,7 +943,12 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     }
   };
 
-  const checkpointOpen = mcqOpen && !showAcknowledgement && !showFinalQa && !showScoreResult;
+  const checkpointOpen =
+    mcqOpen &&
+    !showAcknowledgement &&
+    !showFinalQa &&
+    !showScoreResult &&
+    !ackFlowCompletedRef.current;
   /** Block slide navigation during checkpoint, warning, or result modal */
   const slideNavLocked =
     checkpointOpen || !!activeWarningReason || showScoreResult;
@@ -999,7 +1025,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
   ]);
 
   useEffect(() => {
-    if (!sessionStarted || !ackPendingMode) return;
+    if (!sessionStarted || !ackPendingMode || ackFlowCompletedRef.current) return;
     setMcqOpen(false);
     setShowScoreResult(false);
     resetAcknowledgementForm();
@@ -1015,6 +1041,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     if (!sessionStarted || !quizOnlyMode || showAcknowledgement || showFinalQa || showScoreResult) {
       return;
     }
+    if (ackFlowCompletedRef.current) return;
     if (!moduleMcqs.length) return;
     setGateMcq(moduleMcqs[quizOnlyIndex] ?? moduleMcqs[0] ?? FALLBACK_MCQ);
     setMcqOpen(true);
@@ -1371,6 +1398,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
           retakeLoading={retakeLoading}
           onContinuePassed={() => {
             setShowScoreResult(false);
+            setMcqOpen(false);
             resetAcknowledgementForm();
             setShowAcknowledgement(true);
           }}

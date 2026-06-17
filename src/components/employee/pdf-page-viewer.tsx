@@ -164,7 +164,7 @@ export function PdfPageViewer({
   return (
     <div
       ref={containerRef}
-      className="relative flex h-full min-h-0 w-full items-center justify-center overflow-hidden bg-zinc-100"
+      className="relative flex h-full min-h-0 w-full items-center justify-center overflow-hidden bg-black"
     >
       {(docLoading || pageRendering) && (
         <div

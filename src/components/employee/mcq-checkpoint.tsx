@@ -56,7 +56,10 @@ interface MCQCheckpointProps {
   totalCheckpoints: number;
   assignedMcqCount?: number;
   variant?: "modal" | "panel";
-  onAnswered: (wasCorrect: boolean) => void;
+  onAnswered: (
+    wasCorrect: boolean,
+    meta?: { mcqCorrect?: number; mcqTotal?: number },
+  ) => void;
   onContinue: (wasCorrect: boolean) => void;
 }
 
@@ -107,6 +110,7 @@ export function MCQCheckpoint({
   const [answerExplanation, setAnswerExplanation] = useState<string | null>(null);
   const [validating, setValidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [optionsExpanded, setOptionsExpanded] = useState(true);
 
   useEffect(() => {
     if (!open) {
@@ -117,6 +121,7 @@ export function MCQCheckpoint({
       setAnswerExplanation(null);
       setValidating(false);
       setError(null);
+      setOptionsExpanded(true);
     }
   }, [open, question.id]);
 
@@ -145,6 +150,7 @@ export function MCQCheckpoint({
         "This checkpoint confirms you can continue when no generated question is available.",
       );
       setSubmitted(true);
+      setOptionsExpanded(false);
       onAnswered(true);
       return;
     }
@@ -173,7 +179,6 @@ export function MCQCheckpoint({
         return;
       }
       const correct = Boolean(data.correct);
-      const alreadyAnswered = Boolean(data.alreadyAnswered);
       const resolvedCorrectId = data.correctOptionId ?? null;
       const correctLabel =
         question.options.find((opt) => opt.id === resolvedCorrectId)?.label ?? "";
@@ -183,9 +188,13 @@ export function MCQCheckpoint({
         normalizeMcqExplanation(question.explanation, correctLabel),
       );
       setSubmitted(true);
-      if (!alreadyAnswered) {
-        onAnswered(correct);
-      }
+      setOptionsExpanded(false);
+      onAnswered(correct, {
+        mcqCorrect:
+          typeof data.mcqCorrect === "number" ? data.mcqCorrect : undefined,
+        mcqTotal:
+          typeof data.mcqTotal === "number" ? data.mcqTotal : undefined,
+      });
     } catch {
       setError("Could not reach the server. Try again.");
     } finally {
@@ -200,10 +209,13 @@ export function MCQCheckpoint({
     setWasCorrect(false);
     setCorrectOptionId(null);
     setAnswerExplanation(null);
+    setOptionsExpanded(true);
   };
 
   const panelMode = variant === "panel";
   const modalMode = !panelMode;
+  const compactOptions = modalMode && submitted;
+  const showOptionsList = !submitted || optionsExpanded;
 
   const blockCheckpointShortcuts = useCallback((e: KeyboardEvent) => {
     if (!shouldBlockCheckpointKey(e)) return;
@@ -295,17 +307,17 @@ export function MCQCheckpoint({
         )}
       >
         {modalMode ? (
-          <div className="mb-4 flex shrink-0 items-stretch gap-2">
+          <div className="mb-3 flex shrink-0 items-stretch gap-2">
             <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2">
               <ShieldCheck
                 className="h-4 w-4 shrink-0 text-[#2e3192]"
                 strokeWidth={1.75}
               />
               <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 sm:text-sm">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 sm:text-xs">
                   Secure checkpoint
                 </p>
-                <p className="text-sm leading-snug text-zinc-600">
+                <p className="text-xs leading-snug text-zinc-600 sm:text-sm">
                   Choose the response that best follows the training policy and required approval path.
                 </p>
               </div>
@@ -314,7 +326,7 @@ export function MCQCheckpoint({
               key={signalState}
               state={signalState}
               progress={checkpointProgress}
-              className="h-16 w-36 shrink-0"
+              className="h-14 w-32 shrink-0"
             />
           </div>
         ) : (
@@ -352,88 +364,125 @@ export function MCQCheckpoint({
           className={cn(
             "font-semibold tracking-tight text-zinc-900",
             modalMode
-              ? "shrink-0 text-base leading-relaxed sm:text-lg"
+              ? submitted
+                ? "shrink-0 text-sm leading-snug line-clamp-2 sm:text-[15px]"
+                : "shrink-0 text-sm leading-relaxed sm:text-base"
               : "text-lg sm:text-xl",
           )}
         >
           {displayPrompt}
         </h2>
         {!submitted && (
-          <p className={cn("mt-1.5 text-zinc-500", modalMode ? "shrink-0 text-sm" : "text-sm")}>
+          <p className={cn("mt-1 text-zinc-500", modalMode ? "shrink-0 text-xs sm:text-sm" : "text-sm")}>
             Answer this checkpoint to unlock the next step.
           </p>
         )}
 
-        <ul
-          className={cn(
-            modalMode
-              ? "mt-4 shrink-0 space-y-2.5"
-              : "mt-5 space-y-3",
-          )}
-        >
-          {question.options.map((opt) => {
-            const isSelected = selected === opt.id;
-            const showCorrect =
-              submitted && correctOptionId !== null && opt.id === correctOptionId;
-            const showWrong =
-              submitted &&
-              isSelected &&
-              correctOptionId !== null &&
-              opt.id !== correctOptionId;
+        <AnimatePresence initial={false}>
+          {showOptionsList && (
+            <motion.ul
+              key="checkpoint-options"
+              initial={submitted ? { opacity: 0, height: 0 } : false}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.22, ease: "easeOut" }}
+              className={cn(
+                modalMode
+                  ? submitted
+                    ? "mt-2 shrink-0 space-y-1 overflow-hidden"
+                    : "mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto"
+                  : "mt-5 space-y-2",
+              )}
+            >
+              {question.options.map((opt) => {
+                const isSelected = selected === opt.id;
+                const showCorrect =
+                  submitted && correctOptionId !== null && opt.id === correctOptionId;
+                const showWrong =
+                  submitted &&
+                  isSelected &&
+                  correctOptionId !== null &&
+                  opt.id !== correctOptionId;
 
-            return (
-              <motion.li
-                key={opt.id}
-                layout
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.18 }}
-              >
-                <button
-                  type="button"
-                  disabled={submitted || validating}
-                  onClick={() => {
-                    setSelected(opt.id);
-                  }}
-                  className={cn(
-                    "relative flex w-full cursor-pointer items-start gap-3 overflow-hidden rounded-md border text-left transition-all duration-150",
-                    "px-4 py-3.5 text-base",
-                    "hover:border-zinc-300 hover:bg-zinc-50 hover:shadow-sm",
-                    isSelected && !submitted
-                      ? "border-[#2e3192]/45 bg-[#2e3192]/5 text-zinc-900 shadow-sm"
-                      : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300",
-                    showCorrect && "border-emerald-300 bg-emerald-50 text-emerald-950",
-                    showWrong && "border-red-200 bg-red-50 text-red-950",
-                    submitted && "cursor-default",
-                  )}
-                >
-                  {isSelected && !submitted && (
-                    <motion.span
-                      layoutId="selected-answer-glow"
-                      className="absolute inset-y-0 left-0 w-1 bg-[#2e3192]"
-                      transition={{ type: "spring", stiffness: 420, damping: 32 }}
-                    />
-                  )}
-                  <span
-                    className={cn(
-                      "mt-0.5 flex shrink-0 items-center justify-center rounded-md border border-zinc-200 font-mono uppercase text-zinc-500",
-                      "h-6 w-6 text-xs",
-                    )}
+                return (
+                  <motion.li
+                    key={opt.id}
+                    layout
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.18 }}
                   >
-                    {opt.id}
-                  </span>
-                  <span className="flex-1">{opt.label}</span>
-                  {showCorrect && (
-                    <CheckCircle2 className="ml-auto h-4 w-4 shrink-0 text-emerald-600" />
-                  )}
-                  {showWrong && (
-                    <XCircle className="ml-auto h-4 w-4 shrink-0 text-red-500" />
-                  )}
-                </button>
-              </motion.li>
-            );
-          })}
-        </ul>
+                    <button
+                      type="button"
+                      disabled={submitted || validating}
+                      onClick={() => {
+                        setSelected(opt.id);
+                      }}
+                      className={cn(
+                        "relative flex w-full cursor-pointer items-start gap-3 overflow-hidden rounded-md border text-left transition-all duration-150",
+                        compactOptions
+                          ? "px-3 py-2 text-sm"
+                          : modalMode
+                            ? "px-3.5 py-3 text-sm sm:text-[15px]"
+                            : "px-4 py-3.5 text-base",
+                        "hover:border-zinc-300 hover:bg-zinc-50 hover:shadow-sm",
+                        isSelected && !submitted
+                          ? "border-[#2e3192]/45 bg-[#2e3192]/5 text-zinc-900 shadow-sm"
+                          : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300",
+                        showCorrect && "border-emerald-300 bg-emerald-50 text-emerald-950",
+                        showWrong && "border-red-200 bg-red-50 text-red-950",
+                        submitted && "cursor-default",
+                      )}
+                    >
+                      {isSelected && !submitted && (
+                        <motion.span
+                          layoutId="selected-answer-glow"
+                          className="absolute inset-y-0 left-0 w-1 bg-[#2e3192]"
+                          transition={{ type: "spring", stiffness: 420, damping: 32 }}
+                        />
+                      )}
+                      <span
+                        className={cn(
+                          "mt-0.5 flex shrink-0 items-center justify-center rounded-md border border-zinc-200 font-mono uppercase text-zinc-500",
+                          compactOptions ? "h-5 w-5 text-[10px]" : "h-6 w-6 text-xs",
+                        )}
+                      >
+                        {opt.id}
+                      </span>
+                      <span className="flex-1">{opt.label}</span>
+                      {showCorrect && (
+                        <CheckCircle2 className="ml-auto h-4 w-4 shrink-0 text-emerald-600" />
+                      )}
+                      {showWrong && (
+                        <XCircle className="ml-auto h-4 w-4 shrink-0 text-red-500" />
+                      )}
+                    </button>
+                  </motion.li>
+                );
+              })}
+            </motion.ul>
+          )}
+        </AnimatePresence>
+
+        {submitted && !optionsExpanded && (
+          <button
+            type="button"
+            onClick={() => setOptionsExpanded(true)}
+            className="mt-2 text-xs font-semibold text-[#2e3192] hover:underline"
+          >
+            Show answer choices
+          </button>
+        )}
+
+        {submitted && optionsExpanded && (
+          <button
+            type="button"
+            onClick={() => setOptionsExpanded(false)}
+            className="mt-2 text-xs font-semibold text-zinc-500 hover:text-zinc-700 hover:underline"
+          >
+            Hide answer choices
+          </button>
+        )}
 
         {error && (
           <p className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -448,7 +497,7 @@ export function MCQCheckpoint({
             animate={{ opacity: 1, y: 0 }}
             className={cn(
               "rounded-lg border",
-              modalMode ? "mt-4 shrink-0 p-4" : "mt-4 p-3 sm:p-4",
+              modalMode ? "mt-3 min-h-0 flex-1 p-3.5" : "mt-4 p-3 sm:p-4",
               wasCorrect
                 ? "border-emerald-200 bg-emerald-50 text-emerald-950"
                 : "border-red-200 bg-red-50 text-red-950",
@@ -467,17 +516,17 @@ export function MCQCheckpoint({
                   <XCircle className="h-4 w-4" />
                 )}
               </div>
-              <div>
-                <p className={cn("font-semibold", modalMode ? "text-sm" : "text-base")}>
+              <div className="min-w-0 flex-1">
+                <p className={cn("font-semibold", modalMode ? "text-xs sm:text-sm" : "text-base")}>
                   {wasCorrect ? `Correct. +${POINTS_PER_MCQ} points.` : "Incorrect. +0 points."}
                 </p>
-                <p className="mt-1.5 text-sm leading-relaxed">
+                <p className="mt-1.5 text-xs leading-relaxed sm:text-sm">
                   {correctOption
                     ? `Correct answer: ${correctOption.id.toUpperCase()}. ${correctOption.label}`
                     : "Your response has been recorded for this checkpoint."}
                 </p>
                 {answerExplanation && (
-                  <div className="mt-2 flex gap-1.5 text-sm leading-relaxed">
+                  <div className="mt-2 flex gap-1.5 text-xs leading-relaxed sm:text-sm">
                     <Info className="mt-0.5 h-4 w-4 shrink-0" />
                     <div className="min-w-0 flex-1">
                       <p className="font-semibold">Why this is correct</p>
@@ -552,7 +601,7 @@ export function MCQCheckpoint({
             }
           }}
         >
-          <div className="flex h-[min(92dvh,900px)] w-full max-w-4xl min-h-0">
+          <div className="flex h-[min(94dvh,940px)] w-full max-w-4xl min-h-0">
             {card}
           </div>
         </motion.div>

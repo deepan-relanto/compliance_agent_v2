@@ -90,11 +90,18 @@ export interface InvitationSendResult {
   message: string;
 }
 
+export interface SendModuleInvitationOptions {
+  /** When true, resend even if the learner was already notified for this module. */
+  forceResend?: boolean;
+}
+
 /** Email all learners in assigned batches when a module is ready. */
 export async function sendModuleInvitationEmails(
   sql: Sql,
   moduleId: string,
+  options?: SendModuleInvitationOptions,
 ): Promise<InvitationSendResult> {
+  const forceResend = options?.forceResend === true;
   const cfg = getGraphMailConfig();
   if (!cfg.isConfigured) {
     return {
@@ -149,7 +156,10 @@ export async function sendModuleInvitationEmails(
     const displayName =
       (row.display_name as string | null)?.trim() || firstNameFromEmail(email);
 
-    if (await wasNotificationSent(sql, moduleId, email, "invited")) {
+    if (
+      !forceResend &&
+      (await wasNotificationSent(sql, moduleId, email, "invited"))
+    ) {
       skipped++;
       continue;
     }

@@ -73,9 +73,21 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Send invitations to newly added users in these batches (skips already notified)
-      void sendModuleInvitationEmails(sql, String(reuseModuleId)).catch((err) => {
+      // Re-push: always resend invites to learners in the selected batches
+      const inviteResult = await sendModuleInvitationEmails(
+        sql,
+        String(reuseModuleId),
+        { forceResend: true },
+      ).catch((err) => {
         console.error("[assessments reuse update invite emails]", err);
+        return {
+          ok: false,
+          sent: 0,
+          skipped: 0,
+          failed: 0,
+          errors: [err instanceof Error ? err.message : "Invite send failed"],
+          message: "Batch assignments saved, but invitation emails could not be sent.",
+        };
       });
 
       return NextResponse.json({
@@ -85,6 +97,7 @@ export async function POST(req: NextRequest) {
         queued: false,
         reused: true,
         generationStatus: "completed",
+        invites: inviteResult,
       });
     }
 
