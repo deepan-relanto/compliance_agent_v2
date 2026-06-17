@@ -15,9 +15,18 @@ import type { ModuleStatus, WarningHistoryEntry } from "@/lib/types";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const BLUR_FOCUS_LOSS_MS = 1500;
+const FULLSCREEN_EXIT_DEDUPE_MS = 400;
+
+const FULLSCREEN_EVENTS = [
+  "fullscreenchange",
+  "webkitfullscreenchange",
+] as const;
 
 interface UseProctorMonitorOptions {
+  /** Broad gate for tab/focus/blur monitoring */
   enabled: boolean;
+  /** Narrower gate for ESC + fullscreen exit — stays true during slides & checkpoints */
+  sessionActive: boolean;
   username: string | undefined;
   moduleId: string;
   moduleTitle: string;
@@ -31,6 +40,7 @@ interface UseProctorMonitorOptions {
 
 export function useProctorMonitor({
   enabled,
+  sessionActive,
   username,
   moduleId,
   moduleTitle,
@@ -49,10 +59,15 @@ export function useProctorMonitor({
   const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isExitingRef = useRef(false);
   const enabledRef = useRef(enabled);
+  const sessionActiveRef = useRef(sessionActive);
   const usernameRef = useRef(username);
+  const activeReasonRef = useRef<ProctorViolationReason | null>(null);
+  const lastFullscreenExitWarnAtRef = useRef(0);
 
   enabledRef.current = enabled;
+  sessionActiveRef.current = sessionActive;
   usernameRef.current = username;
+  activeReasonRef.current = activeReason;
 
   const clearBlurTimeout = useCallback(() => {
     if (blurTimeoutRef.current) {
@@ -61,7 +76,7 @@ export function useProctorMonitor({
     }
   }, []);
 
-  const applyProgress = useCallback(
+  const syncWarningState = useCallback(
     (updated: ReturnType<typeof addWarning>) => {
       if (typeof updated.warningCount !== "number") return null;
 
@@ -69,9 +84,9 @@ export function useProctorMonitor({
       setWarningHistory(updated.warningHistory ?? []);
       onStatusChange?.(updated.status);
 
-      if (username) {
+      if (usernameRef.current) {
         void syncProctorWarning({
-          userEmail: username,
+          userEmail: usernameRef.current,
           moduleId,
           warningCount: updated.warningCount,
           warningHistory: updated.warningHistory ?? [],
@@ -82,83 +97,114 @@ export function useProctorMonitor({
 
       if (isProctorLocked(updated)) {
         onLockout();
-        setActiveReason(null);
-        return null;
       }
 
       return updated;
     },
-    [moduleId, onLockout, onStatusChange, username],
+    [moduleId, onLockout, onStatusChange],
   );
 
+  const ensureProgress = useCallback(() => {
+    const user = usernameRef.current;
+    if (!user) return null;
+
+    let progress = getProgress(user, moduleId);
+    if (!progress) {
+      markInProgress(user, moduleId, moduleTitle, batchId, totalSlides);
+      progress = getProgress(user, moduleId);
+    }
+    return progress;
+  }, [batchId, moduleId, moduleTitle, totalSlides]);
+
   const recordViolation = useCallback(
-    (reason: ProctorViolationReason): boolean => {
+    (
+      reason: ProctorViolationReason,
+      options?: { allowBurst?: boolean },
+    ): boolean => {
       if (!enabledRef.current || isExitingRef.current || !usernameRef.current) {
         return false;
       }
 
       const user = usernameRef.current;
-      let progress = getProgress(user, moduleId);
+      const progress = ensureProgress();
+      if (!progress) return false;
 
-      if (!progress) {
-        markInProgress(user, moduleId, moduleTitle, batchId, totalSlides);
-        progress = getProgress(user, moduleId);
-      }
-
-      if (progress?.status === "completed") {
-        return false;
-      }
+      if (progress.status === "completed") return false;
 
       if (
-        progress &&
-        (progress.status === "permanently_failed" ||
-          (isProctorLocked(progress) && (progress.warningCount ?? 0) >= 3))
+        progress.status === "permanently_failed" ||
+        (isProctorLocked(progress) && (progress.warningCount ?? 0) >= 3)
       ) {
         onLockout();
         return false;
       }
 
-      const previousCount = progress?.warningCount ?? 0;
-      const updated = addWarning(user, moduleId, reason);
+      const previousCount = progress.warningCount ?? 0;
+      const updated = addWarning(user, moduleId, reason, options);
       if (typeof updated.warningCount !== "number") return false;
 
-      const applied = applyProgress(updated);
-      if (!applied) return false;
+      syncWarningState(updated);
 
-      if (applied.warningCount > previousCount) {
+      if (updated.warningCount > previousCount) {
         setActiveReason(reason);
         return true;
       }
 
       return false;
     },
-    [applyProgress, batchId, moduleId, moduleTitle, onLockout, totalSlides],
+    [ensureProgress, moduleId, onLockout, syncWarningState],
   );
 
-  const activeReasonRef = useRef<ProctorViolationReason | null>(null);
-  activeReasonRef.current = activeReason;
-
-  const escTriggeredExitRef = useRef(false);
-
-  const handleEscapeViolation = useCallback(() => {
-    if (!enabledRef.current || isExitingRef.current || !usernameRef.current || blockEscape) {
+  const warnFullscreenExit = useCallback((): boolean => {
+    if (!sessionActiveRef.current || isExitingRef.current || !usernameRef.current) {
       return false;
     }
+    if (blockEscape) return false;
     if (activeReasonRef.current) return false;
+
+    const now = Date.now();
+    if (now - lastFullscreenExitWarnAtRef.current < FULLSCREEN_EXIT_DEDUPE_MS) {
+      return false;
+    }
 
     clearBlurTimeout();
 
-    const recorded = recordViolation("Exited Fullscreen");
-    if (recorded) {
-      escTriggeredExitRef.current = true;
+    const user = usernameRef.current;
+    const progress = ensureProgress();
+    if (!progress) return false;
+    if (progress.status === "completed") return false;
+    if (
+      progress.status === "permanently_failed" ||
+      (isProctorLocked(progress) && (progress.warningCount ?? 0) >= 3)
+    ) {
+      onLockout();
+      return false;
     }
+
+    const previousCount = progress.warningCount ?? 0;
+    const updated = addWarning(user, moduleId, "Exited Fullscreen", { allowBurst: true });
+    if (typeof updated.warningCount !== "number") return false;
+
+    syncWarningState(updated);
+
+    if (updated.warningCount > previousCount) {
+      lastFullscreenExitWarnAtRef.current = now;
+      setActiveReason("Exited Fullscreen");
+      return true;
+    }
+
+    return false;
+  }, [blockEscape, clearBlurTimeout, ensureProgress, moduleId, onLockout, syncWarningState]);
+
+  const handleEscapeViolation = useCallback((): boolean => {
+    const recorded = warnFullscreenExit();
 
     if (document.fullscreenElement) {
       void document.exitFullscreen().catch(() => undefined);
     }
 
     return recorded;
-  }, [blockEscape, clearBlurTimeout, recordViolation]);
+  }, [warnFullscreenExit]);
 
   const handleWarningContinue = useCallback(async () => {
     ignoreNextFullscreenEntryRef.current = true;
@@ -196,47 +242,62 @@ export function useProctorMonitor({
     [onLockout],
   );
 
+  const isFullscreenNow = useCallback(() => {
+    return Boolean(
+      document.fullscreenElement ||
+        (document as Document & { webkitFullscreenElement?: Element })
+          .webkitFullscreenElement,
+    );
+  }, []);
+
   useEffect(() => {
     if (reviewOnlyMode) return;
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      if (!sessionActiveRef.current) return;
+
       e.preventDefault();
       e.stopImmediatePropagation();
       handleEscapeViolation();
     };
 
+    window.addEventListener("keydown", onKeyDown, true);
     document.addEventListener("keydown", onKeyDown, true);
-    return () => document.removeEventListener("keydown", onKeyDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      document.removeEventListener("keydown", onKeyDown, true);
+    };
   }, [handleEscapeViolation, reviewOnlyMode]);
 
   useEffect(() => {
     if (reviewOnlyMode) return;
 
     const onFullscreenChange = () => {
-      if (!enabledRef.current || isExitingRef.current) return;
+      if (!sessionActiveRef.current || isExitingRef.current) return;
 
-      if (document.fullscreenElement !== null) {
-        // Fullscreen was ENTERED — ignore if we requested it (e.g. after Continue)
+      if (isFullscreenNow()) {
         if (ignoreNextFullscreenEntryRef.current) {
           ignoreNextFullscreenEntryRef.current = false;
         }
         return;
       }
 
-      // Fullscreen was EXITED
-      if (escTriggeredExitRef.current) {
-        // The keydown handler already recorded this violation — skip to avoid double-count
-        escTriggeredExitRef.current = false;
-        return;
-      }
-
-      recordViolation("Exited Fullscreen");
+      warnFullscreenExit();
     };
 
-    document.addEventListener("fullscreenchange", onFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
-  }, [recordViolation, reviewOnlyMode]);
+    for (const eventName of FULLSCREEN_EVENTS) {
+      document.addEventListener(eventName, onFullscreenChange);
+      window.addEventListener(eventName, onFullscreenChange);
+    }
+
+    return () => {
+      for (const eventName of FULLSCREEN_EVENTS) {
+        document.removeEventListener(eventName, onFullscreenChange);
+        window.removeEventListener(eventName, onFullscreenChange);
+      }
+    };
+  }, [isFullscreenNow, reviewOnlyMode, warnFullscreenExit]);
 
   useEffect(() => {
     if (reviewOnlyMode) return;

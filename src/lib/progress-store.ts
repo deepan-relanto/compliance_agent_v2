@@ -300,13 +300,13 @@ export function addWarning(
   username: string,
   moduleId: string,
   reason: string,
+  options?: { allowBurst?: boolean },
 ): AssessmentProgress {
   const all = readAll();
   const k = key(username, moduleId);
   const existing = all[k];
 
   if (!existing) {
-    // If warning triggered before markInProgress for some reason, skeleton
     return {} as AssessmentProgress;
   }
 
@@ -321,7 +321,7 @@ export function addWarning(
   if (existing.warningHistory && existing.warningHistory.length > 0) {
     const now = Date.now();
     const lastAny = existing.warningHistory[existing.warningHistory.length - 1];
-    if (lastAny && now - lastAny.timestamp < ANY_REASON_DEBOUNCE_MS) {
+    if (!options?.allowBurst && lastAny && now - lastAny.timestamp < ANY_REASON_DEBOUNCE_MS) {
       return existing;
     }
 

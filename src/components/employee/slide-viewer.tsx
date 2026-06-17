@@ -215,6 +215,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
       !showScoreResult &&
       !showExitModal &&
       !isFailed,
+    sessionActive: sessionStarted && !reviewOnlyMode && !isFailed,
     username: user?.username,
     moduleId: module.id,
     moduleTitle: module.title,
@@ -866,12 +867,6 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
       if (!sessionStarted) return;
       if (quizOnlyMode) return;
       if (checkpointOpen) {
-        if (e.key === "Escape") {
-          e.preventDefault();
-          e.stopPropagation();
-          proctorHook.handleEscapeViolation();
-          return;
-        }
         if (
           e.key === "Tab" ||
           e.key.startsWith("Arrow") ||
@@ -921,7 +916,6 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     tryAdvance,
     quizOnlyMode,
     reviewOnlyMode,
-    proctorHook.handleEscapeViolation,
   ]);
 
   useEffect(() => {
