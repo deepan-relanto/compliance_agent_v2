@@ -35,6 +35,59 @@ export async function POST(req: NextRequest) {
     }
 
     const sql = getSql();
+
+    // Reuse flow: update batch assignments for the existing module directly (no copying)
+    if (reuseModuleId) {
+      const sourceRows = await sql`
+        SELECT id, pdf_url FROM training_modules WHERE id = ${String(reuseModuleId)} LIMIT 1
+      `;
+      if (sourceRows.length === 0) {
+        return NextResponse.json(
+          { ok: false, message: "Source module for reuse was not found." },
+          { status: 400 },
+        );
+      }
+
+      // Delete existing batch links for this module
+      await sql`
+        DELETE FROM module_batches WHERE module_id = ${String(reuseModuleId)}
+      `;
+
+      // Insert new batch links
+      if (batchIds.includes("all")) {
+        const rows = await sql`SELECT id FROM batches`;
+        for (const row of rows) {
+          await sql`
+            INSERT INTO module_batches (module_id, batch_id)
+            VALUES (${String(reuseModuleId)}, ${row.id})
+            ON CONFLICT DO NOTHING
+          `;
+        }
+      } else {
+        for (const batchId of batchIds as string[]) {
+          await sql`
+            INSERT INTO module_batches (module_id, batch_id)
+            VALUES (${String(reuseModuleId)}, ${batchId})
+            ON CONFLICT DO NOTHING
+          `;
+        }
+      }
+
+      // Send invitations to newly added users in these batches (skips already notified)
+      void sendModuleInvitationEmails(sql, String(reuseModuleId)).catch((err) => {
+        console.error("[assessments reuse update invite emails]", err);
+      });
+
+      return NextResponse.json({
+        ok: true,
+        id: reuseModuleId,
+        pdfUrl: sourceRows[0].pdf_url,
+        queued: false,
+        reused: true,
+        generationStatus: "completed",
+      });
+    }
+
     let contentHash: string;
     const resolvedPdfUrl = pdfUrl as string;
     const resolvedSlideCount = slideCount ?? 1;
@@ -45,9 +98,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           ok: false,
-          message: reuseModuleId
-            ? "The source PDF for this reusable content is missing. Re-upload the PDF before publishing it to more batches."
-            : "PDF file not found on server. Upload again.",
+          message: "PDF file not found on server. Upload again.",
         },
         { status: 400 },
       );
@@ -104,58 +155,6 @@ export async function POST(req: NextRequest) {
       INSERT INTO upload_files (original_name, pdf_url, page_count, uploaded_by, module_id, content_hash)
       VALUES (${title}, ${resolvedPdfUrl}, ${resolvedSlideCount}, ${uploadedBy ?? null}, ${id}, ${contentHash})
     `;
-
-    // Reuse flow: update batch assignments for the existing module directly (no copying)
-    if (reuseModuleId) {
-      const sourceRows = await sql`
-        SELECT id, pdf_url FROM training_modules WHERE id = ${String(reuseModuleId)} LIMIT 1
-      `;
-      if (sourceRows.length === 0) {
-        return NextResponse.json(
-          { ok: false, message: "Source module for reuse was not found." },
-          { status: 400 },
-        );
-      }
-
-      // Delete existing batch links for this module
-      await sql`
-        DELETE FROM module_batches WHERE module_id = ${String(reuseModuleId)}
-      `;
-
-      // Insert new batch links
-      if (batchIds.includes("all")) {
-        const rows = await sql`SELECT id FROM batches`;
-        for (const row of rows) {
-          await sql`
-            INSERT INTO module_batches (module_id, batch_id)
-            VALUES (${String(reuseModuleId)}, ${row.id})
-            ON CONFLICT DO NOTHING
-          `;
-        }
-      } else {
-        for (const batchId of batchIds as string[]) {
-          await sql`
-            INSERT INTO module_batches (module_id, batch_id)
-            VALUES (${String(reuseModuleId)}, ${batchId})
-            ON CONFLICT DO NOTHING
-          `;
-        }
-      }
-
-      // Send invitations to newly added users in these batches (skips already notified)
-      void sendModuleInvitationEmails(sql, String(reuseModuleId)).catch((err) => {
-        console.error("[assessments reuse update invite emails]", err);
-      });
-
-      return NextResponse.json({
-        ok: true,
-        id: reuseModuleId,
-        pdfUrl: sourceRows[0].pdf_url,
-        queued: false,
-        reused: true,
-        generationStatus: "completed",
-      });
-    }
 
     const mode = String(questionMode ?? "ai").toLowerCase();
     if (mode !== "ai") {

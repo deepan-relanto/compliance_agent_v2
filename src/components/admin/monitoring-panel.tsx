@@ -292,7 +292,7 @@ export function MonitoringPanel() {
                       >
                         <td className="px-6 py-4 align-middle">
                           <p className="font-semibold text-zinc-800 text-xs">{record.username}</p>
-                          <p className="font-mono text-[9px] text-zinc-400">Batch: {record.batchId}</p>
+                          <p className="font-mono text-[9px] text-zinc-400">Batch: {record.batchLabel || record.batchId}</p>
                         </td>
                         <td className="px-6 py-4 align-middle">
                           <p className="font-medium text-zinc-800 text-xs">{record.moduleTitle}</p>

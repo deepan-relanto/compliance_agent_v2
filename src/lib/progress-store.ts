@@ -16,6 +16,7 @@ export interface AssessmentProgress {
   moduleId: string;
   moduleTitle: string;
   batchId: string;
+  batchLabel?: string;
   currentSlide: number;   // 0-based index of last viewed slide
   totalSlides: number;
   status: ModuleStatus;

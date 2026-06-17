@@ -100,15 +100,16 @@ export async function listMonitoringViolationsPaged(
     sql`SELECT COUNT(*)::int AS total FROM assessment_progress`,
     sql`
       SELECT
-        user_email, module_id, module_title, batch_id,
-        current_slide, total_slides, status,
-        warning_count, warning_history, archived_warnings,
-        retake_count, failed_at, failed_reason,
-        last_failure_at, last_failure_reason,
-        acknowledgement, mcq_correct, mcq_total, score_percent,
-        last_accessed_at, completed_at
-      FROM assessment_progress
-      ORDER BY warning_count DESC, last_accessed_at DESC
+        ap.user_email, ap.module_id, ap.module_title, ap.batch_id, b.label as batch_label,
+        ap.current_slide, ap.total_slides, ap.status,
+        ap.warning_count, ap.warning_history, ap.archived_warnings,
+        ap.retake_count, ap.failed_at, ap.failed_reason,
+        ap.last_failure_at, ap.last_failure_reason,
+        ap.acknowledgement, ap.mcq_correct, ap.mcq_total, ap.score_percent,
+        ap.last_accessed_at, ap.completed_at
+      FROM assessment_progress ap
+      LEFT JOIN batches b ON b.id = ap.batch_id
+      ORDER BY ap.warning_count DESC, ap.last_accessed_at DESC
       LIMIT ${pageSize} OFFSET ${offset}
     `,
   ]);
@@ -118,6 +119,7 @@ export async function listMonitoringViolationsPaged(
     moduleId: r.module_id as string,
     moduleTitle: r.module_title as string,
     batchId: r.batch_id as string,
+    batchLabel: r.batch_label as string | undefined,
     currentSlide: Number(r.current_slide ?? 0),
     totalSlides: Number(r.total_slides ?? 1),
     status: r.status as AssessmentProgress["status"],

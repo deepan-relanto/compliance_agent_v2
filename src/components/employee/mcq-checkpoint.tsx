@@ -290,12 +290,12 @@ export function MCQCheckpoint({
         className={cn(
           "min-h-0 flex-1 p-4 sm:p-5",
           modalMode
-            ? "flex flex-col overflow-hidden"
+            ? "flex flex-col overflow-y-auto overscroll-contain"
             : "overflow-y-auto overscroll-contain",
         )}
       >
         {modalMode ? (
-          <div className="mb-3 flex shrink-0 items-stretch gap-2">
+          <div className="mb-4 flex shrink-0 items-stretch gap-2">
             <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2">
               <ShieldCheck
                 className="h-4 w-4 shrink-0 text-[#2e3192]"
@@ -352,16 +352,14 @@ export function MCQCheckpoint({
           className={cn(
             "font-semibold tracking-tight text-zinc-900",
             modalMode
-              ? submitted
-                ? "shrink-0 text-sm leading-snug line-clamp-2 sm:text-base"
-                : "shrink-0 text-base leading-snug sm:text-lg"
+              ? "shrink-0 text-base leading-relaxed sm:text-lg"
               : "text-lg sm:text-xl",
           )}
         >
           {displayPrompt}
         </h2>
         {!submitted && (
-          <p className={cn("mt-1 text-zinc-500", modalMode ? "shrink-0 text-xs sm:text-sm" : "text-sm")}>
+          <p className={cn("mt-1.5 text-zinc-500", modalMode ? "shrink-0 text-sm" : "text-sm")}>
             Answer this checkpoint to unlock the next step.
           </p>
         )}
@@ -369,10 +367,8 @@ export function MCQCheckpoint({
         <ul
           className={cn(
             modalMode
-              ? submitted
-                ? "mt-2 shrink-0 space-y-1"
-                : "mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto"
-              : "mt-5 space-y-2",
+              ? "mt-4 shrink-0 space-y-2.5"
+              : "mt-5 space-y-3",
           )}
         >
           {question.options.map((opt) => {
@@ -384,7 +380,6 @@ export function MCQCheckpoint({
               isSelected &&
               correctOptionId !== null &&
               opt.id !== correctOptionId;
-            const compactOptions = modalMode && submitted;
 
             return (
               <motion.li
@@ -399,17 +394,10 @@ export function MCQCheckpoint({
                   disabled={submitted || validating}
                   onClick={() => {
                     setSelected(opt.id);
-                    if (!submitted && !validating) {
-                      void handleSubmit(opt.id);
-                    }
                   }}
                   className={cn(
                     "relative flex w-full cursor-pointer items-start gap-3 overflow-hidden rounded-md border text-left transition-all duration-150",
-                    compactOptions
-                      ? "px-3 py-2 text-sm"
-                      : modalMode
-                        ? "px-4 py-3.5 text-base"
-                        : "px-4 py-3.5 text-base",
+                    "px-4 py-3.5 text-base",
                     "hover:border-zinc-300 hover:bg-zinc-50 hover:shadow-sm",
                     isSelected && !submitted
                       ? "border-[#2e3192]/45 bg-[#2e3192]/5 text-zinc-900 shadow-sm"
@@ -429,7 +417,7 @@ export function MCQCheckpoint({
                   <span
                     className={cn(
                       "mt-0.5 flex shrink-0 items-center justify-center rounded-md border border-zinc-200 font-mono uppercase text-zinc-500",
-                      compactOptions ? "h-5 w-5 text-[10px]" : "h-6 w-6 text-xs",
+                      "h-6 w-6 text-xs",
                     )}
                   >
                     {opt.id}
@@ -455,11 +443,12 @@ export function MCQCheckpoint({
 
         {submitted && (
           <motion.div
+            layout
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             className={cn(
               "rounded-lg border",
-              modalMode ? "mt-3 shrink-0 p-3.5" : "mt-4 p-3 sm:p-4",
+              modalMode ? "mt-4 shrink-0 p-4" : "mt-4 p-3 sm:p-4",
               wasCorrect
                 ? "border-emerald-200 bg-emerald-50 text-emerald-950"
                 : "border-red-200 bg-red-50 text-red-950",
@@ -515,9 +504,18 @@ export function MCQCheckpoint({
               Checking answer...
             </Button>
           ) : (
-            <div className="py-1.5 text-center text-sm font-medium text-zinc-500">
-              Select an option above to answer
-            </div>
+            <Button 
+              variant="primary" 
+              className="w-full" 
+              disabled={!selected}
+              onClick={() => {
+                if (selected && !submitted && !validating) {
+                  void handleSubmit(selected);
+                }
+              }}
+            >
+              Submit Answer
+            </Button>
           )
         ) : (
           <Button variant="primary" className="w-full" onClick={handleContinue}>
@@ -554,7 +552,7 @@ export function MCQCheckpoint({
             }
           }}
         >
-          <div className="flex h-[min(88dvh,840px)] w-full max-w-3xl min-h-0">
+          <div className="flex h-[min(92dvh,900px)] w-full max-w-4xl min-h-0">
             {card}
           </div>
         </motion.div>

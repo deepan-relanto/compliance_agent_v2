@@ -90,6 +90,7 @@ export function ReuseContentPanel() {
         body: JSON.stringify({
           id: selected.id,
           title: selected.title,
+          pdfUrl: selected.pdfUrl,
           batchIds: selectedBatchIds,
           uploadedBy: user?.username ?? "admin@relnto.com",
           reuseModuleId: selected.id,
