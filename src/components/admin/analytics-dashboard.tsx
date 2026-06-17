@@ -136,33 +136,32 @@ function MetricBar({
   );
 }
 
-function TimeSeriesChart({ points }: { points: TimeSeriesPoint[] }) {
-  const chartHeightPx = 140;
+function formatChartDate(dateKey: string, style: "full" | "short" = "full") {
+  const d = new Date(`${dateKey}T12:00:00`);
+  if (style === "short") {
+    return d.toLocaleDateString(undefined, { month: "numeric", day: "numeric" });
+  }
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
 
+function TimeSeriesChart({ points }: { points: TimeSeriesPoint[] }) {
   const totalPassed = points.reduce((a, p) => a + p.completions, 0);
   const totalFailed = points.reduce((a, p) => a + p.failures, 0);
   const isEmpty = totalPassed === 0 && totalFailed === 0;
 
-  const maxVal = Math.max(
-    1,
-    ...points.map((p) => p.completions + p.failures),
+  const activeDays = points
+    .map((p) => ({
+      ...p,
+      total: p.completions + p.failures,
+    }))
+    .filter((p) => p.total > 0);
+
+  const peakDay = activeDays.reduce(
+    (max, p) => (p.total > max.total ? p : max),
+    activeDays[0] ?? { date: "", total: 0, completions: 0, failures: 0 },
   );
 
-  const peakDay = points.reduce(
-    (max, p) =>
-      p.completions + p.failures > max.val
-        ? { date: p.date, val: p.completions + p.failures, passed: p.completions, failed: p.failures }
-        : max,
-    { date: "", val: 0, passed: 0, failed: 0 },
-  );
-
-  const formatDate = (dateKey: string) =>
-    new Date(`${dateKey}T12:00:00`).toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-    });
-
-  const yTicks = [maxVal, Math.ceil(maxVal / 2), 0];
+  const maxDayTotal = Math.max(1, ...activeDays.map((p) => p.total));
 
   if (isEmpty) {
     return (
@@ -177,153 +176,114 @@ function TimeSeriesChart({ points }: { points: TimeSeriesPoint[] }) {
   }
 
   return (
-    <div className="flex h-full flex-col justify-between gap-4">
-      <div>
-        <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-zinc-500 select-none">
-          <span className="inline-flex items-center gap-1.5 font-medium text-zinc-600">
-            <span className="h-2.5 w-2.5 rounded-sm bg-emerald-500" />
-            Passed ({totalPassed})
-          </span>
-          <span className="inline-flex items-center gap-1.5 font-medium text-zinc-600">
-            <span className="h-2.5 w-2.5 rounded-sm bg-red-400" />
-            Failed ({totalFailed})
-          </span>
-          <span className="ml-auto text-zinc-400">Last 30 days</span>
+    <div className="flex h-full flex-col gap-4">
+      <div className="grid grid-cols-3 gap-3">
+        <div className="rounded-lg border border-emerald-100 bg-emerald-50/50 px-3 py-2.5">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700/70">
+            Passed
+          </p>
+          <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-700">{totalPassed}</p>
         </div>
-
-        <div className="relative flex">
-          <div className="flex w-7 shrink-0 flex-col justify-between pb-7 pt-2 text-[10px] font-mono tabular-nums text-zinc-400 select-none">
-            {yTicks.map((tick, i) => (
-              <span key={i} className="pr-1.5 text-right leading-none">
-                {tick}
-              </span>
-            ))}
-          </div>
-
-          <div className="relative min-w-0 flex-1">
-            <div className="pointer-events-none absolute inset-0 flex flex-col justify-between pb-7 pt-2">
-              <div className="w-full border-b border-zinc-100" />
-              <div className="w-full border-b border-dashed border-zinc-100" />
-              <div className="w-full border-b border-zinc-200" />
-            </div>
-
-            <div
-              className="relative px-0.5 pt-2"
-              style={{ height: chartHeightPx + 28 }}
-            >
-              <div
-                className="absolute inset-x-0.5 top-2 flex items-end gap-px sm:gap-1"
-                style={{ height: chartHeightPx }}
-              >
-                {points.map((p) => {
-                  const total = p.completions + p.failures;
-                  const barHeight =
-                    total > 0
-                      ? Math.max(Math.round((total / maxVal) * chartHeightPx), 10)
-                      : 0;
-                  const dateLabel = formatDate(p.date);
-
-                  return (
-                    <div
-                      key={p.date}
-                      className={cn(
-                        "relative flex h-full flex-1 flex-col items-center justify-end",
-                        total > 0 && "group",
-                      )}
-                    >
-                      {total > 0 && (
-                        <div className="pointer-events-none absolute bottom-full z-20 mb-2 hidden flex-col items-center group-hover:flex">
-                          <div className="whitespace-nowrap rounded-md border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-[10px] leading-tight text-white shadow-lg">
-                            <span className="font-semibold text-zinc-100">{dateLabel}</span>
-                            <span className="text-zinc-500"> · </span>
-                            <span className="font-semibold text-emerald-400">
-                              {p.completions} passed
-                            </span>
-                            <span className="text-zinc-500">, </span>
-                            <span className="font-semibold text-red-400">
-                              {p.failures} failed
-                            </span>
-                          </div>
-                          <div className="-mt-1 h-1.5 w-1.5 rotate-45 bg-zinc-900" />
-                        </div>
-                      )}
-
-                      {total > 0 ? (
-                        <div
-                          className="z-10 w-full max-w-[18px] overflow-hidden rounded-t-sm shadow-sm transition-transform group-hover:scale-x-110"
-                          style={{ height: barHeight }}
-                        >
-                          <div className="flex h-full w-full flex-col-reverse">
-                            {p.completions > 0 && (
-                              <div
-                                className="w-full bg-emerald-500"
-                                style={{ flex: p.completions }}
-                              />
-                            )}
-                            {p.failures > 0 && (
-                              <div
-                                className="w-full bg-red-400"
-                                style={{ flex: p.failures }}
-                              />
-                            )}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="mb-0.5 h-1 w-px rounded-full bg-zinc-200" />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="absolute inset-x-0.5 bottom-0 flex gap-px sm:gap-1 select-none">
-                {points.map((p, i) => {
-                  const showLabel =
-                    i === 0 || i === points.length - 1 || (i + 1) % 7 === 0;
-                  return (
-                    <div key={`${p.date}-label`} className="flex-1 text-center">
-                      {showLabel ? (
-                        <span className="text-[9px] font-medium tabular-nums text-zinc-400">
-                          {formatDate(p.date)}
-                        </span>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
+        <div className="rounded-lg border border-red-100 bg-red-50/40 px-3 py-2.5">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-red-600/70">
+            Failed
+          </p>
+          <p className="mt-1 text-2xl font-bold tabular-nums text-red-600">{totalFailed}</p>
+        </div>
+        <div className="rounded-lg border border-[#2e3192]/15 bg-[#2e3192]/5 px-3 py-2.5">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#2e3192]/70">
+            Active days
+          </p>
+          <p className="mt-1 text-2xl font-bold tabular-nums text-[#2e3192]">
+            {activeDays.length}
+          </p>
         </div>
       </div>
 
-      <div className="mt-1 grid shrink-0 grid-cols-2 gap-3 border-t border-zinc-100 pt-4 select-none">
-        <div className="rounded-lg border border-zinc-200/60 bg-zinc-50/50 px-4 py-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-            Total outcomes
-          </p>
-          <p className="mt-1.5 text-sm font-semibold text-zinc-800">
-            <span className="tabular-nums text-lg text-emerald-700">{totalPassed}</span>
-            <span className="ml-1 text-xs font-medium text-emerald-600">passed</span>
-            <span className="mx-2 text-zinc-300">·</span>
-            <span className="tabular-nums text-lg text-red-600">{totalFailed}</span>
-            <span className="ml-1 text-xs font-medium text-red-500">failed</span>
-          </p>
-        </div>
-
-        <div className="rounded-lg border border-zinc-200/60 bg-zinc-50/50 px-4 py-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-            Peak day
-          </p>
-          <p className="mt-1.5 text-sm font-semibold text-zinc-800">
-            <span className="tabular-nums text-lg text-[#2e3192]">{peakDay.val}</span>
-            <span className="ml-1.5 text-xs font-medium text-zinc-500">
-              {peakDay.val > 0
-                ? `${formatDate(peakDay.date)} (${peakDay.passed} passed, ${peakDay.failed} failed)`
-                : "no activity"}
+      <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-zinc-200/70 bg-white pr-1">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-zinc-100 bg-zinc-50/95 px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+          <span>Date</span>
+          <span className="flex items-center gap-3">
+            <span className="inline-flex items-center gap-1 text-zinc-500">
+              <span className="h-2 w-2 rounded-sm bg-emerald-500" />
+              Passed
             </span>
-          </p>
+            <span className="inline-flex items-center gap-1 text-zinc-500">
+              <span className="h-2 w-2 rounded-sm bg-red-400" />
+              Failed
+            </span>
+          </span>
+        </div>
+
+        <div className="divide-y divide-zinc-50">
+          {activeDays
+            .slice()
+            .reverse()
+            .map((day) => {
+              const passedPct = Math.round((day.completions / maxDayTotal) * 100);
+              const failedPct = Math.round((day.failures / maxDayTotal) * 100);
+
+              return (
+                <div
+                  key={day.date}
+                  className="grid grid-cols-[88px_1fr_auto] items-center gap-3 px-4 py-3 hover:bg-zinc-50/60"
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-zinc-800">
+                      {formatChartDate(day.date)}
+                    </p>
+                    <p className="text-[10px] text-zinc-400">{day.total} total</p>
+                  </div>
+
+                  <div className="flex h-3 overflow-hidden rounded-full bg-zinc-100">
+                    {day.completions > 0 && (
+                      <div
+                        className="h-full bg-emerald-500 transition-all"
+                        style={{ width: `${passedPct}%`, minWidth: day.completions > 0 ? "8px" : 0 }}
+                      />
+                    )}
+                    {day.failures > 0 && (
+                      <div
+                        className="h-full bg-red-400 transition-all"
+                        style={{ width: `${failedPct}%`, minWidth: day.failures > 0 ? "8px" : 0 }}
+                      />
+                    )}
+                  </div>
+
+                  <div className="text-right text-xs tabular-nums">
+                    <span className="font-semibold text-emerald-700">{day.completions}</span>
+                    <span className="text-zinc-300"> / </span>
+                    <span className="font-semibold text-red-600">{day.failures}</span>
+                  </div>
+                </div>
+              );
+            })}
         </div>
       </div>
+
+      <p className="shrink-0 text-center text-[11px] text-zinc-400">
+        {activeDays.length === 1 ? (
+          <>
+            Latest activity on{" "}
+            <span className="font-medium text-zinc-600">
+              {formatChartDate(peakDay.date)}
+            </span>
+            {" "}— {peakDay.completions} passed, {peakDay.failures} failed
+          </>
+        ) : (
+          <>
+            {activeDays.length} active day{activeDays.length !== 1 ? "s" : ""} in the last 30 days
+            {peakDay.total > 0 && (
+              <>
+                {" "}· peak{" "}
+                <span className="font-medium text-zinc-600">
+                  {formatChartDate(peakDay.date)} ({peakDay.total})
+                </span>
+              </>
+            )}
+          </>
+        )}
+      </p>
     </div>
   );
 }
@@ -601,9 +561,9 @@ export function AnalyticsDashboard({ initialBatchId }: AnalyticsDashboardProps) 
 
         <Card className="flex flex-col h-[490px]">
           <CardHeader className="shrink-0 pb-3">
-            <h2 className="text-sm font-semibold text-zinc-900">Completion trends</h2>
+            <h2 className="text-sm font-semibold text-zinc-900">Outcome activity</h2>
             <p className="mt-0.5 text-xs text-zinc-500">
-              Daily passed and failed outcomes over the last 30 days.
+              Passed and failed results from the last 30 days.
             </p>
           </CardHeader>
           <CardContent className="flex-1 flex flex-col justify-between min-h-0 pb-4">
