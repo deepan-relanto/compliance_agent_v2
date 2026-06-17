@@ -1,9 +1,11 @@
 import { getSql } from "@/lib/db";
+import { makeAssessmentId } from "@/lib/assessment-id";
 import { sendModuleInvitationEmails } from "@/lib/services/training-notification-service";
 import {
   findAssignmentBatchConflicts,
   formatAssignmentConflictMessage,
 } from "@/lib/services/assignment-duplicate-service";
+import { copyMcqsFromModule } from "@/lib/services/mcq-copy-service";
 import {
   generateAndStoreModuleMcqs,
   hashPdfFile,
@@ -51,10 +53,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Reuse flow: update batch assignments for the existing module directly (no copying)
+    // Reuse flow: same name updates batches on existing module; new name clones module + MCQs
     if (reuseModuleId) {
       const sourceRows = await sql`
-        SELECT id, title, pdf_url FROM training_modules WHERE id = ${String(reuseModuleId)} LIMIT 1
+        SELECT id, title, description, slide_count, duration_minutes, pdf_url,
+               feedback_required, content_hash, mcq_generation_status
+        FROM training_modules WHERE id = ${String(reuseModuleId)} LIMIT 1
       `;
       if (sourceRows.length === 0) {
         return NextResponse.json(
@@ -79,7 +83,7 @@ export async function POST(req: NextRequest) {
       const conflicts = await findAssignmentBatchConflicts(sql, {
         title: assignmentTitle,
         batchIds: resolvedBatchIds,
-        excludeModuleId: titleChanged ? String(reuseModuleId) : null,
+        excludeModuleId: null,
       });
       if (conflicts.length > 0) {
         return NextResponse.json(
@@ -92,39 +96,69 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      let targetModuleId = String(reuseModuleId);
+
       if (titleChanged) {
+        targetModuleId = makeAssessmentId(assignmentTitle);
+
         await sql`
-          UPDATE training_modules
-          SET title = ${assignmentTitle}, updated_at = NOW()
-          WHERE id = ${String(reuseModuleId)}
+          INSERT INTO training_modules (
+            id, title, description, slide_count, duration_minutes,
+            content_type, pdf_url, feedback_required, content_hash, mcq_generation_status
+          )
+          VALUES (
+            ${targetModuleId},
+            ${assignmentTitle},
+            ${String(source.description ?? "")},
+            ${Number(source.slide_count ?? 1)},
+            ${Number(source.duration_minutes ?? 20)},
+            'pdf',
+            ${source.pdf_url as string},
+            ${Boolean(source.feedback_required)},
+            ${source.content_hash as string | null},
+            'pending'
+          )
         `;
+
+        await copyMcqsFromModule(sql, String(reuseModuleId), targetModuleId);
+
         await sql`
-          UPDATE assessment_progress
-          SET module_title = ${assignmentTitle}, updated_at = NOW()
-          WHERE module_id = ${String(reuseModuleId)}
+          INSERT INTO upload_files (original_name, pdf_url, page_count, uploaded_by, module_id, content_hash)
+          VALUES (
+            ${assignmentTitle},
+            ${source.pdf_url as string},
+            ${Number(source.slide_count ?? 1)},
+            ${uploadedBy ?? null},
+            ${targetModuleId},
+            ${source.content_hash as string | null}
+          )
         `;
+
+        for (const batchId of resolvedBatchIds) {
+          await sql`
+            INSERT INTO module_batches (module_id, batch_id)
+            VALUES (${targetModuleId}, ${batchId})
+            ON CONFLICT DO NOTHING
+          `;
+        }
+      } else {
+        await sql`
+          DELETE FROM module_batches WHERE module_id = ${String(reuseModuleId)}
+        `;
+
+        for (const batchId of resolvedBatchIds) {
+          await sql`
+            INSERT INTO module_batches (module_id, batch_id)
+            VALUES (${String(reuseModuleId)}, ${batchId})
+            ON CONFLICT DO NOTHING
+          `;
+        }
       }
 
-      // Replace batch links with the admin's current selection
-      await sql`
-        DELETE FROM module_batches WHERE module_id = ${String(reuseModuleId)}
-      `;
-
-      for (const batchId of resolvedBatchIds) {
-        await sql`
-          INSERT INTO module_batches (module_id, batch_id)
-          VALUES (${String(reuseModuleId)}, ${batchId})
-          ON CONFLICT DO NOTHING
-        `;
-      }
-
-      // Re-push: always resend invites to learners in the selected batches
-      const inviteResult = await sendModuleInvitationEmails(
-        sql,
-        String(reuseModuleId),
-        { forceResend: true },
-      ).catch((err) => {
-        console.error("[assessments reuse update invite emails]", err);
+      const inviteResult = await sendModuleInvitationEmails(sql, targetModuleId, {
+        forceResend: true,
+      }).catch((err) => {
+        console.error("[assessments reuse invite emails]", err);
         return {
           ok: false,
           sent: 0,
@@ -137,10 +171,11 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({
         ok: true,
-        id: reuseModuleId,
-        pdfUrl: sourceRows[0].pdf_url,
+        id: targetModuleId,
+        pdfUrl: source.pdf_url,
         queued: false,
         reused: true,
+        cloned: titleChanged,
         generationStatus: "completed",
         invites: inviteResult,
       });

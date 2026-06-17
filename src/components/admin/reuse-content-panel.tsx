@@ -169,7 +169,7 @@ export function ReuseContentPanel() {
           <p className="mt-2 text-sm text-zinc-500">
             The PDF and checkpoint questions are now assigned to the selected batches.
             {doneMessage ? ` ${doneMessage}` : " Invitation emails were sent to learners in those batches."}
-            {" "}Change the assignment name if you need to push the same PDF to a batch that already has it under a different name.
+            {" "}Renaming the assignment creates a new module with fresh learner progress while reusing the same PDF and questions.
           </p>
           <Button variant="secondary" className="mt-8" onClick={handleReset}>
             <RefreshCcw className="h-4 w-4" />
@@ -270,7 +270,7 @@ export function ReuseContentPanel() {
                 placeholder="Name shown to learners and used for batch assignment"
               />
               <p className="text-xs text-zinc-500">
-                Same name + same batch is blocked. Rename the assignment to push the same PDF and questions to a batch again.
+                Same name + same batch is blocked. Renaming creates a new assignment id with fresh learner progress (same PDF and questions).
               </p>
             </div>
 

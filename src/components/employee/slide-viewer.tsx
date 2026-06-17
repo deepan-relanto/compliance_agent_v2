@@ -32,6 +32,8 @@ import {
   applyScoreResult,
   resetForScoreRetake,
   mergeServerProgress,
+  clearLocalModuleProgressIfServerAbsent,
+  clearStaleLocalProgress,
 } from "@/lib/progress-store";
 import {
   syncAcknowledgement,
@@ -247,7 +249,25 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
         if (serverEntry.mcqCorrect > 0) {
           setCorrectAnswers(serverEntry.mcqCorrect);
         }
+      } else {
+        const cleared = clearLocalModuleProgressIfServerAbsent(
+          user.username,
+          module.id,
+          false,
+        );
+        if (cleared) {
+          setIsFailed(false);
+          setLiveWarningCount(0);
+          setLiveWarningHistory([]);
+          setRetakeCount(0);
+          setDbStatus("not_started");
+        }
       }
+
+      clearStaleLocalProgress(user.username, {
+        serverModuleIds: entries.map((e) => e.moduleId),
+        assignedModuleIds: [module.id],
+      });
     } catch {
       /* fall back to local snapshot below */
     }

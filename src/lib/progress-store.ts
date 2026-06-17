@@ -421,15 +421,17 @@ export function mergeServerProgress(
   for (const e of entries) {
     const k = key(username, e.moduleId);
     const existing = all[k];
-    const localWarnings = existing?.warningCount ?? 0;
-    const serverWarnings = e.warningCount ?? localWarnings;
-    const mergedWarnings = Math.max(localWarnings, serverWarnings);
-    const serverWarningsCleared = mergedWarnings === 0;
-    const keepLocalProctorLock =
-      existing != null && isProctorLocked(existing) && !isProctorLocked({
-        status: e.status,
-        scorePercent: e.scorePercent,
-      });
+    const serverWarnings = e.warningCount ?? 0;
+    const normalizedStatus = normalizeLearnerStatus(
+      e.status,
+      e.scorePercent,
+      e.completedAt ? new Date(e.completedAt).getTime() : undefined,
+    );
+    const serverReset =
+      e.status === "not_started" ||
+      (serverWarnings === 0 &&
+        !isProctorLocked({ status: e.status, scorePercent: e.scorePercent }));
+
     all[k] = {
       username,
       moduleId: e.moduleId,
@@ -437,30 +439,24 @@ export function mergeServerProgress(
       batchId: e.batchId,
       currentSlide: e.currentSlide,
       totalSlides: e.totalSlides,
-      status: keepLocalProctorLock
-        ? existing!.status
-        : normalizeLearnerStatus(
-            e.status,
-            e.scorePercent,
-            e.completedAt ? new Date(e.completedAt).getTime() : undefined,
-          ),
-      lastAccessedAt: existing?.lastAccessedAt ?? Date.now(),
+      status: normalizedStatus,
+      lastAccessedAt: Date.now(),
       completedAt: e.completedAt
         ? new Date(e.completedAt).getTime()
-        : existing?.completedAt,
-      warningCount: mergedWarnings,
-      warningHistory: serverWarningsCleared ? [] : (existing?.warningHistory ?? []),
+        : serverReset
+          ? undefined
+          : existing?.completedAt,
+      warningCount: serverReset ? serverWarnings : Math.max(existing?.warningCount ?? 0, serverWarnings),
+      warningHistory: serverReset ? [] : (existing?.warningHistory ?? []),
       retakeCount: e.retakeCount,
       failedReason:
-        e.status === "not_started"
+        e.status === "not_started" || serverReset
           ? undefined
           : (e.failedReason ?? existing?.failedReason),
-      failedAt: serverWarningsCleared ? undefined : existing?.failedAt,
-      lastFailureAt: serverWarningsCleared ? undefined : existing?.lastFailureAt,
-      lastFailureReason: serverWarningsCleared
-        ? undefined
-        : existing?.lastFailureReason,
-      archivedWarnings: existing?.archivedWarnings ?? [],
+      failedAt: serverReset ? undefined : existing?.failedAt,
+      lastFailureAt: serverReset ? undefined : existing?.lastFailureAt,
+      lastFailureReason: serverReset ? undefined : existing?.lastFailureReason,
+      archivedWarnings: serverReset ? [] : (existing?.archivedWarnings ?? []),
       mcqCorrect: e.mcqCorrect,
       mcqTotal: e.mcqTotal,
       scorePercent: e.scorePercent,
@@ -469,6 +465,59 @@ export function mergeServerProgress(
     };
   }
   writeAll(all);
+}
+
+/**
+ * Drop stale browser progress when the server has no row or admin reset the learner.
+ * Prevents permanently_failed localStorage from surviving DB clears.
+ */
+export function clearStaleLocalProgress(
+  username: string,
+  options: {
+    serverModuleIds: string[];
+    assignedModuleIds?: string[];
+  },
+): void {
+  const serverIds = new Set(options.serverModuleIds);
+  const assignedIds = options.assignedModuleIds
+    ? new Set(options.assignedModuleIds)
+    : null;
+  const all = readAll();
+  let changed = false;
+
+  for (const [entryKey, entry] of Object.entries(all)) {
+    if (entry.username !== username) continue;
+    if (assignedIds && !assignedIds.has(entry.moduleId)) continue;
+
+    const hasServerRow = serverIds.has(entry.moduleId);
+    const shouldClear =
+      !hasServerRow &&
+      (isProctorLocked(entry) ||
+        entry.status === "permanently_failed" ||
+        entry.status === "failed");
+
+    if (shouldClear) {
+      delete all[entryKey];
+      changed = true;
+    }
+  }
+
+  if (changed) writeAll(all);
+}
+
+/** Remove local progress for one module when the server has no record (e.g. after admin reset). */
+export function clearLocalModuleProgressIfServerAbsent(
+  username: string,
+  moduleId: string,
+  hasServerRow: boolean,
+): boolean {
+  if (hasServerRow) return false;
+  const all = readAll();
+  const k = key(username, moduleId);
+  if (!all[k]) return false;
+  delete all[k];
+  writeAll(all);
+  return true;
 }
 
 export function applyScoreResult(

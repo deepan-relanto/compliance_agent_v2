@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useAuthStore } from "@/lib/auth-store";
+import { makeAssessmentId } from "@/lib/assessment-id";
 import type { BatchInfo } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
@@ -82,19 +83,6 @@ function displayPdfName(originalName: string): string {
 
 function guessAssessmentName(originalName: string): string {
   return originalName.replace(/\.pdf$/i, "").replace(/[-_]/g, " ");
-}
-
-/** Generates a URL-safe id from an assessment name + timestamp */
-function makeAssessmentId(name: string): string {
-  return (
-    name
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "") +
-    "-" +
-    Date.now().toString(36)
-  );
 }
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
