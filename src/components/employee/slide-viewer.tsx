@@ -200,6 +200,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     mcqTotal: number;
   } | null>(null);
   const [retakeLoading, setRetakeLoading] = useState(false);
+  const [sessionStartError, setSessionStartError] = useState<string | null>(null);
   const [quizOnlyIndex, setQuizOnlyIndex] = useState(0);
   const [forceQuizOnlyRetake, setForceQuizOnlyRetake] = useState(false);
   const [answeredCount, setAnsweredCount] = useState(0);
@@ -324,8 +325,8 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
         setShowScoreResult(true);
       }
     } else {
-      setRetakeCount(0);
-      setDbStatus("not_started");
+      setRetakeCount(serverEntry?.retakeCount ?? 0);
+      setDbStatus(serverEntry?.status ?? "not_started");
       setIsFailed(false);
       proctorHook.hydrateFromProgress(null);
     }
@@ -336,10 +337,12 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
         setReviewRequest(null);
       } else {
         setReviewRequest(latest);
-        if (latest?.status === "Approved" && (serverFresh || prog?.status === "not_started")) {
+        const serverNotStarted = serverEntry?.status === "not_started";
+        if (latest?.status === "Approved" && serverNotStarted) {
           setIsFailed(false);
           proctorHook.hydrateFromProgress(null);
           setDbStatus("not_started");
+          setRetakeCount(serverEntry?.retakeCount ?? prog?.retakeCount ?? 0);
         }
       }
     } catch {
@@ -512,30 +515,15 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     return () => window.clearInterval(id);
   }, [sessionStarted, sessionStartMs]);
 
-  const handleBeginSession = () => {
+  const handleBeginSession = async () => {
+    setSessionStartError(null);
     const isFullRetake =
       (getProgress(user?.username ?? "", module.id)?.retakeCount ?? retakeCount) > 0 &&
       !quizOnlyModeFromModule &&
       !forceQuizOnlyRetake;
 
     if (user?.username) {
-      if (isFullRetake) {
-        resetLocalAttempt(user.username, module.id);
-        setForceQuizOnlyRetake(false);
-        answeredQuestionIdsRef.current.clear();
-        resetGamificationState();
-        setSlideIndex(0);
-        setQuizOnlyIndex(0);
-        setNextClickCount(0);
-      }
-      markInProgress(
-        user.username,
-        module.id,
-        module.title,
-        user.batchId,
-        totalSlides,
-      );
-      void syncProgressStart({
+      const sync = await syncProgressStart({
         userEmail: user.username,
         moduleId: module.id,
         moduleTitle: module.title,
@@ -544,6 +532,32 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
         assignedMcqCount: moduleMcqs.length,
         freshStart: isFullRetake || freshStart,
       });
+      if (!sync.ok) {
+        setSessionStartError(
+          sync.message ?? "Could not start session. Request a retake if you have failed.",
+        );
+        return;
+      }
+
+      if (isFullRetake) {
+        resetLocalAttempt(user.username, module.id);
+        setForceQuizOnlyRetake(false);
+        answeredQuestionIdsRef.current.clear();
+        resetGamificationState();
+        setSlideIndex(0);
+        setQuizOnlyIndex(0);
+        setNextClickCount(0);
+        if (reviewRequest?.status === "Approved") {
+          setReviewRequest({ ...reviewRequest, status: "Consumed" });
+        }
+      }
+      markInProgress(
+        user.username,
+        module.id,
+        module.title,
+        user.batchId,
+        totalSlides,
+      );
     }
     setShowProctorRules(false);
     setSessionStarted(true);
@@ -985,6 +999,224 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     showScoreResult,
   ]);
 
+  const renderIntegrityLockout = useCallback(() => {
+    const retakesRemaining = Math.max(0, 2 - retakeCount);
+    const isPendingReview = reviewRequest?.status === "Pending";
+    const isRejectedReview = reviewRequest?.status === "Rejected";
+    const isPermanentlyFailed =
+      dbStatus === "permanently_failed" || retakeCount >= 2;
+
+    const handleSubmitReview = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!explanation.trim()) {
+        setReviewError("Please provide an explanation.");
+        return;
+      }
+      if (!user?.username) return;
+
+      setReviewSubmitting(true);
+      setReviewError("");
+      try {
+        const request = await submitReviewRequestApi({
+          username: user.username,
+          moduleId: module.id,
+          moduleTitle: module.title,
+          warningCount: liveWarningCount,
+          failureTimestamp: Date.now(),
+          userExplanation: explanation.trim(),
+        });
+        setReviewRequest(request);
+        setShowReviewForm(false);
+        setExplanation("");
+      } catch (err: unknown) {
+        setReviewError(
+          err instanceof Error ? err.message : "Failed to submit request.",
+        );
+      } finally {
+        setReviewSubmitting(false);
+      }
+    };
+
+    return (
+      <div className="training-form-zone pointer-events-auto w-full max-w-md overflow-hidden rounded-xl border border-zinc-200/90 bg-white shadow-[var(--shadow-elevated)] animate-in fade-in zoom-in-95 duration-300">
+        <BrandPanelHeader
+          eyebrow="Integrity lockout"
+          title={isPermanentlyFailed ? "Assessment Permanently Failed" : "Assessment Failed"}
+          description={
+            isPermanentlyFailed
+              ? "Maximum retake limit reached. This assessment can no longer be retaken."
+              : liveWarningCount >= 3
+                ? "Maximum warning limit reached."
+                : "This attempt was ended before completion."
+          }
+          icon={ShieldAlert}
+          compact
+        />
+
+        <div className="space-y-4 p-5 sm:p-6">
+          <div className="flex flex-wrap items-center justify-center gap-2 text-center">
+            {liveWarningCount > 0 && (
+              <span className="inline-flex items-center rounded-md border border-[#f15a24]/25 bg-[#fff7f3] px-2.5 py-1 text-xs font-semibold text-[#f15a24]">
+                Warnings: {Math.min(liveWarningCount, 3)} / 3
+              </span>
+            )}
+            {!isPermanentlyFailed && !isPendingReview && (
+              <span className="inline-flex items-center rounded-md border border-[#2e3192]/15 bg-[#2e3192]/5 px-2.5 py-1 text-xs font-medium text-[#2e3192]">
+                Retakes remaining: {retakesRemaining}
+              </span>
+            )}
+          </div>
+
+          {liveWarningHistory.length > 0 && (
+            <div className="rounded-lg border border-zinc-200 bg-zinc-50/80 px-3 py-3 text-left">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                Warning history
+              </p>
+              <div className="mt-2 max-h-24 space-y-1.5 overflow-y-auto pr-1">
+                {liveWarningHistory.map((item, idx) => (
+                  <div
+                    key={idx}
+                    className="flex justify-between gap-3 border-b border-zinc-100 pb-1 text-[10px] last:border-0"
+                  >
+                    <span className="font-sans text-xs text-zinc-700">{item.reason}</span>
+                    <span className="shrink-0 font-mono tabular-nums text-zinc-500">
+                      {new Date(item.timestamp).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        second: "2-digit",
+                      })}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {isPermanentlyFailed && (
+            <div className="rounded-lg border border-[#2e3192]/20 bg-gradient-to-br from-[#2e3192]/8 via-[#2e3192]/5 to-[#f15a24]/8 p-3 text-left">
+              <p className="text-xs font-semibold text-[#2e3192]">Maximum retake limit reached</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-zinc-600">
+                You have used all allowed retakes. Please contact your compliance administrator.
+              </p>
+            </div>
+          )}
+
+          {isPendingReview && !isPermanentlyFailed && (
+            <div className="rounded-lg border border-[#2e3192]/20 bg-[#2e3192]/5 p-3 text-left">
+              <p className="text-xs font-semibold text-[#2e3192]">
+                A review request is already under review
+              </p>
+              <p className="mt-1 text-[11px] leading-relaxed text-zinc-600">
+                You have already submitted a review request. The compliance administrator will
+                review it.
+              </p>
+            </div>
+          )}
+
+          {isRejectedReview && !isPendingReview && !isPermanentlyFailed && (
+            <div className="rounded-lg border border-[#f15a24]/25 bg-[#fff7f3] p-3 text-left">
+              <p className="text-xs font-semibold text-[#f15a24]">Review request rejected</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-zinc-700">
+                Admin comment: &ldquo;{reviewRequest?.adminComment || "No comments provided."}&rdquo;
+              </p>
+              <p className="mt-1 text-[10px] text-zinc-500">
+                You may submit another explanation if you have remaining retakes.
+              </p>
+            </div>
+          )}
+
+          {!isPermanentlyFailed && !isPendingReview && (
+            <div className="space-y-3 pt-0.5">
+              {!showReviewForm ? (
+                <Button
+                  type="button"
+                  variant="accent"
+                  className="w-full cursor-pointer text-xs font-semibold"
+                  onClick={() => {
+                    setReviewError("");
+                    setShowReviewForm(true);
+                  }}
+                >
+                  Request Review
+                </Button>
+              ) : (
+                <form onSubmit={handleSubmitReview} className="space-y-3 text-left">
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-zinc-700">
+                      Reason for failure
+                    </label>
+                    <textarea
+                      rows={3}
+                      className="training-form-input w-full cursor-text select-text rounded-md border border-zinc-200 p-2 text-xs text-zinc-900 focus:outline-none focus:ring-1 focus:ring-[#2e3192]"
+                      placeholder="Please explain why the assessment integrity rules were violated. Provide any relevant context or explanation."
+                      value={explanation}
+                      onChange={(e) => setExplanation(e.target.value)}
+                      disabled={reviewSubmitting}
+                    />
+                  </div>
+                  {reviewError && (
+                    <p className="text-xs font-medium text-[#f15a24]">{reviewError}</p>
+                  )}
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 text-xs"
+                      onClick={() => {
+                        setShowReviewForm(false);
+                        setExplanation("");
+                        setReviewError("");
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="submit"
+                      variant="accent"
+                      size="sm"
+                      className="flex-1 cursor-pointer text-xs"
+                      disabled={reviewSubmitting}
+                    >
+                      {reviewSubmitting ? "Submitting…" : "Submit Request"}
+                    </Button>
+                  </div>
+                </form>
+              )}
+            </div>
+          )}
+
+          {!sessionStarted && (
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full text-xs"
+              onClick={() => {
+                window.location.href = "/dashboard";
+              }}
+            >
+              Back to dashboard
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }, [
+    dbStatus,
+    explanation,
+    liveWarningCount,
+    liveWarningHistory,
+    module.id,
+    module.title,
+    retakeCount,
+    reviewError,
+    reviewRequest,
+    reviewSubmitting,
+    sessionStarted,
+    showReviewForm,
+    user?.username,
+  ]);
+
   const checkpointProps = {
     moduleId: module.id,
     question: gateMcq,
@@ -1004,13 +1236,38 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     onContinue: handleMcqContinue,
   };
 
+  const hasPendingApprovedRetake =
+    reviewRequest?.status === "Approved" && dbStatus === "not_started";
+
   if (!sessionStarted) {
+    if (isFailed && dbStatus !== "not_started") {
+      return (
+        <div className="fixed inset-0 z-30 flex items-center justify-center bg-zinc-100 p-4">
+          {renderIntegrityLockout()}
+        </div>
+      );
+    }
+
     return (
-      <div className="fixed inset-0 z-30 flex items-center justify-center bg-zinc-100">
+      <div className="fixed inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-zinc-100 p-4">
+        {hasPendingApprovedRetake && (
+          <div className="w-full max-w-lg rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-left shadow-sm">
+            <p className="text-sm font-semibold text-emerald-800">Retake approved</p>
+            <p className="mt-1 text-xs leading-relaxed text-zinc-600">
+              Your administrator approved a new attempt. Accept the rules below to begin the
+              full training flow.
+            </p>
+          </div>
+        )}
+        {sessionStartError && (
+          <p className="w-full max-w-lg rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {sessionStartError}
+          </p>
+        )}
         <ProctorRulesModal
           open={showProctorRules}
           moduleTitle={module.title}
-          onAccept={handleBeginSession}
+          onAccept={() => void handleBeginSession()}
         />
       </div>
     );
@@ -1443,229 +1700,11 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
       )}
 
       {/* ── Failed Lock Screen Overlay ─────────────────────────────────────── */}
-      {isFailed && dbStatus !== "not_started" && (() => {
-        const retakesRemaining = Math.max(0, 2 - retakeCount);
-        const isPendingReview = reviewRequest?.status === "Pending";
-        const isRejectedReview = reviewRequest?.status === "Rejected";
-        const isApprovedRetake = reviewRequest?.status === "Approved";
-        const isPermanentlyFailed =
-          !isApprovedRetake &&
-          (dbStatus === "permanently_failed" ||
-            (dbStatus === "failed" &&
-              liveWarningCount >= 3 &&
-              retakesRemaining <= 0));
-
-        const handleSubmitReview = async (e: React.FormEvent) => {
-          e.preventDefault();
-          if (!explanation.trim()) {
-            setReviewError("Please provide an explanation.");
-            return;
-          }
-          if (!user?.username) return;
-
-          setReviewSubmitting(true);
-          setReviewError("");
-          try {
-            const request = await submitReviewRequestApi({
-              username: user.username,
-              moduleId: module.id,
-              moduleTitle: module.title,
-              warningCount: liveWarningCount,
-              failureTimestamp: Date.now(),
-              userExplanation: explanation.trim(),
-            });
-            setReviewRequest(request);
-            setShowReviewForm(false);
-            setExplanation("");
-          } catch (err: unknown) {
-            setReviewError(
-              err instanceof Error ? err.message : "Failed to submit request.",
-            );
-          } finally {
-            setReviewSubmitting(false);
-          }
-        };
-
-        return (
-          <div className="pointer-events-auto fixed inset-0 z-[92] flex items-center justify-center bg-zinc-900/75 backdrop-blur-sm p-4">
-            <div className="training-form-zone pointer-events-auto w-full max-w-md overflow-hidden rounded-xl border border-zinc-200/90 bg-white shadow-[var(--shadow-elevated)] animate-in fade-in zoom-in-95 duration-300">
-              <BrandPanelHeader
-                eyebrow="Integrity lockout"
-                title={isPermanentlyFailed ? "Assessment Permanently Failed" : "Assessment Failed"}
-                description={
-                  isPermanentlyFailed
-                    ? "Maximum retake limit reached. This assessment can no longer be retaken."
-                    : "Maximum warning limit reached."
-                }
-                icon={ShieldAlert}
-                compact
-              />
-
-              <div className="space-y-4 p-5 sm:p-6">
-                <div className="flex flex-wrap items-center justify-center gap-2 text-center">
-                  <span className="inline-flex items-center rounded-md border border-[#f15a24]/25 bg-[#fff7f3] px-2.5 py-1 text-xs font-semibold text-[#f15a24]">
-                    Warnings: {Math.min(liveWarningCount, 3)} / 3
-                  </span>
-                  {!isPermanentlyFailed && !isPendingReview && (
-                    <span className="inline-flex items-center rounded-md border border-[#2e3192]/15 bg-[#2e3192]/5 px-2.5 py-1 text-xs font-medium text-[#2e3192]">
-                      Retakes remaining: {retakesRemaining}
-                    </span>
-                  )}
-                </div>
-
-                <div className="rounded-lg border border-zinc-200 bg-zinc-50/80 px-3 py-3 text-left">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                    Warning history
-                  </p>
-                  <div className="mt-2 max-h-24 space-y-1.5 overflow-y-auto pr-1">
-                    {liveWarningHistory.map((item, idx) => (
-                      <div
-                        key={idx}
-                        className="flex justify-between gap-3 border-b border-zinc-100 pb-1 text-[10px] last:border-0"
-                      >
-                        <span className="font-sans text-xs text-zinc-700">{item.reason}</span>
-                        <span className="shrink-0 font-mono tabular-nums text-zinc-500">
-                          {new Date(item.timestamp).toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            second: "2-digit",
-                          })}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {isPermanentlyFailed && (
-                  <div className="rounded-lg border border-[#2e3192]/20 bg-gradient-to-br from-[#2e3192]/8 via-[#2e3192]/5 to-[#f15a24]/8 p-3 text-left">
-                    <p className="text-xs font-semibold text-[#2e3192]">Maximum retake limit reached</p>
-                    <p className="mt-1 text-[11px] leading-relaxed text-zinc-600">
-                      This assessment can no longer be retaken as it has reached the absolute retake
-                      limit (2 retakes). Please contact compliance.
-                    </p>
-                  </div>
-                )}
-
-                {isPendingReview && !isPermanentlyFailed && (
-                  <div className="rounded-lg border border-[#2e3192]/20 bg-[#2e3192]/5 p-3 text-left">
-                    <p className="text-xs font-semibold text-[#2e3192]">
-                      A review request is already under review
-                    </p>
-                    <p className="mt-1 text-[11px] leading-relaxed text-zinc-600">
-                      You have already submitted a review request. The compliance administrator will
-                      review it.
-                    </p>
-                  </div>
-                )}
-
-                {isRejectedReview && !isPendingReview && !isPermanentlyFailed && (
-                  <div className="rounded-lg border border-[#f15a24]/25 bg-[#fff7f3] p-3 text-left">
-                    <p className="text-xs font-semibold text-[#f15a24]">Review request rejected</p>
-                    <p className="mt-1 text-[11px] leading-relaxed text-zinc-700">
-                      Admin comment: &ldquo;{reviewRequest?.adminComment || "No comments provided."}&rdquo;
-                    </p>
-                    <p className="mt-1 text-[10px] text-zinc-500">
-                      You may submit another explanation if you have remaining retakes.
-                    </p>
-                  </div>
-                )}
-
-                {isApprovedRetake && !isPermanentlyFailed && (
-                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-left">
-                    <p className="text-xs font-semibold text-emerald-800">Retake approved</p>
-                    <p className="mt-1 text-[11px] leading-relaxed text-zinc-600">
-                      You can start again with the full training flow — slides, signature, and
-                      feedback.
-                    </p>
-                    <Button
-                      type="button"
-                      variant="accent"
-                      className="mt-3 w-full cursor-pointer text-xs font-semibold"
-                      onClick={() => {
-                        if (user?.username) {
-                          resetLocalAttempt(user.username, module.id);
-                        }
-                        setIsFailed(false);
-                        setShowReviewForm(false);
-                        setShowProctorRules(true);
-                        setSessionStarted(false);
-                        setSessionStartMs(null);
-                        setShowScoreResult(false);
-                        setScoreResult(null);
-                        setForceQuizOnlyRetake(false);
-                        proctorHook.hydrateFromProgress(null);
-                      }}
-                    >
-                      Begin full retake
-                    </Button>
-                  </div>
-                )}
-
-                {!isPermanentlyFailed && !isPendingReview && !isApprovedRetake && (
-                  <div className="space-y-3 pt-0.5">
-                    {!showReviewForm ? (
-                      <Button
-                        type="button"
-                        variant="accent"
-                        className="w-full cursor-pointer text-xs font-semibold"
-                        onClick={() => {
-                          setReviewError("");
-                          setShowReviewForm(true);
-                        }}
-                      >
-                        Request Review
-                      </Button>
-                    ) : (
-                      <form onSubmit={handleSubmitReview} className="space-y-3 text-left">
-                        <div className="space-y-1">
-                          <label className="text-xs font-semibold text-zinc-700">
-                            Reason for failure
-                          </label>
-                          <textarea
-                            rows={3}
-                            className="training-form-input w-full cursor-text select-text rounded-md border border-zinc-200 p-2 text-xs text-zinc-900 focus:outline-none focus:ring-1 focus:ring-[#2e3192]"
-                            placeholder="Please explain why the assessment integrity rules were violated. Provide any relevant context or explanation."
-                            value={explanation}
-                            onChange={(e) => setExplanation(e.target.value)}
-                            disabled={reviewSubmitting}
-                          />
-                        </div>
-                        {reviewError && (
-                          <p className="text-xs font-medium text-[#f15a24]">{reviewError}</p>
-                        )}
-                        <div className="flex gap-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="flex-1 text-xs"
-                            onClick={() => {
-                              setShowReviewForm(false);
-                              setExplanation("");
-                              setReviewError("");
-                            }}
-                          >
-                            Cancel
-                          </Button>
-                          <Button
-                            type="submit"
-                            variant="accent"
-                            size="sm"
-                            className="flex-1 cursor-pointer text-xs"
-                            disabled={reviewSubmitting}
-                          >
-                            {reviewSubmitting ? "Submitting…" : "Submit Request"}
-                          </Button>
-                        </div>
-                      </form>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      })()}
+      {sessionStarted && isFailed && dbStatus !== "not_started" && (
+        <div className="pointer-events-auto fixed inset-0 z-[92] flex items-center justify-center bg-zinc-900/75 backdrop-blur-sm p-4">
+          {renderIntegrityLockout()}
+        </div>
+      )}
     </div>
   );
 }

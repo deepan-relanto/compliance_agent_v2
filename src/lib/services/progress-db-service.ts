@@ -1,5 +1,6 @@
 import type { getSql } from "@/lib/db";
 import { PASS_THRESHOLD_PERCENT, isPassingScore, SCORE_QUIZ_RETAKE_MARKER } from "@/lib/constants";
+import { consumeApprovedRetakeDb } from "@/lib/services/review-db-service";
 import {
   computeScoreFromAnswers,
   countMcqAnswers,
@@ -259,21 +260,41 @@ export async function startTrainingSessionDb(
   `;
 
   if (params.freshStart) {
-    await sql`
-      UPDATE assessment_progress
-      SET status = 'in_progress',
-          current_slide = 0,
-          mcq_answers = '{}'::jsonb,
-          mcq_correct = 0,
-          score_percent = NULL,
-          failed_reason = NULL,
-          last_failure_reason = NULL,
-          completed_at = NULL,
-          last_accessed_at = NOW(),
-          updated_at = NOW()
-      WHERE user_email = ${params.userEmail} AND module_id = ${params.moduleId}
-        AND status NOT IN ('completed', 'permanently_failed')
-    `;
+    const existing = await getProgressRow(sql, params.userEmail, params.moduleId);
+    if (
+      existing?.status === "failed" ||
+      existing?.status === "permanently_failed"
+    ) {
+      throw new Error(
+        "This attempt has failed. Submit a review request or contact your administrator.",
+      );
+    }
+
+    if (
+      existing &&
+      (existing.status === "not_started" || existing.status === "in_progress")
+    ) {
+      if (Number(existing.retake_count ?? 0) > 0) {
+        await consumeApprovedRetakeDb(sql, params.userEmail, params.moduleId);
+      }
+
+      await sql`
+        UPDATE assessment_progress
+        SET status = 'in_progress',
+            current_slide = 0,
+            mcq_answers = '{}'::jsonb,
+            mcq_correct = 0,
+            score_percent = NULL,
+            failed_reason = NULL,
+            last_failure_reason = NULL,
+            completed_at = NULL,
+            last_accessed_at = NOW(),
+            updated_at = NOW()
+        WHERE user_email = ${params.userEmail}
+          AND module_id = ${params.moduleId}
+          AND status IN ('not_started', 'in_progress')
+      `;
+    }
   }
 
   const mcqTotal =
@@ -762,7 +783,7 @@ export async function resetInProgressAttemptDb(
         updated_at = NOW()
     WHERE user_email = ${userEmail}
       AND module_id = ${moduleId}
-      AND status NOT IN ('completed', 'permanently_failed')
+      AND status = 'in_progress'
   `;
 }
 

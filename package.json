@@ -27,6 +27,7 @@
     "db:clear-all": "node scripts/db-clear-all.mjs",
     "db:reset": "node scripts/db-reset.mjs",
     "db:setup": "npm run db:migrate && npm run db:migrate:alter && npm run db:seed",
+    "db:reshuffle:mcqs": "node scripts/db-reshuffle-mcq-options.mjs",
     "db:reconcile-progress": "node scripts/db-reconcile-progress.mjs"
   },
   "dependencies": {

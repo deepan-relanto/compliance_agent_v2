@@ -3,7 +3,7 @@
 import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/lib/auth-store";
-import { getProgress, getModuleStatus } from "@/lib/progress-store";
+import { getProgress, getModuleStatus, isProctorLocked } from "@/lib/progress-store";
 import type { ModuleStatus, TrainingModule } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { PASS_THRESHOLD_PERCENT } from "@/lib/constants";
@@ -84,17 +84,23 @@ export function ModuleCard({ module }: ModuleCardProps) {
   const isFullAssessmentRetake =
     retakeCount > 0 && !canScoreRetake && status === "not_started";
 
+  const proctorLocked =
+    status === "permanently_failed" ||
+    isProctorLocked({ status, scorePercent });
+
   const badgeStatus = displayStatus(status, scorePercent);
 
   const ctaLabel = canScoreRetake
     ? "Retake quiz"
     : isFullAssessmentRetake
       ? "Retake assessment"
-      : status === "completed"
-        ? "Review"
-        : badgeStatus === "in_progress"
-          ? "Continue"
-          : "Start";
+      : proctorLocked
+        ? "View status"
+        : status === "completed"
+          ? "Review"
+          : badgeStatus === "in_progress"
+            ? "Continue"
+            : "Start";
 
   const ctaVariant = canScoreRetake
     ? "primary"
@@ -196,9 +202,12 @@ export function ModuleCard({ module }: ModuleCardProps) {
                 }
                 const needsFreshStart =
                   isFullAssessmentRetake ||
-                  status === "in_progress" ||
                   status === "not_started" ||
-                  status === "failed";
+                  (status === "in_progress" && !proctorLocked);
+                if (proctorLocked) {
+                  router.push(`/training/${module.id}`);
+                  return;
+                }
                 if (needsFreshStart) {
                   resetLocalAttempt(user.username, module.id);
                 }

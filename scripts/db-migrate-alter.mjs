@@ -118,4 +118,12 @@ await sql`CREATE INDEX IF NOT EXISTS idx_employees_job_title ON employees(job_ti
 await sql`CREATE INDEX IF NOT EXISTS idx_employees_date_joined ON employees(date_joined)`;
 await sql`CREATE INDEX IF NOT EXISTS idx_employees_gender ON employees(gender)`;
 
+// Allow Consumed status on proctor retake approvals (one-time use).
+await sql`ALTER TABLE review_requests DROP CONSTRAINT IF EXISTS review_requests_status_check`;
+await sql`
+  ALTER TABLE review_requests
+  ADD CONSTRAINT review_requests_status_check
+  CHECK (status IN ('Pending', 'Approved', 'Rejected', 'Consumed'))
+`;
+
 console.log("✅ Schema alterations applied.");

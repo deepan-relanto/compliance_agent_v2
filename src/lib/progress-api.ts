@@ -36,12 +36,20 @@ export async function syncProgressStart(params: {
   totalSlides: number;
   assignedMcqCount?: number;
   freshStart?: boolean;
-}): Promise<void> {
-  await fetch("/api/progress", {
+}): Promise<{ ok: boolean; message?: string }> {
+  const res = await fetch("/api/progress", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(params),
   });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    return {
+      ok: false,
+      message: (data.message as string) ?? "Could not start training session.",
+    };
+  }
+  return { ok: true };
 }
 
 export async function syncSlideProgress(

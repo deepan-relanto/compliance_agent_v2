@@ -67,6 +67,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, progress: row });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to save progress";
-    return NextResponse.json({ ok: false, message }, { status: 500 });
+    const blocked =
+      message.includes("failed") || message.includes("administrator");
+    return NextResponse.json(
+      { ok: false, message },
+      { status: blocked ? 409 : 500 },
+    );
   }
 }

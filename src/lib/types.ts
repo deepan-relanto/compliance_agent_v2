@@ -42,7 +42,7 @@ export interface ReviewRequest {
   warningCount: number;
   failureTimestamp: number;
   userExplanation: string;
-  status: "Pending" | "Approved" | "Rejected";
+  status: "Pending" | "Approved" | "Rejected" | "Consumed";
   submittedTimestamp: number;
   decisionTimestamp?: number;
   approvedBy?: string;

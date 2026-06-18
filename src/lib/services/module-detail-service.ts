@@ -2,28 +2,12 @@ import { getSql } from "@/lib/db";
 import { isPassingScore, SCORE_QUIZ_RETAKE_MARKER } from "@/lib/constants";
 import { clientPdfUrl } from "@/lib/pdf-url";
 import { dedupeMcqsByPrompt, gateCountForSlides } from "@/lib/mcq-dedupe";
+import {
+  seededShuffle,
+  shuffleOptionsForDisplay,
+} from "@/lib/mcq-options-shuffle";
 
 type Sql = ReturnType<typeof getSql>;
-
-function seededShuffle<T>(items: T[], seedText: string): T[] {
-  const arr = [...items];
-  let seed = 2166136261;
-  for (let i = 0; i < seedText.length; i++) {
-    seed ^= seedText.charCodeAt(i);
-    seed = Math.imul(seed, 16777619);
-  }
-  const rand = () => {
-    seed ^= seed << 13;
-    seed ^= seed >>> 17;
-    seed ^= seed << 5;
-    return (seed >>> 0) / 4294967296;
-  };
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(rand() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
-}
 
 function hasAcceptedAcknowledgement(raw: unknown): boolean {
   if (!raw) return false;
@@ -158,7 +142,9 @@ export async function loadModuleDetail(
     id: q.id,
     slideIndex: gateSlides[index] ?? q.slideIndex,
     prompt: q.prompt,
-    options: q.options,
+    options: userEmail
+      ? shuffleOptionsForDisplay(q.options, `${moduleId}:${userEmail}:${q.id}:opts`)
+      : q.options,
     explanation: q.explanation ?? undefined,
   }));
 

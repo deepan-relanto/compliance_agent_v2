@@ -80,6 +80,68 @@ export async function getLatestReviewDb(
   return rows.length ? mapReviewRow(rows[0]) : null;
 }
 
+/** Latest admin-approved retake that has not been started yet. */
+export async function getActiveApprovedRetakeDb(
+  sql: Sql,
+  username: string,
+  moduleId: string,
+): Promise<ReviewRequest | null> {
+  const rows = await sql`
+    SELECT r.*
+    FROM review_requests r
+    INNER JOIN assessment_progress p
+      ON LOWER(p.user_email) = LOWER(r.username) AND p.module_id = r.module_id
+    WHERE r.username = ${username}
+      AND r.module_id = ${moduleId}
+      AND r.status = 'Approved'
+      AND p.status = 'not_started'
+    ORDER BY r.submitted_timestamp DESC
+    LIMIT 1
+  `;
+  return rows.length ? mapReviewRow(rows[0]) : null;
+}
+
+/** Mark an approved retake as used when the learner actually begins the session. */
+export async function consumeApprovedRetakeDb(
+  sql: Sql,
+  username: string,
+  moduleId: string,
+): Promise<ReviewRequest | null> {
+  const rows = await sql`
+    SELECT r.*
+    FROM review_requests r
+    INNER JOIN assessment_progress p
+      ON LOWER(p.user_email) = LOWER(r.username) AND p.module_id = r.module_id
+    WHERE r.username = ${username}
+      AND r.module_id = ${moduleId}
+      AND r.status = 'Approved'
+      AND p.status IN ('not_started', 'in_progress')
+      AND COALESCE(p.retake_count, 0) > 0
+    ORDER BY r.submitted_timestamp DESC
+    LIMIT 1
+  `;
+  if (!rows.length) return null;
+
+  const request = mapReviewRow(rows[0]);
+  const now = Date.now();
+
+  await sql`
+    UPDATE review_requests
+    SET status = 'Consumed',
+        decision_timestamp = ${now}
+    WHERE id = ${request.id}
+  `;
+
+  await insertAuditLogDb(
+    sql,
+    "Retake Started",
+    username,
+    `Started approved retake for ${request.moduleTitle}`,
+  );
+
+  return { ...request, status: "Consumed", decisionTimestamp: now };
+}
+
 export async function submitReviewRequestDb(
   sql: Sql,
   input: {
@@ -98,6 +160,23 @@ export async function submitReviewRequestDb(
   );
   if (pending) {
     throw new Error("A review request is already under review.");
+  }
+
+  const unusedApproval = await sql`
+    SELECT r.id
+    FROM review_requests r
+    INNER JOIN assessment_progress p
+      ON LOWER(p.user_email) = LOWER(r.username) AND p.module_id = r.module_id
+    WHERE r.username = ${input.username}
+      AND r.module_id = ${input.moduleId}
+      AND r.status = 'Approved'
+      AND p.status = 'not_started'
+    LIMIT 1
+  `;
+  if (unusedApproval.length > 0) {
+    throw new Error(
+      "You still have an approved retake waiting. Open the training module to begin it.",
+    );
   }
 
   const id = `req-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
