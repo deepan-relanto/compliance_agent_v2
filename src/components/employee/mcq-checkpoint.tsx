@@ -411,7 +411,9 @@ export function MCQCheckpoint({
                 <div className="flex gap-1.5 text-sm leading-snug">
                   <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   <div className="min-w-0 flex-1">
-                    <p className="font-semibold">Why this is correct</p>
+                    <p className="font-semibold">
+                      {wasCorrect ? "Why this is correct" : "Why this was wrong?"}
+                    </p>
                     <ExplanationLines explanation={answerExplanation} />
                   </div>
                 </div>
