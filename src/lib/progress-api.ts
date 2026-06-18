@@ -44,21 +44,28 @@ export async function fetchUserProgress(
   }
 }
 
+export type LearnerDashboardProfile = {
+  email: string;
+  batchId: string;
+  displayName: string;
+  role: "admin" | "user";
+};
+
 export type FetchLearnerDashboardResult =
   | {
       ok: true;
       modules: TrainingModule[];
       progress: ServerProgressEntry[];
+      profile: LearnerDashboardProfile;
     }
   | { ok: false; error: string };
 
-export async function fetchLearnerDashboard(
-  batchId: string,
-): Promise<FetchLearnerDashboardResult> {
+/** Load dashboard data — batch and profile are resolved on the server from the session. */
+export async function fetchLearnerDashboard(): Promise<FetchLearnerDashboardResult> {
   try {
-    const qs = new URLSearchParams({ batchId });
-    const res = await fetch(`/api/learner/dashboard?${qs}`, {
+    const res = await fetch("/api/learner/dashboard", {
       cache: "no-store",
+      credentials: "same-origin",
     });
     const data = await res.json();
     if (!res.ok || !data.ok) {
@@ -70,10 +77,17 @@ export async function fetchLearnerDashboard(
           "Could not load your assessments.",
       };
     }
+    const email = String(data.email ?? "").trim().toLowerCase();
     return {
       ok: true,
       modules: Array.isArray(data.modules) ? data.modules : [],
       progress: Array.isArray(data.progress) ? data.progress : [],
+      profile: {
+        email,
+        batchId: String(data.batchId ?? ""),
+        displayName: String(data.displayName ?? email.split("@")[0] ?? "Learner"),
+        role: data.role === "admin" ? "admin" : "user",
+      },
     };
   } catch {
     return { ok: false, error: "Network error while loading assessments." };

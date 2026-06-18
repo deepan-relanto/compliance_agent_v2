@@ -15,6 +15,7 @@ import {
   clearStaleLocalProgress,
   clearAllLocalProgressForUser,
 } from "@/lib/progress-store";
+import { emailsMatch } from "@/lib/training-link";
 import type { ModuleStatus, TrainingModule } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
@@ -28,7 +29,7 @@ import {
   Shield,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type AssessmentFilter = "all" | "completed" | "not_started";
 
@@ -41,8 +42,10 @@ function resolveStatus(
 
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
   const isHydrated = useAuthStore((s) => s.isHydrated);
-  const { status: sessionStatus } = useSession();
+  const { data: session, status: sessionStatus, update: updateSession } =
+    useSession();
   const [modules, setModules] = useState<TrainingModule[]>([]);
   const [statusByModule, setStatusByModule] = useState<Record<string, ModuleStatus>>({});
   const [loading, setLoading] = useState(true);
@@ -50,33 +53,58 @@ export default function DashboardPage() {
   const [completedCount, setCompletedCount] = useState(0);
   const [inProgressCount, setInProgressCount] = useState(0);
   const [filter, setFilter] = useState<AssessmentFilter>("all");
+  const sessionRefreshedRef = useRef(false);
+
+  const sessionEmail = session?.user?.email ?? null;
 
   const authReady =
-    sessionStatus !== "loading" &&
-    isHydrated &&
     sessionStatus === "authenticated" &&
+    isHydrated &&
+    !!sessionEmail &&
     !!user?.username &&
-    !!user?.batchId;
+    emailsMatch(sessionEmail, user.username);
+
+  useEffect(() => {
+    if (sessionStatus !== "authenticated" || sessionRefreshedRef.current) return;
+    sessionRefreshedRef.current = true;
+    void updateSession();
+  }, [sessionStatus, updateSession]);
 
   const loadModules = useCallback(async () => {
-    if (!authReady || !user?.batchId || !user?.username) return;
+    if (!authReady || !user?.username) return;
 
     setLoading(true);
     setLoadError(null);
     try {
-      const result = await fetchLearnerDashboard(user.batchId);
+      const result = await fetchLearnerDashboard();
 
       if (!result.ok) {
         setLoadError(result.error);
         return;
       }
 
+      const { profile } = result;
+      if (
+        user?.username !== profile.email ||
+        user?.batchId !== profile.batchId ||
+        user?.displayName !== profile.displayName ||
+        user?.role !== profile.role
+      ) {
+        setUser({
+          username: profile.email,
+          role: profile.role,
+          batchId: profile.batchId,
+          displayName: profile.displayName,
+        });
+      }
+
+      const username = profile.email;
       const serverEntries = result.progress;
       setModules(result.modules);
 
       if (serverEntries.length > 0) {
         mergeServerProgress(
-          user.username,
+          username,
           serverEntries.map((e: ServerProgressEntry) => ({
             moduleId: e.moduleId,
             moduleTitle: e.moduleTitle,
@@ -93,15 +121,15 @@ export default function DashboardPage() {
             warningCount: e.warningCount,
           })),
         );
-        clearStaleLocalProgress(user.username, {
+        clearStaleLocalProgress(username, {
           serverModuleIds: serverEntries.map((e) => e.moduleId),
           assignedModuleIds: result.modules.map((m) => m.id),
         });
-      } else {
-        clearAllLocalProgressForUser(user.username);
+      } else if (result.modules.length === 0) {
+        clearAllLocalProgressForUser(username);
       }
 
-      const progressEntries = getProgressForUser(user.username);
+      const progressEntries = getProgressForUser(username);
       const progressMap = Object.fromEntries(
         progressEntries.map((p) => [p.moduleId, p.status]),
       );
@@ -128,7 +156,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [authReady, user?.batchId, user?.username]);
+  }, [authReady, user, setUser]);
 
   useEffect(() => {
     if (!authReady) {
@@ -136,22 +164,23 @@ export default function DashboardPage() {
       return;
     }
     void loadModules();
-  }, [authReady, loadModules]);
+  }, [authReady, loadModules, sessionEmail]);
 
   useEffect(() => {
     if (!authReady) return;
     const onVisible = () => {
       if (document.visibilityState === "visible") {
-        void loadModules();
+        void updateSession().then(() => loadModules());
       }
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [authReady, loadModules]);
+  }, [authReady, loadModules, updateSession]);
 
+  const batchId = user?.batchId ?? "";
   const totalMinutes = modules.reduce((acc, m) => acc + m.durationMinutes, 0);
-  const batchLabel = user?.batchId
-    ? user.batchId.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+  const batchLabel = batchId
+    ? batchId.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
     : "—";
   const completionPct =
     modules.length > 0 ? Math.round((completedCount / modules.length) * 100) : 0;

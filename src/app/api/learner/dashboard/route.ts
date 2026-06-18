@@ -1,8 +1,9 @@
 import { requireSessionEmail } from "@/lib/api-session";
 import { getSql } from "@/lib/db";
+import { firstNameFromEmail } from "@/lib/auth-env";
 import { clientPdfUrl } from "@/lib/pdf-url";
 import { listProgressForUser } from "@/lib/services/progress-db-service";
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
@@ -24,25 +25,49 @@ function mapModule(row: Record<string, unknown>, batchIds: string[]) {
   };
 }
 
-/** GET ?batchId=&userEmail= — modules + progress in one round trip */
-export async function GET(req: NextRequest) {
+/** GET — modules + progress for the signed-in learner (batch resolved server-side). */
+export async function GET() {
   try {
-    const batchId = req.nextUrl.searchParams.get("batchId");
-    const claimedEmail = req.nextUrl.searchParams.get("userEmail")?.trim() ?? "";
-
-    if (!batchId) {
-      return NextResponse.json(
-        { ok: false, error: "batchId is required." },
-        { status: 400 },
-      );
-    }
-
-    const access = await requireSessionEmail(claimedEmail || null);
+    const access = await requireSessionEmail(null);
     if (!access.ok) return access.response;
 
     const sql = getSql();
     const userEmail = access.email;
-    const [rows, progress] = await Promise.all([
+
+    const users = await sql`
+      SELECT batch_id, display_name, role
+      FROM users
+      WHERE LOWER(email) = LOWER(${userEmail})
+      LIMIT 1
+    `;
+
+    if (users.length === 0) {
+      return NextResponse.json(
+        { ok: false, error: "Account not found." },
+        { status: 404 },
+      );
+    }
+
+    const row = users[0];
+    const batchId = (row.batch_id as string | null) ?? "";
+    const displayName =
+      (row.display_name as string | null)?.trim() || firstNameFromEmail(userEmail);
+    const role = row.role as string;
+
+    if (!batchId) {
+      const progress = await listProgressForUser(sql, userEmail);
+      return NextResponse.json({
+        ok: true,
+        modules: [],
+        progress,
+        batchId: "",
+        displayName,
+        role,
+        email: userEmail,
+      });
+    }
+
+    const [moduleRows, progress] = await Promise.all([
       sql`
         SELECT
           m.*,
@@ -55,14 +80,25 @@ export async function GET(req: NextRequest) {
         GROUP BY m.id
         ORDER BY m.created_at DESC
       `,
-      userEmail ? listProgressForUser(sql, userEmail) : Promise.resolve([]),
+      listProgressForUser(sql, userEmail),
     ]);
 
-    const modules = rows.map((row) =>
-      mapModule(row, ((row.batch_ids as string[] | null) ?? []).filter(Boolean)),
+    const modules = moduleRows.map((moduleRow) =>
+      mapModule(
+        moduleRow,
+        ((moduleRow.batch_ids as string[] | null) ?? []).filter(Boolean),
+      ),
     );
 
-    return NextResponse.json({ ok: true, modules, progress });
+    return NextResponse.json({
+      ok: true,
+      modules,
+      progress,
+      batchId,
+      displayName,
+      role,
+      email: userEmail,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to load dashboard";
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
