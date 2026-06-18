@@ -13,6 +13,8 @@
     "db:seed": "node scripts/db-seed.mjs",
     "db:seed:relanto": "node scripts/db-seed-relanto-users.mjs",
     "db:seed:employees": "node scripts/db-seed-employees.mjs",
+    "db:import:employees": "node scripts/db-import-employees-xlsx.mjs",
+    "db:prune:employees": "node scripts/db-prune-employees.mjs",
     "db:clear-modules": "node scripts/db-clear-modules.mjs",
     "db:clear-progress": "node scripts/db-clear-progress.mjs",
     "db:fix-failed-scores": "node scripts/db-fix-failed-scores.mjs",
@@ -53,6 +55,7 @@
     "eslint-config-next": "^15.3.3",
     "postgres": "^3.4.5",
     "tailwindcss": "^4.1.8",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "xlsx": "^0.18.5"
   }
 }
