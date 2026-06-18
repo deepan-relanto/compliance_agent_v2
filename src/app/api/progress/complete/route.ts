@@ -1,3 +1,4 @@
+import { requireLearnerModuleAccess } from "@/lib/api-session";
 import { getSql } from "@/lib/db";
 import { markAssessmentCompletedDb } from "@/lib/services/progress-db-service";
 import { sendModuleCompletionEmail } from "@/lib/services/training-notification-service";
@@ -9,17 +10,20 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   try {
     const { userEmail, moduleId } = await req.json();
-    if (!userEmail || !moduleId) {
+    if (!moduleId) {
       return NextResponse.json(
-        { ok: false, message: "userEmail and moduleId are required." },
+        { ok: false, message: "moduleId is required." },
         { status: 400 },
       );
     }
 
-    const sql = getSql();
-    await markAssessmentCompletedDb(sql, userEmail, moduleId);
+    const access = await requireLearnerModuleAccess(moduleId, userEmail);
+    if (!access.ok) return access.response;
 
-    void sendModuleCompletionEmail(sql, userEmail, moduleId).catch((err) => {
+    const sql = getSql();
+    await markAssessmentCompletedDb(sql, access.email, moduleId);
+
+    void sendModuleCompletionEmail(sql, access.email, moduleId).catch((err) => {
       console.error("[progress complete email]", err);
     });
 

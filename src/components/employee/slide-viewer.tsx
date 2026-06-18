@@ -45,6 +45,7 @@ import {
   finalizeAssessmentScore,
   requestScoreRetake,
   fetchUserProgress,
+  type ServerProgressEntry,
 } from "@/lib/progress-api";
 import { PASS_THRESHOLD_PERCENT, POINTS_PER_MCQ, isPassingScore } from "@/lib/constants";
 import { getAllReviewRequests } from "@/lib/review-store";
@@ -236,55 +237,60 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
   const loadIntegrityState = useCallback(async () => {
     if (!user?.username) return;
 
-    let serverEntry:
-      | Awaited<ReturnType<typeof fetchUserProgress>>[number]
-      | undefined;
+    let serverEntry: ServerProgressEntry | undefined;
+    let progressFetchOk = false;
 
     try {
-      const entries = await fetchUserProgress(user.username);
+      const result = await fetchUserProgress(user.username);
+      progressFetchOk = result.ok;
+      const entries = result.progress;
       serverEntry = entries.find((e) => e.moduleId === module.id);
-      if (serverEntry) {
-        mergeServerProgress(user.username, [
-          {
-            moduleId: serverEntry.moduleId,
-            moduleTitle: serverEntry.moduleTitle,
-            batchId: serverEntry.batchId,
-            currentSlide: serverEntry.currentSlide,
-            totalSlides: serverEntry.totalSlides,
-            status: serverEntry.status,
-            retakeCount: serverEntry.retakeCount,
-            mcqCorrect: serverEntry.mcqCorrect,
-            mcqTotal: serverEntry.mcqTotal,
-            scorePercent: serverEntry.scorePercent,
-            failedReason: serverEntry.failedReason,
-            completedAt: serverEntry.completedAt,
-            warningCount: serverEntry.warningCount,
-          },
-        ]);
-        if (serverEntry.mcqCorrect > 0) {
-          setCorrectAnswers(serverEntry.mcqCorrect);
-        }
-      } else {
-        clearLocalModuleProgressIfServerAbsent(user.username, module.id, false);
-        setIsFailed(false);
-        proctorHook.hydrateFromProgress(null);
-        setRetakeCount(0);
-        setDbStatus("not_started");
-      }
 
-      if (entries.length === 0) {
-        clearAllLocalProgressForUser(user.username);
-      } else {
-        clearStaleLocalProgress(user.username, {
-          serverModuleIds: entries.map((e) => e.moduleId),
-          assignedModuleIds: [module.id],
-        });
+      if (progressFetchOk) {
+        if (serverEntry) {
+          mergeServerProgress(user.username, [
+            {
+              moduleId: serverEntry.moduleId,
+              moduleTitle: serverEntry.moduleTitle,
+              batchId: serverEntry.batchId,
+              currentSlide: serverEntry.currentSlide,
+              totalSlides: serverEntry.totalSlides,
+              status: serverEntry.status,
+              retakeCount: serverEntry.retakeCount,
+              mcqCorrect: serverEntry.mcqCorrect,
+              mcqTotal: serverEntry.mcqTotal,
+              scorePercent: serverEntry.scorePercent,
+              failedReason: serverEntry.failedReason,
+              completedAt: serverEntry.completedAt,
+              warningCount: serverEntry.warningCount,
+            },
+          ]);
+          if (serverEntry.mcqCorrect > 0) {
+            setCorrectAnswers(serverEntry.mcqCorrect);
+          }
+        } else {
+          clearLocalModuleProgressIfServerAbsent(user.username, module.id, false);
+          setIsFailed(false);
+          proctorHook.hydrateFromProgress(null);
+          setRetakeCount(0);
+          setDbStatus("not_started");
+        }
+
+        if (entries.length === 0) {
+          clearAllLocalProgressForUser(user.username);
+        } else {
+          clearStaleLocalProgress(user.username, {
+            serverModuleIds: entries.map((e) => e.moduleId),
+            assignedModuleIds: [module.id],
+          });
+        }
       }
     } catch {
       /* fall back to local snapshot below */
     }
 
     const serverFresh =
+      !progressFetchOk ||
       !serverEntry ||
       (serverEntry.status === "not_started" &&
         (serverEntry.warningCount ?? 0) === 0);
@@ -1668,28 +1674,30 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
                 size="sm"
                 className="cursor-pointer text-xs"
                 onClick={() => {
-                  isExitingRef.current = true;
-                  if (user?.username && sessionStarted && !reviewOnlyMode) {
-                    const updated = failAssessmentForAbandonment(
-                      user.username,
-                      module.id,
-                      activeWarningReason
-                        ? "Assessment abandoned after exiting fullscreen"
-                        : "Assessment abandoned",
-                    );
-                    if (updated) {
-                      setDbStatus(updated.status);
-                      void syncAbandonmentFailure({
-                        userEmail: user.username,
-                        moduleId: module.id,
-                        reason: updated.failedReason ?? "Assessment abandoned",
-                      });
+                  void (async () => {
+                    isExitingRef.current = true;
+                    if (user?.username && sessionStarted && !reviewOnlyMode) {
+                      const updated = failAssessmentForAbandonment(
+                        user.username,
+                        module.id,
+                        activeWarningReason
+                          ? "Assessment abandoned after exiting fullscreen"
+                          : "Assessment abandoned",
+                      );
+                      if (updated) {
+                        setDbStatus(updated.status);
+                        await syncAbandonmentFailure({
+                          userEmail: user.username,
+                          moduleId: module.id,
+                          reason: updated.failedReason ?? "Assessment abandoned",
+                        });
+                      }
                     }
-                  }
-                  if (document.fullscreenElement) {
-                    document.exitFullscreen().catch(() => undefined);
-                  }
-                  window.location.href = "/dashboard";
+                    if (document.fullscreenElement) {
+                      await document.exitFullscreen().catch(() => undefined);
+                    }
+                    window.location.href = "/dashboard";
+                  })();
                 }}
               >
                 Exit Assessment

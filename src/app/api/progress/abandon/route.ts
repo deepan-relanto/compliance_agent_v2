@@ -1,3 +1,4 @@
+import { requireLearnerModuleAccess } from "@/lib/api-session";
 import { getSql } from "@/lib/db";
 import { failAssessmentAbandonmentDb } from "@/lib/services/progress-db-service";
 import { NextRequest, NextResponse } from "next/server";
@@ -10,16 +11,19 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { userEmail, moduleId, reason } = body;
 
-    if (!userEmail || !moduleId) {
+    if (!moduleId) {
       return NextResponse.json(
-        { ok: false, message: "userEmail and moduleId are required." },
+        { ok: false, message: "moduleId is required." },
         { status: 400 },
       );
     }
 
+    const access = await requireLearnerModuleAccess(moduleId, userEmail);
+    if (!access.ok) return access.response;
+
     const sql = getSql();
     const result = await failAssessmentAbandonmentDb(sql, {
-      userEmail: String(userEmail),
+      userEmail: access.email,
       moduleId: String(moduleId),
       reason: typeof reason === "string" ? reason : undefined,
     });

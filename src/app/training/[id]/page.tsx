@@ -2,13 +2,14 @@
 
 import { RouteGuard } from "@/components/auth/route-guard";
 import { TrainingCompletedGate } from "@/components/employee/training-completed-gate";
+import { Button } from "@/components/ui/button";
 import type { McqQuestion, TrainingModule } from "@/lib/types";
 import { useAuthStore } from "@/lib/auth-store";
 import dynamic from "next/dynamic";
 import { useSession } from "next-auth/react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { AlertTriangle, Loader2 } from "lucide-react";
 
 const preloadSlideViewer = () =>
   import("@/components/employee/slide-viewer").then((mod) => mod.SlideViewer);
@@ -27,6 +28,7 @@ export default function TrainingPage() {
   const [trainingModule, setTrainingModule] = useState<TrainingModule | undefined>();
   const [mcqs, setMcqs] = useState<McqQuestion[]>([]);
   const [ready, setReady] = useState(false);
+  const [accessError, setAccessError] = useState<string | null>(null);
 
   const authReady =
     sessionStatus !== "loading" &&
@@ -50,6 +52,7 @@ export default function TrainingPage() {
       .then((r) => r.json())
       .then((data) => {
         if (data.ok) {
+          setAccessError(null);
           setTrainingModule(data.module);
           setMcqs(data.mcqs ?? []);
           const pdf = data.module?.pdfUrl as string | undefined;
@@ -60,6 +63,11 @@ export default function TrainingPage() {
             document.head.appendChild(link);
           }
         } else {
+          setAccessError(
+            typeof data.error === "string"
+              ? data.error
+              : "You do not have access to this training.",
+          );
           setTrainingModule(undefined);
         }
         setReady(true);
@@ -75,14 +83,39 @@ export default function TrainingPage() {
 
   useEffect(() => {
     if (!authReady || !ready) return;
-    if (!trainingModule) router.replace("/dashboard");
-  }, [ready, trainingModule, router, authReady]);
+    if (!trainingModule && !accessError) router.replace("/dashboard");
+  }, [ready, trainingModule, accessError, router, authReady]);
 
   if (!authReady || !ready) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-zinc-100">
         <Loader2 className="h-8 w-8 animate-spin text-[#2e3192]" />
       </div>
+    );
+  }
+
+  if (accessError) {
+    return (
+      <RouteGuard allowedRoles={["user"]}>
+        <div className="flex min-h-screen items-center justify-center bg-zinc-100 px-6">
+          <div className="w-full max-w-md rounded-xl border border-zinc-200 bg-white p-8 text-center shadow-sm">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-50 text-amber-700">
+              <AlertTriangle className="h-6 w-6" />
+            </div>
+            <h1 className="mt-4 text-lg font-semibold text-zinc-900">
+              Training access denied
+            </h1>
+            <p className="mt-2 text-sm leading-relaxed text-zinc-600">{accessError}</p>
+            <Button
+              type="button"
+              className="mt-6 w-full"
+              onClick={() => router.push("/dashboard")}
+            >
+              Back to dashboard
+            </Button>
+          </div>
+        </div>
+      </RouteGuard>
     );
   }
 

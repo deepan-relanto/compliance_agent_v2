@@ -1,3 +1,4 @@
+import { requireLearnerModuleAccess } from "@/lib/api-session";
 import { getSql } from "@/lib/db";
 import { validateAndRecordMcqAnswerDb } from "@/lib/services/progress-db-service";
 import { NextRequest, NextResponse } from "next/server";
@@ -28,63 +29,45 @@ export async function POST(
       );
     }
 
-    const sql = getSql();
+    const access = await requireLearnerModuleAccess(moduleId, userEmail);
+    if (!access.ok) return access.response;
 
-    if (userEmail && moduleTitle && batchId) {
-      const result = await validateAndRecordMcqAnswerDb(sql, {
-        userEmail,
-        moduleId,
-        moduleTitle,
-        batchId,
-        totalSlides: totalSlides ?? 1,
-        questionId,
-        optionId,
-        assignedMcqCount:
-          typeof assignedMcqCount === "number" && assignedMcqCount > 0
-            ? assignedMcqCount
-            : undefined,
-      });
-
-      if (!result.found) {
-        return NextResponse.json(
-          { ok: false, error: "Question not found." },
-          { status: 404 },
-        );
-      }
-
-      return NextResponse.json({
-        ok: true,
-        correct: result.correct,
-        correctOptionId: result.correctOptionId,
-        mcqCorrect: result.mcqCorrect,
-        mcqTotal: result.mcqTotal,
-        alreadyAnswered: result.alreadyAnswered,
-      });
+    if (!moduleTitle) {
+      return NextResponse.json(
+        { ok: false, error: "moduleTitle is required." },
+        { status: 400 },
+      );
     }
 
-    const rows = await sql`
-      SELECT correct_option_id
-      FROM mcq_questions
-      WHERE id = ${questionId} AND module_id = ${moduleId}
-      LIMIT 1
-    `;
+    const sql = getSql();
+    const result = await validateAndRecordMcqAnswerDb(sql, {
+      userEmail: access.email,
+      moduleId,
+      moduleTitle,
+      batchId: batchId || access.batchId,
+      totalSlides: totalSlides ?? 1,
+      questionId,
+      optionId,
+      assignedMcqCount:
+        typeof assignedMcqCount === "number" && assignedMcqCount > 0
+          ? assignedMcqCount
+          : undefined,
+    });
 
-    if (rows.length === 0) {
+    if (!result.found) {
       return NextResponse.json(
         { ok: false, error: "Question not found." },
         { status: 404 },
       );
     }
 
-    const correctOptionId = String(rows[0].correct_option_id ?? "")
-      .trim()
-      .toLowerCase();
-    const correct = optionId.trim().toLowerCase() === correctOptionId;
-
     return NextResponse.json({
       ok: true,
-      correct,
-      correctOptionId,
+      correct: result.correct,
+      correctOptionId: result.correctOptionId,
+      mcqCorrect: result.mcqCorrect,
+      mcqTotal: result.mcqTotal,
+      alreadyAnswered: result.alreadyAnswered,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Validation failed";

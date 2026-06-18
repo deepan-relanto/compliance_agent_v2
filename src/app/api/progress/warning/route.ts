@@ -1,3 +1,4 @@
+import { requireLearnerModuleAccess } from "@/lib/api-session";
 import { getSql } from "@/lib/db";
 import { syncProctorWarningDb } from "@/lib/services/progress-db-service";
 import { NextRequest, NextResponse } from "next/server";
@@ -17,16 +18,19 @@ export async function POST(req: NextRequest) {
       failedReason,
     } = body;
 
-    if (!userEmail || !moduleId || typeof warningCount !== "number") {
+    if (!moduleId || typeof warningCount !== "number") {
       return NextResponse.json(
-        { ok: false, message: "userEmail, moduleId, and warningCount are required." },
+        { ok: false, message: "moduleId and warningCount are required." },
         { status: 400 },
       );
     }
 
+    const access = await requireLearnerModuleAccess(moduleId, userEmail);
+    if (!access.ok) return access.response;
+
     const sql = getSql();
     await syncProctorWarningDb(sql, {
-      userEmail: String(userEmail),
+      userEmail: access.email,
       moduleId: String(moduleId),
       warningCount,
       warningHistory: Array.isArray(warningHistory) ? warningHistory : [],

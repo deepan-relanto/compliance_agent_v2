@@ -2,13 +2,9 @@ import type { getSql } from "@/lib/db";
 import { getGraphMailConfig } from "@/lib/graph-mail-config";
 import { firstNameFromEmail } from "@/lib/auth-env";
 import { sendGraphMail } from "@/lib/services/graph-mail-service";
+import { trainingLoginUrl } from "@/lib/training-link";
 
 type Sql = ReturnType<typeof getSql>;
-
-function trainingLoginUrl(moduleId: string, baseUrl: string): string {
-  const callback = `/training/${encodeURIComponent(moduleId)}`;
-  return `${baseUrl}/login?callbackUrl=${encodeURIComponent(callback)}`;
-}
 
 function invitationHtml(params: {
   displayName: string;
@@ -165,7 +161,7 @@ export async function sendModuleInvitationEmails(
     }
 
     try {
-      const loginUrl = trainingLoginUrl(moduleId, loginBase);
+      const loginUrl = trainingLoginUrl(moduleId, loginBase, email);
       await sendGraphMail({
         to: email,
         subject: `Action required: ${moduleTitle} — Relanto Compliance Training`,
@@ -245,7 +241,7 @@ export async function sendRetakeApprovalEmail(
   const displayName =
     (users[0]?.display_name as string | null)?.trim() || firstNameFromEmail(email);
   const moduleTitle = modules[0].title as string;
-  const loginUrl = trainingLoginUrl(moduleId, cfg.baseUrl);
+  const loginUrl = trainingLoginUrl(moduleId, cfg.baseUrl, email);
 
   try {
     await sendGraphMail({

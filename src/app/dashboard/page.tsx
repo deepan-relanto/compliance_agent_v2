@@ -3,21 +3,31 @@
 import { RouteGuard } from "@/components/auth/route-guard";
 import { ModuleCard } from "@/components/employee/module-card";
 import { EmployeeShell } from "@/components/layout/employee-shell";
+import { Button } from "@/components/ui/button";
 import { PageSection } from "@/components/ui/page-section";
 import { StatCard } from "@/components/ui/stat-card";
 import { useAuthStore } from "@/lib/auth-store";
 import type { ServerProgressEntry } from "@/lib/progress-api";
-import { getProgressForUser, mergeServerProgress, clearStaleLocalProgress, clearAllLocalProgressForUser } from "@/lib/progress-store";
+import { fetchLearnerDashboard } from "@/lib/progress-api";
+import {
+  getProgressForUser,
+  mergeServerProgress,
+  clearStaleLocalProgress,
+  clearAllLocalProgressForUser,
+} from "@/lib/progress-store";
 import type { ModuleStatus, TrainingModule } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
+  AlertTriangle,
   BookOpen,
   CheckCircle2,
   Clock3,
   GraduationCap,
   Loader2,
+  RefreshCw,
   Shield,
 } from "lucide-react";
+import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 type AssessmentFilter = "all" | "completed" | "not_started";
@@ -31,96 +41,113 @@ function resolveStatus(
 
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
+  const isHydrated = useAuthStore((s) => s.isHydrated);
+  const { status: sessionStatus } = useSession();
   const [modules, setModules] = useState<TrainingModule[]>([]);
   const [statusByModule, setStatusByModule] = useState<Record<string, ModuleStatus>>({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [completedCount, setCompletedCount] = useState(0);
   const [inProgressCount, setInProgressCount] = useState(0);
   const [filter, setFilter] = useState<AssessmentFilter>("all");
 
-  const loadModules = useCallback(async () => {
-    if (!user?.batchId) {
-      setModules([]);
-      setStatusByModule({});
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    try {
-      const qs = new URLSearchParams({ batchId: user.batchId });
-      if (user.username) qs.set("userEmail", user.username);
-      const data = await fetch(`/api/learner/dashboard?${qs}`).then((r) => r.json());
-      const serverEntries = Array.isArray(data.progress) ? data.progress : [];
+  const authReady =
+    sessionStatus !== "loading" &&
+    isHydrated &&
+    sessionStatus === "authenticated" &&
+    !!user?.username &&
+    !!user?.batchId;
 
-      if (data.ok && Array.isArray(data.modules)) {
-        setModules(data.modules);
-        if (user.username) {
-          if (serverEntries.length > 0) {
-            mergeServerProgress(
-              user.username,
-              (serverEntries as ServerProgressEntry[]).map((e) => ({
-                moduleId: e.moduleId,
-                moduleTitle: e.moduleTitle,
-                batchId: e.batchId,
-                currentSlide: e.currentSlide,
-                totalSlides: e.totalSlides,
-                status: e.status,
-                retakeCount: e.retakeCount,
-                mcqCorrect: e.mcqCorrect,
-                mcqTotal: e.mcqTotal,
-                scorePercent: e.scorePercent,
-                failedReason: e.failedReason,
-                completedAt: e.completedAt,
-                warningCount: e.warningCount,
-              })),
-            );
-            clearStaleLocalProgress(user.username, {
-              serverModuleIds: (serverEntries as ServerProgressEntry[]).map((e) => e.moduleId),
-              assignedModuleIds: data.modules.map((m: TrainingModule) => m.id),
-            });
-          } else {
-            clearAllLocalProgressForUser(user.username);
-          }
-          const progressEntries = getProgressForUser(user.username);
-          const progressMap = Object.fromEntries(
-            progressEntries.map((p) => [p.moduleId, p.status]),
-          );
-          const statusMap: Record<string, ModuleStatus> = {};
-          let completed = 0;
-          let inProgress = 0;
-          for (const m of data.modules) {
-            const entry = progressEntries.find((p) => p.moduleId === m.id);
-            const s = progressMap[m.id] ?? m.status ?? "not_started";
-            const attempted =
-              s === "in_progress" ||
-              s === "failed" ||
-              (entry?.scorePercent != null && s !== "permanently_failed");
-            statusMap[m.id] =
-              s === "failed" && entry?.scorePercent != null ? "in_progress" : s;
-            if (s === "completed") completed++;
-            else if (attempted) inProgress++;
-          }
-          setStatusByModule(statusMap);
-          setCompletedCount(completed);
-          setInProgressCount(inProgress);
-        } else {
-          setStatusByModule({});
-        }
-      } else {
-        setModules([]);
-        setStatusByModule({});
+  const loadModules = useCallback(async () => {
+    if (!authReady || !user?.batchId || !user?.username) return;
+
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const result = await fetchLearnerDashboard(user.batchId);
+
+      if (!result.ok) {
+        setLoadError(result.error);
+        return;
       }
+
+      const serverEntries = result.progress;
+      setModules(result.modules);
+
+      if (serverEntries.length > 0) {
+        mergeServerProgress(
+          user.username,
+          serverEntries.map((e: ServerProgressEntry) => ({
+            moduleId: e.moduleId,
+            moduleTitle: e.moduleTitle,
+            batchId: e.batchId,
+            currentSlide: e.currentSlide,
+            totalSlides: e.totalSlides,
+            status: e.status,
+            retakeCount: e.retakeCount,
+            mcqCorrect: e.mcqCorrect,
+            mcqTotal: e.mcqTotal,
+            scorePercent: e.scorePercent,
+            failedReason: e.failedReason,
+            completedAt: e.completedAt,
+            warningCount: e.warningCount,
+          })),
+        );
+        clearStaleLocalProgress(user.username, {
+          serverModuleIds: serverEntries.map((e) => e.moduleId),
+          assignedModuleIds: result.modules.map((m) => m.id),
+        });
+      } else {
+        clearAllLocalProgressForUser(user.username);
+      }
+
+      const progressEntries = getProgressForUser(user.username);
+      const progressMap = Object.fromEntries(
+        progressEntries.map((p) => [p.moduleId, p.status]),
+      );
+      const statusMap: Record<string, ModuleStatus> = {};
+      let completed = 0;
+      let inProgress = 0;
+      for (const m of result.modules) {
+        const entry = progressEntries.find((p) => p.moduleId === m.id);
+        const s = progressMap[m.id] ?? m.status ?? "not_started";
+        const attempted =
+          s === "in_progress" ||
+          s === "failed" ||
+          (entry?.scorePercent != null && s !== "permanently_failed");
+        statusMap[m.id] =
+          s === "failed" && entry?.scorePercent != null ? "in_progress" : s;
+        if (s === "completed") completed++;
+        else if (attempted) inProgress++;
+      }
+      setStatusByModule(statusMap);
+      setCompletedCount(completed);
+      setInProgressCount(inProgress);
     } catch {
-      setModules([]);
-      setStatusByModule({});
+      setLoadError("Something went wrong while loading your assessments.");
     } finally {
       setLoading(false);
     }
-  }, [user?.batchId, user?.username]);
+  }, [authReady, user?.batchId, user?.username]);
 
   useEffect(() => {
-    loadModules();
-  }, [loadModules]);
+    if (!authReady) {
+      setLoading(true);
+      return;
+    }
+    void loadModules();
+  }, [authReady, loadModules]);
+
+  useEffect(() => {
+    if (!authReady) return;
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        void loadModules();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [authReady, loadModules]);
 
   const totalMinutes = modules.reduce((acc, m) => acc + m.durationMinutes, 0);
   const batchLabel = user?.batchId
@@ -137,7 +164,6 @@ export default function DashboardPage() {
     [modules, statusByModule],
   );
 
-  /** Outstanding mandatory work — drops to 0 when everything is completed. */
   const assignedCount = useMemo(
     () =>
       modules.filter(
@@ -263,7 +289,7 @@ export default function DashboardPage() {
               : undefined
           }
           action={
-            !loading && modules.length > 0 ? (
+            !loading && !loadError && modules.length > 0 ? (
               <div className="flex flex-wrap gap-2">
                 {filterPills.map((pill) => (
                   <button
@@ -298,6 +324,24 @@ export default function DashboardPage() {
             <div className="empty-state py-16">
               <Loader2 className="h-6 w-6 animate-spin text-[#2e3192]" />
               <p className="mt-3 text-sm text-zinc-500">Loading assessments…</p>
+            </div>
+          ) : loadError ? (
+            <div className="empty-state py-16">
+              <div className="icon-tile h-12 w-12 bg-amber-50">
+                <AlertTriangle className="h-6 w-6 text-amber-600" strokeWidth={1.5} />
+              </div>
+              <p className="mt-4 text-sm font-medium text-zinc-800">
+                Could not load your assessments
+              </p>
+              <p className="mt-1.5 max-w-sm text-sm text-zinc-500">{loadError}</p>
+              <Button
+                type="button"
+                className="mt-5 gap-2"
+                onClick={() => void loadModules()}
+              >
+                <RefreshCw className="h-4 w-4" />
+                Try again
+              </Button>
             </div>
           ) : modules.length === 0 ? (
             <div className="empty-state">

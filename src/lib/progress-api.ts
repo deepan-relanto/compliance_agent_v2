@@ -1,4 +1,4 @@
-import type { ModuleStatus } from "@/lib/types";
+import type { ModuleStatus, TrainingModule } from "@/lib/types";
 
 export interface ServerProgressEntry {
   userEmail: string;
@@ -17,15 +17,67 @@ export interface ServerProgressEntry {
   completedAt: string | null;
 }
 
+export type FetchUserProgressResult =
+  | { ok: true; progress: ServerProgressEntry[] }
+  | { ok: false; progress: ServerProgressEntry[] };
+
 export async function fetchUserProgress(
   userEmail: string,
-): Promise<ServerProgressEntry[]> {
-  const res = await fetch(
-    `/api/progress?userEmail=${encodeURIComponent(userEmail)}`,
-  );
-  const data = await res.json();
-  if (!res.ok || !data.ok) return [];
-  return data.progress as ServerProgressEntry[];
+): Promise<FetchUserProgressResult> {
+  try {
+    const res = await fetch(
+      `/api/progress?userEmail=${encodeURIComponent(userEmail)}`,
+      { cache: "no-store" },
+    );
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      return { ok: false, progress: [] };
+    }
+    return {
+      ok: true,
+      progress: Array.isArray(data.progress)
+        ? (data.progress as ServerProgressEntry[])
+        : [],
+    };
+  } catch {
+    return { ok: false, progress: [] };
+  }
+}
+
+export type FetchLearnerDashboardResult =
+  | {
+      ok: true;
+      modules: TrainingModule[];
+      progress: ServerProgressEntry[];
+    }
+  | { ok: false; error: string };
+
+export async function fetchLearnerDashboard(
+  batchId: string,
+): Promise<FetchLearnerDashboardResult> {
+  try {
+    const qs = new URLSearchParams({ batchId });
+    const res = await fetch(`/api/learner/dashboard?${qs}`, {
+      cache: "no-store",
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      return {
+        ok: false,
+        error:
+          (typeof data.error === "string" && data.error) ||
+          (typeof data.message === "string" && data.message) ||
+          "Could not load your assessments.",
+      };
+    }
+    return {
+      ok: true,
+      modules: Array.isArray(data.modules) ? data.modules : [],
+      progress: Array.isArray(data.progress) ? data.progress : [],
+    };
+  } catch {
+    return { ok: false, error: "Network error while loading assessments." };
+  }
 }
 
 export async function syncProgressStart(params: {

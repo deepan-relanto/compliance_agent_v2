@@ -1,3 +1,4 @@
+import { requireSessionEmail } from "@/lib/api-session";
 import { getSql } from "@/lib/db";
 import { clientPdfUrl } from "@/lib/pdf-url";
 import { listProgressForUser } from "@/lib/services/progress-db-service";
@@ -27,7 +28,7 @@ function mapModule(row: Record<string, unknown>, batchIds: string[]) {
 export async function GET(req: NextRequest) {
   try {
     const batchId = req.nextUrl.searchParams.get("batchId");
-    const userEmail = req.nextUrl.searchParams.get("userEmail")?.trim() ?? "";
+    const claimedEmail = req.nextUrl.searchParams.get("userEmail")?.trim() ?? "";
 
     if (!batchId) {
       return NextResponse.json(
@@ -36,7 +37,11 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    const access = await requireSessionEmail(claimedEmail || null);
+    if (!access.ok) return access.response;
+
     const sql = getSql();
+    const userEmail = access.email;
     const [rows, progress] = await Promise.all([
       sql`
         SELECT
