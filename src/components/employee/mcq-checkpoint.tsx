@@ -130,6 +130,10 @@ export function MCQCheckpoint({
     () => stripGeneratedCheckpointPrefix(question.prompt),
     [question.prompt],
   );
+  const displayOptions = useMemo(
+    () => [...question.options].sort((a, b) => a.id.localeCompare(b.id)),
+    [question.options],
+  );
   const checkpointProgress =
     totalCheckpoints > 0
       ? Math.min(100, Math.max(0, (checkpointNumber / totalCheckpoints) * 100))
@@ -291,7 +295,7 @@ export function MCQCheckpoint({
         modalMode ? "mt-2 space-y-1.5" : "mt-4 space-y-2.5",
       )}
     >
-      {question.options.map((opt) => {
+      {displayOptions.map((opt) => {
         const isSelected = selected === opt.id;
         const showCorrect =
           submitted && correctOptionId !== null && opt.id === correctOptionId;
@@ -372,54 +376,58 @@ export function MCQCheckpoint({
         initial={{ opacity: 0, y: 4 }}
         animate={{ opacity: 1, y: 0 }}
         className={cn(
-          "shrink-0 rounded-lg border",
+          "rounded-lg border",
           modalMode ? "mt-2 p-3" : "mt-3 p-3.5 sm:mt-4 sm:p-4",
+          submittedLayout && "flex min-h-0 flex-1 flex-col",
           wasCorrect
             ? "border-emerald-200 bg-emerald-50 text-emerald-950"
             : "border-red-200 bg-red-50 text-red-950",
         )}
       >
-        <div className="flex items-start gap-2.5">
-          <div
-            className={cn(
-              "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border bg-white",
-              wasCorrect ? "border-emerald-200 text-emerald-700" : "border-red-200 text-red-700",
-            )}
-          >
-            {wasCorrect ? (
-              <CheckCircle2 className="h-3.5 w-3.5" />
-            ) : (
-              <XCircle className="h-3.5 w-3.5" />
-            )}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className={cn("font-semibold", modalMode ? "text-sm" : "text-base")}>
-              {wasCorrect ? `Correct. +${POINTS_PER_MCQ} points.` : "Incorrect. +0 points."}
-            </p>
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex shrink-0 items-start gap-2.5">
             <div
               className={cn(
-                "mt-1.5 space-y-1.5 overflow-y-auto overscroll-contain",
-                modalMode && "max-h-[7rem]",
+                "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border bg-white",
+                wasCorrect ? "border-emerald-200 text-emerald-700" : "border-red-200 text-red-700",
               )}
             >
-              <p className="text-sm leading-snug">
-                {correctOption
-                  ? `Correct answer: ${correctOption.id.toUpperCase()}. ${correctOption.label}`
-                  : "Your response has been recorded for this checkpoint."}
-              </p>
-              {answerExplanation && (
-                <div className="flex gap-1.5 text-sm leading-snug">
-                  <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold">
-                      {wasCorrect ? "Why this is correct" : "Why this was wrong?"}
-                    </p>
-                    <ExplanationLines explanation={answerExplanation} />
-                  </div>
-                </div>
+              {wasCorrect ? (
+                <CheckCircle2 className="h-3.5 w-3.5" />
+              ) : (
+                <XCircle className="h-3.5 w-3.5" />
               )}
             </div>
+            <div className="min-w-0 flex-1">
+              <p className={cn("font-semibold", modalMode ? "text-sm" : "text-base")}>
+                {wasCorrect ? `Correct. +${POINTS_PER_MCQ} points.` : "Incorrect. +0 points."}
+              </p>
+            </div>
           </div>
+          {(answerExplanation || correctOption) && (
+            <div
+              className={cn(
+                "mt-2 flex min-h-0 flex-1 gap-1.5 pl-8 text-sm leading-relaxed",
+                submittedLayout && "min-h-[10rem]",
+              )}
+            >
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                <p className="font-semibold">
+                  {wasCorrect ? "Why this is correct" : "Why this was wrong?"}
+                </p>
+                {answerExplanation ? (
+                  <div className="mt-1.5">
+                    <ExplanationLines explanation={answerExplanation} />
+                  </div>
+                ) : (
+                  <p className="mt-1.5 leading-relaxed">
+                    Your response has been recorded for this checkpoint.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </motion.div>
     ) : null;
@@ -530,13 +538,12 @@ export function MCQCheckpoint({
         )}
 
         {feedbackBlock}
-        {modalMode && <div className="h-1 shrink-0" aria-hidden="true" />}
       </div>
 
       <div
         className={cn(
           "shrink-0 border-t border-zinc-100 bg-white",
-          modalMode ? "px-5 py-2.5 sm:px-6" : "p-4 sm:px-6 sm:pb-5",
+          modalMode ? (submittedLayout ? "px-5 py-3 sm:px-6" : "px-5 py-2.5 sm:px-6") : "p-4 sm:px-6 sm:pb-5",
         )}
       >
         {!submitted ? (

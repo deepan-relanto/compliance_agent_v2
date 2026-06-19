@@ -21,6 +21,7 @@ import { ProctorRulesModal } from "@/components/employee/proctor-rules-modal";
 import { ChevronLeft, ChevronRight, Clock, Maximize2, Minimize2, ShieldAlert, ShieldCheck } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useAuthStore } from "@/lib/auth-store";
 import {
   markInProgress,
@@ -211,6 +212,11 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
   const [earnedBadges, setEarnedBadges] = useState<GamificationBadge[]>([]);
   const [badgePopup, setBadgePopup] = useState<GamificationBadge | null>(null);
 
+  const handleProctorLockout = useCallback(() => {
+    setIsFailed(true);
+    setMcqOpen(false);
+  }, []);
+
   const proctorHook = useProctorMonitor({
     enabled:
       sessionStarted &&
@@ -227,7 +233,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     batchId: user?.batchId ?? "",
     totalSlides,
     reviewOnlyMode,
-    onLockout: () => setIsFailed(true),
+    onLockout: handleProctorLockout,
     onStatusChange: (status) => setDbStatus(status),
   });
   const liveWarningCount = proctorHook.warningCount;
@@ -623,6 +629,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
   }, []);
 
   const openGate = useCallback(() => {
+    if (isFailed) return;
     const gateSlot = Math.min(
       Math.max(gateIndex, 0),
       Math.max(moduleMcqs.length - 1, 0),
@@ -633,7 +640,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
       FALLBACK_MCQ;
     setGateMcq(mcq);
     setMcqOpen(true);
-  }, [moduleMcqs, slideIndex, gateIndex]);
+  }, [isFailed, moduleMcqs, slideIndex, gateIndex]);
 
   const handleFinishAttempt = useCallback(async () => {
     if (reviewOnlyMode) {
@@ -683,6 +690,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
   ]);
 
   const tryAdvance = useCallback(() => {
+    if (isFailed) return;
     if (quizOnlyMode) {
       if (!moduleMcqs.length) {
         void handleFinishAttempt();
@@ -730,6 +738,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     setNextClickCount(upcoming);
     setSlideIndex((i) => Math.min(i + 1, totalSlides - 1));
   }, [
+    isFailed,
     quizOnlyMode,
     moduleMcqs,
     activeQuiz,
@@ -883,6 +892,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
   }, [gateMcq.id, unlockBadge]);
 
   const handleMcqContinue = () => {
+    if (isFailed) return;
     setMcqOpen(false);
     scheduleBadgeFlush(420);
     if (quizOnlyMode) {
@@ -901,6 +911,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
 
   const checkpointOpen =
     mcqOpen &&
+    !isFailed &&
     !activeWarningReason &&
     !showAcknowledgement &&
     !showFinalQa &&
@@ -989,7 +1000,14 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
   }, [showAcknowledgement]);
 
   useEffect(() => {
-    if (!sessionStarted || !quizOnlyMode || showAcknowledgement || showFinalQa || showScoreResult) {
+    if (
+      !sessionStarted ||
+      !quizOnlyMode ||
+      isFailed ||
+      showAcknowledgement ||
+      showFinalQa ||
+      showScoreResult
+    ) {
       return;
     }
     if (ackFlowCompletedRef.current) return;
@@ -999,12 +1017,18 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
   }, [
     sessionStarted,
     quizOnlyMode,
+    isFailed,
     quizOnlyIndex,
     moduleMcqs,
     showAcknowledgement,
     showFinalQa,
     showScoreResult,
   ]);
+
+  useEffect(() => {
+    if (!isFailed) return;
+    setMcqOpen(false);
+  }, [isFailed]);
 
   const renderIntegrityLockout = useCallback(() => {
     const retakesRemaining = Math.max(0, 2 - retakeCount);
@@ -1638,7 +1662,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
       />
 
       {/* ── Warning Notification Modal overlay ────────────────────────────── */}
-      {activeWarningReason && (
+      {activeWarningReason && !isFailed && (
         <ProctorWarningModal
           open={true}
           reason={activeWarningReason}
@@ -1708,12 +1732,17 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
         </div>
       )}
 
-      {/* ── Failed Lock Screen Overlay ─────────────────────────────────────── */}
-      {sessionStarted && isFailed && dbStatus !== "not_started" && (
-        <div className="pointer-events-auto fixed inset-0 z-[92] flex items-center justify-center bg-zinc-900/75 backdrop-blur-sm p-4">
-          {renderIntegrityLockout()}
-        </div>
-      )}
+      {/* ── Failed Lock Screen Overlay (portaled above MCQ checkpoints) ───── */}
+      {sessionStarted &&
+        isFailed &&
+        dbStatus !== "not_started" &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="pointer-events-auto fixed inset-0 z-[310] flex items-center justify-center bg-zinc-900/80 backdrop-blur-sm p-4">
+            {renderIntegrityLockout()}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

@@ -133,6 +133,7 @@ export function useProctorMonitor({
       }
 
       if (isProctorLocked(updated)) {
+        setActiveReason(null);
         onLockout();
       }
 
@@ -182,7 +183,7 @@ export function useProctorMonitor({
 
       syncWarningState(updated);
 
-      if (updated.warningCount > previousCount) {
+      if (updated.warningCount > previousCount && !isProctorLocked(updated)) {
         setActiveReason(reason);
         return true;
       }
@@ -224,7 +225,7 @@ export function useProctorMonitor({
 
     syncWarningState(updated);
 
-    if (updated.warningCount > previousCount) {
+    if (updated.warningCount > previousCount && !isProctorLocked(updated)) {
       lastFullscreenExitWarnAtRef.current = now;
       setActiveReason("Exited Fullscreen");
       return true;
