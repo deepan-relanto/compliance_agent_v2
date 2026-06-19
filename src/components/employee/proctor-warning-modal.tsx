@@ -9,6 +9,7 @@ import {
 } from "@/lib/proctor/violations";
 import { cn } from "@/lib/utils";
 import { AlertTriangle, ShieldAlert } from "lucide-react";
+import { createPortal } from "react-dom";
 
 interface ProctorWarningModalProps {
   open: boolean;
@@ -27,9 +28,9 @@ export function ProctorWarningModal({
 
   const remaining = Math.max(0, PROCTOR_MAX_WARNINGS - warningCount);
 
-  return (
+  const modal = (
     <div
-      className="fixed inset-0 z-[240] flex items-center justify-center bg-zinc-950/70 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-[300] flex items-center justify-center bg-zinc-950/80 backdrop-blur-sm p-4"
       role="alertdialog"
       aria-modal="true"
       onKeyDown={(e) => {
@@ -96,4 +97,8 @@ export function ProctorWarningModal({
       </div>
     </div>
   );
+
+  return typeof document !== "undefined"
+    ? createPortal(modal, document.body)
+    : modal;
 }

@@ -65,7 +65,7 @@ const PdfPageViewer = dynamic(
 );
 
 const SLIDES_BETWEEN_GATES = 3;
-const SLIDE_READ_SECONDS = 5;
+const SLIDE_READ_SECONDS = 3.5;
 
 const FALLBACK_MCQ: McqQuestion = {
   id: "gate-fallback",
@@ -387,8 +387,8 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
 
     setSlideReadCountdown(SLIDE_READ_SECONDS);
     const id = window.setInterval(() => {
-      setSlideReadCountdown((remaining) => Math.max(0, remaining - 1));
-    }, 1000);
+      setSlideReadCountdown((remaining) => Math.max(0, remaining - 0.5));
+    }, 500);
 
     return () => window.clearInterval(id);
   }, [slideIndex, sessionStarted, quizOnlyMode]);
@@ -901,6 +901,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
 
   const checkpointOpen =
     mcqOpen &&
+    !activeWarningReason &&
     !showAcknowledgement &&
     !showFinalQa &&
     !showScoreResult &&

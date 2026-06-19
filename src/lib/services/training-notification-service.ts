@@ -8,7 +8,7 @@ type Sql = ReturnType<typeof getSql>;
 
 const EMAIL_DURATION_LABEL = "approximately 15 min";
 const ONE_STRETCH_NOTE =
-  "Please ensure you take the training in just one stretch.";
+  "Please ensure that you plan your schedule accordingly and complete the training in a single sitting.";
 
 function invitationHtml(params: {
   displayName: string;
