@@ -6,13 +6,16 @@ import { trainingLoginUrl } from "@/lib/training-link";
 
 type Sql = ReturnType<typeof getSql>;
 
+const EMAIL_DURATION_LABEL = "approximately 15 min";
+const ONE_STRETCH_NOTE =
+  "Please ensure you take the training in just one stretch.";
+
 function invitationHtml(params: {
   displayName: string;
   moduleTitle: string;
   loginUrl: string;
-  durationMinutes: number;
 }): string {
-  const { displayName, moduleTitle, loginUrl, durationMinutes } = params;
+  const { displayName, moduleTitle, loginUrl } = params;
   return `
 <!DOCTYPE html>
 <html><body style="font-family:Segoe UI,Arial,sans-serif;color:#18181b;line-height:1.6;max-width:560px;margin:0 auto;padding:24px">
@@ -20,7 +23,8 @@ function invitationHtml(params: {
   <p style="font-size:12px;font-weight:700;letter-spacing:0.12em;color:#f15a24;text-transform:uppercase">Relanto Compliance Agent</p>
   <h1 style="font-size:22px;margin:8px 0 16px">Mandatory training assigned</h1>
   <p>Hi ${displayName},</p>
-  <p>Your administrator has sent <strong>${moduleTitle}</strong> to you. This is a proctored compliance assessment (~${durationMinutes} min).</p>
+  <p>Your administrator has sent <strong>${moduleTitle}</strong> to you. This is a proctored compliance assessment (${EMAIL_DURATION_LABEL}).</p>
+  <p style="font-size:13px;color:#52525b">${ONE_STRETCH_NOTE}</p>
   <p style="margin:28px 0">
     <a href="${loginUrl}" style="display:inline-block;background:#2e3192;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600">Start training</a>
   </p>
@@ -28,6 +32,21 @@ function invitationHtml(params: {
   <p style="font-size:12px;color:#71717a">In case of any technical issues, please contact Relanto Academy at <a href="mailto:relanto.academy@relanto.ai" style="color:#2e3192;text-decoration:underline">relanto.academy@relanto.ai</a></p>
   <p style="font-size:12px;color:#a1a1aa;margin-top:32px">© Relanto — Compliance Agent</p>
 </body></html>`;
+}
+
+function invitationTextBody(params: {
+  displayName: string;
+  moduleTitle: string;
+  loginUrl: string;
+}): string {
+  const { displayName, moduleTitle, loginUrl } = params;
+  return [
+    `Hi ${displayName},`,
+    `Your administrator has sent "${moduleTitle}" to you. This is a proctored compliance assessment (${EMAIL_DURATION_LABEL}).`,
+    ONE_STRETCH_NOTE,
+    `Start here: ${loginUrl}`,
+    "Sign in with your @relanto.ai Microsoft work account to begin.",
+  ].join("\n\n");
 }
 
 function completionHtml(params: {
@@ -129,7 +148,6 @@ export async function sendModuleInvitationEmails(
   }
 
   const moduleTitle = modules[0].title as string;
-  const durationMinutes = Number(modules[0].duration_minutes ?? 20);
   const loginBase = cfg.baseUrl;
 
   const learners = await sql`
@@ -165,8 +183,8 @@ export async function sendModuleInvitationEmails(
       await sendGraphMail({
         to: email,
         subject: `Action required: ${moduleTitle} — Relanto Compliance Training`,
-        htmlBody: invitationHtml({ displayName, moduleTitle, loginUrl, durationMinutes }),
-        textBody: `Hi ${displayName}, complete "${moduleTitle}" here: ${loginUrl}`,
+        htmlBody: invitationHtml({ displayName, moduleTitle, loginUrl }),
+        textBody: invitationTextBody({ displayName, moduleTitle, loginUrl }),
       });
       await recordNotification(sql, moduleId, email, "invited");
       sent++;
@@ -208,13 +226,29 @@ function retakeHtml(params: {
   <p style="font-size:12px;font-weight:700;letter-spacing:0.12em;color:#f15a24;text-transform:uppercase">Relanto Compliance Agent</p>
   <h1 style="font-size:22px;margin:8px 0 16px">Retake approved</h1>
   <p>Hi ${displayName},</p>
-  <p>Your administrator approved a new attempt for <strong>${moduleTitle}</strong>. Your previous warnings were cleared — you may begin again from the start.</p>
+  <p>Your administrator approved a new attempt for <strong>${moduleTitle}</strong>. Your previous warnings were cleared — you may begin again from the start. This is a proctored compliance assessment (${EMAIL_DURATION_LABEL}).</p>
+  <p style="font-size:13px;color:#52525b">${ONE_STRETCH_NOTE}</p>
   <p style="margin:28px 0">
     <a href="${loginUrl}" style="display:inline-block;background:#2e3192;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600">Start retake</a>
   </p>
   <p style="font-size:13px;color:#71717a">Sign in with your @relanto.ai Microsoft work account to continue.</p>
   <p style="font-size:12px;color:#a1a1aa;margin-top:32px">© Relanto — Compliance Agent</p>
 </body></html>`;
+}
+
+function retakeTextBody(params: {
+  displayName: string;
+  moduleTitle: string;
+  loginUrl: string;
+}): string {
+  const { displayName, moduleTitle, loginUrl } = params;
+  return [
+    `Hi ${displayName},`,
+    `Your administrator approved a new attempt for "${moduleTitle}". Your previous warnings were cleared — you may begin again from the start. This is a proctored compliance assessment (${EMAIL_DURATION_LABEL}).`,
+    ONE_STRETCH_NOTE,
+    `Start retake here: ${loginUrl}`,
+    "Sign in with your @relanto.ai Microsoft work account to continue.",
+  ].join("\n\n");
 }
 
 export async function sendRetakeApprovalEmail(
@@ -248,7 +282,7 @@ export async function sendRetakeApprovalEmail(
       to: email,
       subject: `Retake approved: ${moduleTitle} — Relanto Compliance Training`,
       htmlBody: retakeHtml({ displayName, moduleTitle, loginUrl }),
-      textBody: `Hi ${displayName}, your retake for "${moduleTitle}" was approved. Start here: ${loginUrl}`,
+      textBody: retakeTextBody({ displayName, moduleTitle, loginUrl }),
     });
     return { ok: true, message: "Retake approval email sent." };
   } catch (err) {
