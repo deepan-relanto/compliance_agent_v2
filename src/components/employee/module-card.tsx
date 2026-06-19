@@ -7,7 +7,7 @@ import { getProgress, getModuleStatus, isProctorLocked } from "@/lib/progress-st
 import type { ModuleStatus, TrainingModule } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { PASS_THRESHOLD_PERCENT } from "@/lib/constants";
-import { Clock, FileText, Layers, Play, RotateCcw, Trophy } from "lucide-react";
+import { Clock, FileText, Layers, Play, RotateCcw } from "lucide-react";
 import { requestScoreRetake } from "@/lib/progress-api";
 import { resetForScoreRetake, resetLocalAttempt } from "@/lib/progress-store";
 import { useRouter } from "next/navigation";
@@ -133,19 +133,6 @@ export function ModuleCard({ module }: ModuleCardProps) {
                 {module.contentType === "pdf" && (
                   <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500">
                     PDF
-                  </span>
-                )}
-                {scorePercent != null && (
-                  <span
-                    className={cn(
-                      "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
-                      scorePercent > PASS_THRESHOLD_PERCENT
-                        ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/60"
-                        : "bg-red-50 text-red-700 ring-1 ring-red-200/60",
-                    )}
-                  >
-                    <Trophy className="h-3 w-3" />
-                    {scorePercent}%
                   </span>
                 )}
               </div>
