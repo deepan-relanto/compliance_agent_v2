@@ -6,11 +6,19 @@ interface GraphTokenResponse {
   error_description?: string;
 }
 
+export interface MailAttachment {
+  name: string;
+  contentType: string;
+  /** Raw file bytes. */
+  content: Buffer;
+}
+
 export interface SendMailParams {
   to: string;
   subject: string;
   htmlBody: string;
   textBody?: string;
+  attachments?: MailAttachment[];
 }
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
@@ -66,6 +74,13 @@ export async function sendGraphMail(params: SendMailParams): Promise<void> {
   }
 
   const token = await getGraphAccessToken();
+  const attachments = (params.attachments ?? []).map((file) => ({
+    "@odata.type": "#microsoft.graph.fileAttachment",
+    name: file.name,
+    contentType: file.contentType,
+    contentBytes: file.content.toString("base64"),
+  }));
+
   const res = await fetch(
     `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(cfg.mailFrom)}/sendMail`,
     {
@@ -82,6 +97,7 @@ export async function sendGraphMail(params: SendMailParams): Promise<void> {
             content: params.htmlBody,
           },
           toRecipients: [{ emailAddress: { address: params.to } }],
+          ...(attachments.length > 0 ? { attachments } : {}),
         },
         saveToSentItems: true,
       }),

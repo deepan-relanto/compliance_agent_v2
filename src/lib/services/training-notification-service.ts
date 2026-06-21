@@ -1,6 +1,11 @@
 import type { getSql } from "@/lib/db";
 import { getGraphMailConfig } from "@/lib/graph-mail-config";
 import { firstNameFromEmail } from "@/lib/auth-env";
+import type { AssessmentAcknowledgement } from "@/lib/types";
+import {
+  formatCertificateDate,
+  generateCertificatePdf,
+} from "@/lib/services/certificate-pdf-service";
 import { sendGraphMail } from "@/lib/services/graph-mail-service";
 import { trainingLoginUrl } from "@/lib/training-link";
 
@@ -52,8 +57,9 @@ function invitationTextBody(params: {
 function completionHtml(params: {
   displayName: string;
   moduleTitle: string;
+  hasCertificate: boolean;
 }): string {
-  const { displayName, moduleTitle } = params;
+  const { displayName, moduleTitle, hasCertificate } = params;
   return `
 <!DOCTYPE html>
 <html><body style="font-family:Segoe UI,Arial,sans-serif;color:#18181b;line-height:1.6;max-width:560px;margin:0 auto;padding:24px">
@@ -62,9 +68,36 @@ function completionHtml(params: {
   <h1 style="font-size:22px;margin:8px 0 16px">Training submitted</h1>
   <p>Hi ${displayName},</p>
   <p>We received your completed assessment for <strong>${moduleTitle}</strong>, including your attestation and feedback.</p>
+  ${
+    hasCertificate
+      ? `<p>Your certificate of completion is attached to this email as a PDF for your records.</p>`
+      : ""
+  }
   <p style="color:#52525b">No further action is required. Thank you for completing your mandatory training.</p>
   <p style="font-size:12px;color:#a1a1aa;margin-top:32px">© Relanto — Compliance Agent</p>
 </body></html>`;
+}
+
+function certificateFileName(moduleTitle: string): string {
+  const safe = moduleTitle
+    .trim()
+    .replace(/[^\w\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .slice(0, 80);
+  return `Relanto-Certificate-${safe || "Training"}.pdf`;
+}
+
+function parseAcknowledgement(raw: unknown): AssessmentAcknowledgement | null {
+  if (!raw) return null;
+  if (typeof raw === "string") {
+    try {
+      return JSON.parse(raw) as AssessmentAcknowledgement;
+    } catch {
+      return null;
+    }
+  }
+  if (typeof raw === "object") return raw as AssessmentAcknowledgement;
+  return null;
 }
 
 async function wasNotificationSent(
@@ -314,6 +347,14 @@ export async function sendModuleCompletionEmail(
     return { ok: false, message: "Module not found." };
   }
 
+  const progressRows = await sql`
+    SELECT acknowledgement, completed_at
+    FROM assessment_progress
+    WHERE LOWER(user_email) = LOWER(${email}) AND module_id = ${moduleId}
+    LIMIT 1
+  `;
+  const acknowledgement = parseAcknowledgement(progressRows[0]?.acknowledgement);
+
   const users = await sql`
     SELECT display_name FROM users WHERE LOWER(email) = LOWER(${email}) LIMIT 1
   `;
@@ -321,11 +362,40 @@ export async function sendModuleCompletionEmail(
     (users[0]?.display_name as string | null)?.trim() || firstNameFromEmail(email);
   const moduleTitle = modules[0].title as string;
 
+  let attachments: { name: string; contentType: string; content: Buffer }[] | undefined;
+  const digitalSignature = acknowledgement?.digitalSignature?.trim();
+  if (digitalSignature) {
+    try {
+      const completedAt = progressRows[0]?.completed_at
+        ? new Date(progressRows[0].completed_at as string | Date)
+        : new Date();
+      const pdf = await generateCertificatePdf({
+        courseName: moduleTitle,
+        digitalSignature,
+        dateLabel: formatCertificateDate(completedAt),
+      });
+      attachments = [
+        {
+          name: certificateFileName(moduleTitle),
+          contentType: "application/pdf",
+          content: pdf,
+        },
+      ];
+    } catch (err) {
+      console.error("[training-notification certificate]", email, err);
+    }
+  }
+
   try {
     await sendGraphMail({
       to: email,
       subject: `Submitted: ${moduleTitle} — Relanto Compliance Training`,
-      htmlBody: completionHtml({ displayName, moduleTitle }),
+      htmlBody: completionHtml({
+        displayName,
+        moduleTitle,
+        hasCertificate: Boolean(attachments?.length),
+      }),
+      attachments,
     });
     await recordNotification(sql, moduleId, email, "completed");
     return { ok: true, message: "Completion email sent." };
