@@ -363,6 +363,7 @@ export async function sendModuleCompletionEmail(
   const moduleTitle = modules[0].title as string;
 
   let attachments: { name: string; contentType: string; content: Buffer }[] | undefined;
+  let certificateError: string | undefined;
   const digitalSignature = acknowledgement?.digitalSignature?.trim();
   if (digitalSignature) {
     try {
@@ -382,8 +383,20 @@ export async function sendModuleCompletionEmail(
         },
       ];
     } catch (err) {
-      console.error("[training-notification certificate]", email, err);
+      certificateError = err instanceof Error ? err.message : String(err);
+      console.error(
+        "[training-notification certificate] PDF generation failed for",
+        email,
+        certificateError,
+        err,
+      );
     }
+  } else {
+    console.warn(
+      "[training-notification certificate] No digitalSignature on acknowledgement for",
+      email,
+      moduleId,
+    );
   }
 
   try {
@@ -398,7 +411,18 @@ export async function sendModuleCompletionEmail(
       attachments,
     });
     await recordNotification(sql, moduleId, email, "completed");
-    return { ok: true, message: "Completion email sent." };
+    if (certificateError) {
+      return {
+        ok: true,
+        message: `Completion email sent without certificate attachment: ${certificateError}`,
+      };
+    }
+    return {
+      ok: true,
+      message: attachments?.length
+        ? "Completion email sent with certificate attachment."
+        : "Completion email sent.",
+    };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Send failed";
     console.error("[training-notification complete]", email, err);

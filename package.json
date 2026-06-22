@@ -32,13 +32,14 @@
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.10.4",
+    "@sparticuz/chromium": "^149.0.0",
     "clsx": "^2.1.1",
     "framer-motion": "^11.18.2",
     "lucide-react": "^0.511.0",
     "next": "^15.3.3",
     "next-auth": "^5.0.0-beta.25",
     "papaparse": "^5.5.2",
-    "puppeteer": "^25.1.0",
+    "puppeteer-core": "^25.1.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-pdf": "^9.2.1",
@@ -56,6 +57,7 @@
     "eslint": "^9.28.0",
     "eslint-config-next": "^15.3.3",
     "postgres": "^3.4.5",
+    "puppeteer": "^25.1.0",
     "tailwindcss": "^4.1.8",
     "typescript": "^5.8.3",
     "xlsx": "^0.18.5"

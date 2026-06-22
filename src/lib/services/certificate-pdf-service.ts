@@ -246,19 +246,65 @@ export function formatCertificateDate(date: Date = new Date()): string {
   return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 }
 
+type Browser = Awaited<ReturnType<Awaited<ReturnType<typeof importPuppeteerCore>>["launch"]>>;
+
+async function importPuppeteerCore() {
+  return import("puppeteer-core");
+}
+
+/** Launch headless Chrome — Sparticuz on server/cloud, full Puppeteer locally. */
+async function launchCertificateBrowser(): Promise<Browser> {
+  const puppeteer = await importPuppeteerCore();
+  const customExecutable = process.env.PUPPETEER_EXECUTABLE_PATH?.trim();
+
+  if (customExecutable) {
+    return puppeteer.launch({
+      executablePath: customExecutable,
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+    });
+  }
+
+  const useCloudChromium =
+    process.env.NODE_ENV === "production" ||
+    Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME) ||
+    Boolean(process.env.RENDER);
+
+  if (useCloudChromium) {
+    const chromiumMod = await import("@sparticuz/chromium");
+    const chromium = chromiumMod.default;
+    chromium.setGraphicsMode = false;
+
+    return puppeteer.launch({
+      args: [
+        ...chromium.args,
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--font-render-hinting=none",
+      ],
+      executablePath: await chromium.executablePath(),
+      headless: true,
+    });
+  }
+
+  // Local development — bundled Chrome from full puppeteer (devDependency).
+  const puppeteerFull = await import("puppeteer");
+  return puppeteerFull.default.launch({
+    headless: true,
+    args: ["--no-sandbox", "--disable-setuid-sandbox", "--font-render-hinting=none"],
+  }) as Promise<Browser>;
+}
+
 /** Render the certificate HTML to a PDF buffer (1000×700 layout). */
 export async function generateCertificatePdf(data: CertificateData): Promise<Buffer> {
   const html = buildCertificateHtml(data);
-  const puppeteer = await import("puppeteer");
-
-  const browser = await puppeteer.default.launch({
-    headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox", "--font-render-hinting=none"],
-  });
+  const browser = await launchCertificateBrowser();
 
   try {
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "load" });
+    await page.setContent(html, { waitUntil: "load", timeout: 30_000 });
     await page.evaluate(() => document.fonts.ready);
 
     const pdfBytes = await page.pdf({
@@ -266,6 +312,7 @@ export async function generateCertificatePdf(data: CertificateData): Promise<Buf
       height: "700px",
       printBackground: true,
       margin: { top: 0, right: 0, bottom: 0, left: 0 },
+      timeout: 30_000,
     });
 
     return Buffer.from(pdfBytes);

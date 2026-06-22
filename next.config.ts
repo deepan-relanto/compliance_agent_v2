@@ -29,7 +29,7 @@ const nextConfig: NextConfig = {
     },
     middlewareClientMaxBodySize: "100mb",
   },
-  serverExternalPackages: ["pdfjs-dist"],
+  serverExternalPackages: ["pdfjs-dist", "puppeteer-core", "@sparticuz/chromium"],
   webpack: (config, { dev }) => {
     // Required for react-pdf / pdfjs-dist to load the PDF worker correctly
     config.resolve.alias.canvas = false;
