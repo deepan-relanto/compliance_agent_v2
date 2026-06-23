@@ -1,6 +1,12 @@
 import type { getSql } from "@/lib/db";
 import { getGraphMailConfig } from "@/lib/graph-mail-config";
 import { firstNameFromEmail } from "@/lib/auth-env";
+import {
+  buildCompletionResultSummary,
+  completionResultSummaryHtml,
+  completionResultTextSummary,
+  escapeHtml,
+} from "@/lib/services/completion-result-email-html";
 import { sendGraphMail } from "@/lib/services/graph-mail-service";
 import { trainingLoginUrl } from "@/lib/training-link";
 
@@ -52,19 +58,39 @@ function invitationTextBody(params: {
 function completionHtml(params: {
   displayName: string;
   moduleTitle: string;
+  resultSummaryHtml?: string;
 }): string {
-  const { displayName, moduleTitle } = params;
+  const { displayName, moduleTitle, resultSummaryHtml = "" } = params;
+  const safeName = escapeHtml(displayName);
+  const safeTitle = escapeHtml(moduleTitle);
   return `
 <!DOCTYPE html>
-<html><body style="font-family:Segoe UI,Arial,sans-serif;color:#18181b;line-height:1.6;max-width:560px;margin:0 auto;padding:24px">
+<html><body style="font-family:Segoe UI,Arial,sans-serif;color:#18181b;line-height:1.6;max-width:640px;margin:0 auto;padding:24px">
   <div style="height:4px;background:linear-gradient(90deg,#2e3192,#f15a24);border-radius:2px;margin-bottom:24px"></div>
   <p style="font-size:12px;font-weight:700;letter-spacing:0.12em;color:#f15a24;text-transform:uppercase">Relanto Compliance Agent</p>
   <h1 style="font-size:22px;margin:8px 0 16px">Training submitted</h1>
-  <p>Hi ${displayName},</p>
-  <p>We received your completed assessment for <strong>${moduleTitle}</strong>, including your attestation and feedback.</p>
+  <p>Hi ${safeName},</p>
+  <p>We received your completed assessment for <strong>${safeTitle}</strong>, including your attestation and feedback.</p>
+  ${resultSummaryHtml}
   <p style="color:#52525b">No further action is required. Thank you for completing your mandatory training.</p>
   <p style="font-size:12px;color:#a1a1aa;margin-top:32px">© Relanto — Compliance Agent</p>
 </body></html>`;
+}
+
+function completionTextBody(params: {
+  displayName: string;
+  moduleTitle: string;
+  resultSummaryText?: string;
+}): string {
+  const { displayName, moduleTitle, resultSummaryText } = params;
+  return [
+    `Hi ${displayName},`,
+    `We received your completed assessment for "${moduleTitle}", including your attestation and feedback.`,
+    resultSummaryText,
+    "No further action is required. Thank you for completing your mandatory training.",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 async function wasNotificationSent(
@@ -321,11 +347,43 @@ export async function sendModuleCompletionEmail(
     (users[0]?.display_name as string | null)?.trim() || firstNameFromEmail(email);
   const moduleTitle = modules[0].title as string;
 
+  const progressRows = await sql`
+    SELECT score_percent, mcq_correct, mcq_total
+    FROM assessment_progress
+    WHERE module_id = ${moduleId}
+      AND LOWER(user_email) = LOWER(${email})
+    LIMIT 1
+  `;
+  const progress = progressRows[0];
+  const resultSummary = buildCompletionResultSummary({
+    moduleTitle,
+    scorePercent:
+      progress?.score_percent != null ? Number(progress.score_percent) : null,
+    mcqCorrect:
+      progress?.mcq_correct != null ? Number(progress.mcq_correct) : null,
+    mcqTotal: progress?.mcq_total != null ? Number(progress.mcq_total) : null,
+  });
+  const resultSummaryHtml = resultSummary
+    ? completionResultSummaryHtml(resultSummary)
+    : "";
+  const resultSummaryText = resultSummary
+    ? completionResultTextSummary(resultSummary)
+    : undefined;
+
   try {
     await sendGraphMail({
       to: email,
       subject: `Submitted: ${moduleTitle} — Relanto Compliance Training`,
-      htmlBody: completionHtml({ displayName, moduleTitle }),
+      htmlBody: completionHtml({
+        displayName,
+        moduleTitle,
+        resultSummaryHtml,
+      }),
+      textBody: completionTextBody({
+        displayName,
+        moduleTitle,
+        resultSummaryText,
+      }),
     });
     await recordNotification(sql, moduleId, email, "completed");
     return { ok: true, message: "Completion email sent." };
