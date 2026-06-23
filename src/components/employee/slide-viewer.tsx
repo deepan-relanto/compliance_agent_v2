@@ -769,20 +769,31 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
     }, 300);
   }, []);
 
-  const finishTrainingCompletion = useCallback(() => {
+  const finishTrainingCompletion = useCallback(async () => {
     setShowFinalQa(false);
     setShowAcknowledgement(false);
     setShowScoreResult(false);
     setMcqOpen(false);
+
+    let completionMessage = `Thank you. Your training for “${module.title}” is complete — attestation and feedback are on record.`;
     if (user?.username) {
       markCompleted(user.username, module.id);
-      void syncProgressComplete(user.username, module.id);
+      const result = await syncProgressComplete(user.username, module.id);
+      if (!result.ok) {
+        completionMessage =
+          "Your training is recorded locally, but we could not finalize it on the server. Please refresh your dashboard or contact Relanto Academy if your status looks wrong.";
+      } else if (result.emailSent === false) {
+        completionMessage += " We could not send your completion email — please check spam or contact Relanto Academy.";
+      } else {
+        completionMessage += " A confirmation email with your results is on its way.";
+      }
     }
+
     setCompletionNotice({
       title: "Assessment submitted successfully",
-      message: `Thank you. Your training for “${module.title}” is complete — attestation and feedback are on record.`,
+      message: completionMessage,
       variant: "success",
-      autoCloseAfterMs: 5000,
+      autoCloseAfterMs: 6000,
       showAcknowledgeButton: false,
       onAcknowledge: closeAfterCompletion,
     });
@@ -1548,7 +1559,7 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
                   messageRequired
                   ratingRequired
                   onSuccess={() => {
-                    finishTrainingCompletion();
+                    void finishTrainingCompletion();
                   }}
                 />
               </div>

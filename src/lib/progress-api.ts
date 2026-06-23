@@ -178,14 +178,34 @@ export async function resetAttemptProgress(
 export async function syncProgressComplete(
   userEmail: string,
   moduleId: string,
-): Promise<boolean> {
-  const res = await fetch("/api/progress/complete", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ userEmail, moduleId }),
-  });
-  const data = await res.json();
-  return Boolean(data.ok);
+): Promise<{ ok: boolean; emailSent?: boolean; message?: string }> {
+  try {
+    const res = await fetch("/api/progress/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userEmail, moduleId }),
+      keepalive: true,
+    });
+    const data = (await res.json()) as {
+      ok?: boolean;
+      message?: string;
+      emailSent?: boolean;
+    };
+    if (!res.ok || !data.ok) {
+      return {
+        ok: false,
+        emailSent: data.emailSent,
+        message: data.message ?? `Completion sync failed (${res.status})`,
+      };
+    }
+    return {
+      ok: true,
+      emailSent: data.emailSent,
+      message: data.message,
+    };
+  } catch {
+    return { ok: false, message: "Could not reach the server to finalize completion." };
+  }
 }
 
 export async function syncAbandonmentFailure(params: {

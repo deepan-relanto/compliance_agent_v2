@@ -77,12 +77,12 @@ function earnedBadgesForEmail(summary: CompletionResultSummary): EmailBadge[] {
 
 function statCell(label: string, value: string): string {
   return `
-    <td width="50%" style="padding:6px;vertical-align:top;">
-      <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="border:1px solid #e4e4e7;border-radius:8px;background:#fafafa;">
+    <td width="50%" style="width:50%;padding:5px;vertical-align:top;">
+      <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="border:1px solid #e4e4e7;background:#fafafa;">
         <tr>
-          <td style="padding:12px 14px;">
-            <p style="margin:0;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#71717a;">${label}</p>
-            <p style="margin:6px 0 0;font-family:Consolas,Monaco,monospace;font-size:18px;font-weight:700;color:#18181b;">${value}</p>
+          <td style="padding:12px 14px;text-align:left;">
+            <p style="margin:0;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#71717a;font-family:Segoe UI,Arial,sans-serif;">${label}</p>
+            <p style="margin:8px 0 0;font-family:Segoe UI,Arial,sans-serif;font-size:20px;font-weight:700;line-height:1.2;color:#18181b;">${value}</p>
           </td>
         </tr>
       </table>
@@ -91,11 +91,24 @@ function statCell(label: string, value: string): string {
 
 function badgeBlock(badge: EmailBadge): string {
   return `
-    <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="margin-bottom:8px;border:1px solid #fde68a;border-radius:6px;background:#fffbeb;">
+    <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="margin-bottom:8px;border:1px solid #fde68a;background:#fffbeb;">
       <tr>
         <td style="padding:10px 12px;">
-          <p style="margin:0;font-size:12px;font-weight:700;color:#78350f;">${escapeHtml(badge.name)}</p>
-          <p style="margin:4px 0 0;font-size:11px;line-height:1.45;color:#92400e;">${escapeHtml(badge.description)}</p>
+          <p style="margin:0;font-size:12px;font-weight:700;color:#78350f;font-family:Segoe UI,Arial,sans-serif;">${escapeHtml(badge.name)}</p>
+          <p style="margin:4px 0 0;font-size:11px;line-height:1.45;color:#92400e;font-family:Segoe UI,Arial,sans-serif;">${escapeHtml(badge.description)}</p>
+        </td>
+      </tr>
+    </table>`;
+}
+
+function scoreBadgeHtml(scorePercent: number, passed: boolean, accent: string): string {
+  const statusLabel = passed ? "PASS" : "FAIL";
+  return `
+    <table cellpadding="0" cellspacing="0" role="presentation" align="center" style="margin:0 auto;">
+      <tr>
+        <td align="center" style="width:104px;height:104px;background-color:#ffffff;border:4px solid ${accent};text-align:center;vertical-align:middle;">
+          <p style="margin:0;font-family:Segoe UI,Arial,sans-serif;font-size:28px;font-weight:700;line-height:1;color:${accent};">${scorePercent}<span style="font-size:18px;">%</span></p>
+          <p style="margin:8px 0 0;font-family:Segoe UI,Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.12em;color:#71717a;">${statusLabel}</p>
         </td>
       </tr>
     </table>`;
@@ -114,64 +127,48 @@ export function completionResultSummaryHtml(summary: CompletionResultSummary): s
   const headerBg = passed ? "#ecfdf5" : "#fef2f2";
   const headerBorder = passed ? "#d1fae5" : "#fecaca";
   const accent = passed ? "#047857" : "#b91c1c";
-  const gaugeTrack = passed ? "#059669" : "#dc2626";
 
   const badgeHtml =
     badges.length > 0
       ? badges.map(badgeBlock).join("")
-      : `<p style="margin:0;font-size:13px;color:#71717a;">No badges unlocked for this attempt.</p>`;
+      : `<p style="margin:0;font-size:13px;color:#71717a;font-family:Segoe UI,Arial,sans-serif;">No badges unlocked for this attempt.</p>`;
 
   return `
-    <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="margin:24px 0;border:1px solid #e4e4e7;border-radius:12px;overflow:hidden;background:#ffffff;">
+    <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="margin:24px 0;border:1px solid #e4e4e7;background:#ffffff;">
       <tr>
         <td style="padding:0;">
           <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:${headerBg};border-bottom:1px solid ${headerBorder};">
             <tr>
-              <td style="padding:24px 24px 20px;">
-                <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
-                  <tr>
-                    <td style="vertical-align:top;">
-                      <p style="display:inline-block;margin:0;padding:6px 10px;border:1px solid ${headerBorder};border-radius:6px;background:#ffffff;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:${accent};">
-                        Final result
-                      </p>
-                      <h2 style="margin:14px 0 8px;font-size:22px;font-weight:700;color:#09090b;">
-                        ${passed ? "Congratulations!" : "Compliance Training Failed"}
-                      </h2>
-                      <p style="margin:0 0 8px;font-size:14px;line-height:1.55;color:#3f3f46;">
-                        ${
-                          passed
-                            ? "You have successfully completed the training."
-                            : `You did not achieve the minimum passing score of ${PASS_THRESHOLD_PERCENT}%. Please review the material and try again.`
-                        }
-                      </p>
-                      <p style="margin:0;font-size:14px;font-weight:600;color:#18181b;">
-                        ${escapeHtml(motivationalMessage(scorePercent))}
-                      </p>
-                    </td>
-                    <td width="112" style="vertical-align:top;text-align:center;padding-left:16px;">
-                      <table cellpadding="0" cellspacing="0" role="presentation" align="center" style="width:96px;height:96px;border:10px solid #e4e4e7;border-radius:999px;border-top-color:${gaugeTrack};border-right-color:${gaugeTrack};">
-                        <tr>
-                          <td align="center" valign="middle" style="font-family:Consolas,Monaco,monospace;font-size:22px;font-weight:700;color:${accent};line-height:1.1;">
-                            ${scorePercent}%<br>
-                            <span style="font-size:10px;font-weight:700;letter-spacing:0.08em;color:#71717a;">${passed ? "PASS" : "FAIL"}</span>
-                          </td>
-                        </tr>
-                      </table>
-                    </td>
-                  </tr>
-                </table>
+              <td style="padding:24px;font-family:Segoe UI,Arial,sans-serif;">
+                <p style="margin:0 0 12px;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:${accent};">
+                  <span style="display:inline-block;padding:6px 10px;border:1px solid ${headerBorder};background:#ffffff;">Final result</span>
+                </p>
+                <h2 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#09090b;line-height:1.25;">
+                  ${passed ? "Congratulations!" : "Compliance Training Failed"}
+                </h2>
+                <p style="margin:0 0 8px;font-size:14px;line-height:1.55;color:#3f3f46;">
+                  ${
+                    passed
+                      ? "You have successfully completed the training."
+                      : `You did not achieve the minimum passing score of ${PASS_THRESHOLD_PERCENT}%. Please review the material and try again.`
+                  }
+                </p>
+                <p style="margin:0 0 18px;font-size:14px;font-weight:600;color:#18181b;line-height:1.5;">
+                  ${escapeHtml(motivationalMessage(scorePercent))}
+                </p>
+                ${scoreBadgeHtml(scorePercent, passed, accent)}
               </td>
             </tr>
           </table>
 
           <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
             <tr>
-              <td style="padding:20px 24px 8px;vertical-align:top;">
+              <td style="padding:20px 24px 12px;font-family:Segoe UI,Arial,sans-serif;">
                 <p style="margin:0;font-size:13px;font-weight:700;color:#2e3192;">Assessment Summary</p>
-                <p style="margin:6px 0 0;font-size:14px;color:#52525b;">
+                <p style="margin:8px 0 0;font-size:14px;line-height:1.5;color:#52525b;">
                   You scored ${finalScore}/${totalScore} in ${moduleTitle}.
                 </p>
-                <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="margin-top:14px;">
+                <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="margin-top:14px;table-layout:fixed;">
                   <tr>
                     ${statCell("Final Score", `${finalScore}/${totalScore}`)}
                     ${statCell("Percentage", `${scorePercent}%`)}
@@ -186,11 +183,17 @@ export function completionResultSummaryHtml(summary: CompletionResultSummary): s
                   </tr>
                 </table>
               </td>
-              <td width="220" style="padding:20px 24px 8px;vertical-align:top;border-left:1px solid #f4f4f5;">
+            </tr>
+            <tr>
+              <td style="padding:4px 24px 20px;border-top:1px solid #f4f4f5;font-family:Segoe UI,Arial,sans-serif;">
                 <p style="margin:0;font-size:13px;font-weight:700;color:#b45309;">Badges Earned</p>
-                <div style="margin-top:12px;">
-                  ${badgeHtml}
-                </div>
+                <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="margin-top:12px;">
+                  <tr>
+                    <td>
+                      ${badgeHtml}
+                    </td>
+                  </tr>
+                </table>
               </td>
             </tr>
           </table>

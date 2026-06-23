@@ -23,11 +23,16 @@ export async function POST(req: NextRequest) {
     const sql = getSql();
     await markAssessmentCompletedDb(sql, access.email, moduleId);
 
-    void sendModuleCompletionEmail(sql, access.email, moduleId).catch((err) => {
-      console.error("[progress complete email]", err);
-    });
+    const emailResult = await sendModuleCompletionEmail(sql, access.email, moduleId);
+    if (!emailResult.ok) {
+      console.error("[progress complete email]", access.email, moduleId, emailResult.message);
+    }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({
+      ok: true,
+      emailSent: emailResult.ok,
+      emailMessage: emailResult.message,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to complete assessment";
     return NextResponse.json({ ok: false, message }, { status: 500 });
