@@ -135,7 +135,7 @@ export function completionResultSummaryHtml(summary: CompletionResultSummary): s
                         Final result
                       </p>
                       <h2 style="margin:14px 0 8px;font-size:22px;font-weight:700;color:#09090b;">
-                        ${passed ? "Compliance Training Passed" : "Compliance Training Failed"}
+                        ${passed ? "Congratulations!" : "Compliance Training Failed"}
                       </h2>
                       <p style="margin:0 0 8px;font-size:14px;line-height:1.55;color:#3f3f46;">
                         ${
@@ -208,7 +208,7 @@ export function completionResultTextSummary(summary: CompletionResultSummary): s
     .join("\n");
 
   return [
-    summary.passed ? "Compliance Training Passed" : "Compliance Training Failed",
+    summary.passed ? "Congratulations!" : "Compliance Training Failed",
     `Score: ${finalScore}/${totalScore} (${summary.scorePercent}%)`,
     `Status: ${summary.passed ? "PASS" : "FAIL"}`,
     `Correct: ${summary.mcqCorrect} | Wrong: ${wrongAnswers}`,
