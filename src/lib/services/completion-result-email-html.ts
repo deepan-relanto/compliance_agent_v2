@@ -101,21 +101,36 @@ function badgeBlock(badge: EmailBadge): string {
     </table>`;
 }
 
-function scoreBadgeHtml(scorePercent: number, passed: boolean, accent: string): string {
+/** Progress ring image for email (use cid: or hosted PNG — never inline SVG). */
+function scoreRingHtml(
+  scorePercent: number,
+  passed: boolean,
+  imageSrc: string,
+): string {
+  const clamped = Math.min(100, Math.max(0, Math.round(scorePercent)));
   const statusLabel = passed ? "PASS" : "FAIL";
+  const safeSrc = escapeHtml(imageSrc);
+  const alt = escapeHtml(`${clamped}% ${statusLabel}`);
+
   return `
-    <table cellpadding="0" cellspacing="0" role="presentation" align="center" style="margin:0 auto;">
+    <table cellpadding="0" cellspacing="0" role="presentation" align="right">
       <tr>
-        <td align="center" style="width:104px;height:104px;background-color:#ffffff;border:4px solid ${accent};text-align:center;vertical-align:middle;">
-          <p style="margin:0;font-family:Segoe UI,Arial,sans-serif;font-size:28px;font-weight:700;line-height:1;color:${accent};">${scorePercent}<span style="font-size:18px;">%</span></p>
-          <p style="margin:8px 0 0;font-family:Segoe UI,Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.12em;color:#71717a;">${statusLabel}</p>
+        <td align="right" valign="top" width="128" height="128" style="width:128px;height:128px;padding:0;line-height:0;font-size:0;">
+          <img src="${safeSrc}" width="128" height="128" alt="${alt}" style="display:block;width:128px;height:128px;max-width:128px;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;"/>
         </td>
       </tr>
     </table>`;
 }
 
+export interface CompletionResultEmailOptions {
+  scoreRingImageSrc: string;
+}
+
 /** Email-safe HTML card mirroring the in-app Final Result screen (no action button). */
-export function completionResultSummaryHtml(summary: CompletionResultSummary): string {
+export function completionResultSummaryHtml(
+  summary: CompletionResultSummary,
+  options: CompletionResultEmailOptions,
+): string {
   const moduleTitle = escapeHtml(summary.moduleTitle);
   const scorePercent = Math.min(100, Math.max(0, Math.round(summary.scorePercent)));
   const passed = summary.passed;
@@ -126,7 +141,8 @@ export function completionResultSummaryHtml(summary: CompletionResultSummary): s
 
   const headerBg = passed ? "#ecfdf5" : "#fef2f2";
   const headerBorder = passed ? "#d1fae5" : "#fecaca";
-  const accent = passed ? "#047857" : "#b91c1c";
+  const accent = passed ? "#2e3192" : "#b91c1c";
+  const scoreRingImageSrc = options.scoreRingImageSrc;
 
   const badgeHtml =
     badges.length > 0
@@ -140,23 +156,31 @@ export function completionResultSummaryHtml(summary: CompletionResultSummary): s
           <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:${headerBg};border-bottom:1px solid ${headerBorder};">
             <tr>
               <td style="padding:24px;font-family:Segoe UI,Arial,sans-serif;">
-                <p style="margin:0 0 12px;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:${accent};">
-                  <span style="display:inline-block;padding:6px 10px;border:1px solid ${headerBorder};background:#ffffff;">Final result</span>
-                </p>
-                <h2 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#09090b;line-height:1.25;">
-                  ${passed ? "Congratulations!" : "Compliance Training Failed"}
-                </h2>
-                <p style="margin:0 0 8px;font-size:14px;line-height:1.55;color:#3f3f46;">
-                  ${
-                    passed
-                      ? "You have successfully completed the training."
-                      : `You did not achieve the minimum passing score of ${PASS_THRESHOLD_PERCENT}%. Please review the material and try again.`
-                  }
-                </p>
-                <p style="margin:0 0 18px;font-size:14px;font-weight:600;color:#18181b;line-height:1.5;">
-                  ${escapeHtml(motivationalMessage(scorePercent))}
-                </p>
-                ${scoreBadgeHtml(scorePercent, passed, accent)}
+                <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+                  <tr>
+                    <td valign="top" style="padding-right:12px;">
+                      <p style="margin:0 0 12px;font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:${accent};">
+                        <span style="display:inline-block;padding:5px 10px;border:1px solid ${headerBorder};background:#ffffff;">Final result</span>
+                      </p>
+                      <h2 style="margin:0 0 8px;font-size:24px;font-weight:700;color:#09090b;line-height:1.25;">
+                        ${passed ? "Congratulations!" : "Compliance Training Failed"}
+                      </h2>
+                      <p style="margin:0 0 6px;font-size:14px;line-height:1.55;color:#3f3f46;">
+                        ${
+                          passed
+                            ? "You have successfully completed the training."
+                            : `You did not achieve the minimum passing score of ${PASS_THRESHOLD_PERCENT}%. Please review the material and try again.`
+                        }
+                      </p>
+                      <p style="margin:0;font-size:14px;font-weight:600;color:#18181b;line-height:1.5;">
+                        ${escapeHtml(motivationalMessage(scorePercent))}
+                      </p>
+                    </td>
+                    <td width="132" valign="top" align="right" style="width:132px;min-width:132px;">
+                      ${scoreRingHtml(scorePercent, passed, scoreRingImageSrc)}
+                    </td>
+                  </tr>
+                </table>
               </td>
             </tr>
           </table>

@@ -7,6 +7,10 @@ import {
   completionResultTextSummary,
   escapeHtml,
 } from "@/lib/services/completion-result-email-html";
+import {
+  buildScoreRingPngBuffer,
+  SCORE_RING_IMAGE_CID,
+} from "@/lib/services/score-ring-image";
 import { sendGraphMail } from "@/lib/services/graph-mail-service";
 import { trainingLoginUrl } from "@/lib/training-link";
 
@@ -292,7 +296,7 @@ export async function sendRetakeApprovalEmail(
     SELECT title FROM training_modules WHERE id = ${moduleId} LIMIT 1
   `;
   if (modules.length === 0) {
-    return { ok: false, message: "Module not found." };
+    return { ok: false, message: "Module not found.", emailSent: false };
   }
 
   const users = await sql`
@@ -322,22 +326,22 @@ export async function sendModuleCompletionEmail(
   sql: Sql,
   userEmail: string,
   moduleId: string,
-): Promise<{ ok: boolean; message: string }> {
+): Promise<{ ok: boolean; message: string; emailSent: boolean }> {
   const cfg = getGraphMailConfig();
   if (!cfg.isConfigured) {
-    return { ok: false, message: "Mail not configured." };
+    return { ok: false, message: "Mail not configured.", emailSent: false };
   }
 
   const email = userEmail.trim().toLowerCase();
   if (await wasNotificationSent(sql, moduleId, email, "completed")) {
-    return { ok: true, message: "Completion email already sent." };
+    return { ok: true, message: "Completion email already sent.", emailSent: true };
   }
 
   const modules = await sql`
     SELECT title FROM training_modules WHERE id = ${moduleId} LIMIT 1
   `;
   if (modules.length === 0) {
-    return { ok: false, message: "Module not found." };
+    return { ok: false, message: "Module not found.", emailSent: false };
   }
 
   const users = await sql`
@@ -363,12 +367,31 @@ export async function sendModuleCompletionEmail(
       progress?.mcq_correct != null ? Number(progress.mcq_correct) : null,
     mcqTotal: progress?.mcq_total != null ? Number(progress.mcq_total) : null,
   });
-  const resultSummaryHtml = resultSummary
-    ? completionResultSummaryHtml(resultSummary)
-    : "";
-  const resultSummaryText = resultSummary
-    ? completionResultTextSummary(resultSummary)
-    : undefined;
+
+  if (!resultSummary?.passed) {
+    return {
+      ok: true,
+      message: "Completion email skipped (passing score required).",
+      emailSent: false,
+    };
+  }
+
+  const scoreRingPng = await buildScoreRingPngBuffer(
+    resultSummary.scorePercent,
+    true,
+  );
+  const inlineAttachments = [
+    {
+      contentId: SCORE_RING_IMAGE_CID,
+      name: "score-ring.png",
+      contentBytes: scoreRingPng.toString("base64"),
+      contentType: "image/png",
+    },
+  ];
+  const resultSummaryHtml = completionResultSummaryHtml(resultSummary, {
+    scoreRingImageSrc: `cid:${SCORE_RING_IMAGE_CID}`,
+  });
+  const resultSummaryText = completionResultTextSummary(resultSummary);
 
   try {
     await sendGraphMail({
@@ -384,12 +407,13 @@ export async function sendModuleCompletionEmail(
         moduleTitle,
         resultSummaryText,
       }),
+      inlineAttachments,
     });
     await recordNotification(sql, moduleId, email, "completed");
-    return { ok: true, message: "Completion email sent." };
+    return { ok: true, message: "Completion email sent.", emailSent: true };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Send failed";
     console.error("[training-notification complete]", email, err);
-    return { ok: false, message };
+    return { ok: false, message, emailSent: false };
   }
 }

@@ -782,10 +782,11 @@ export function SlideViewer({ module, mcqs = [], freshStart = false }: SlideView
       if (!result.ok) {
         completionMessage =
           "Your training is recorded locally, but we could not finalize it on the server. Please refresh your dashboard or contact Relanto Academy if your status looks wrong.";
-      } else if (result.emailSent === false) {
-        completionMessage += " We could not send your completion email — please check spam or contact Relanto Academy.";
-      } else {
+      } else if (result.emailSent) {
         completionMessage += " A confirmation email with your results is on its way.";
+      } else {
+        completionMessage +=
+          " We could not send your confirmation email — please check spam or contact Relanto Academy.";
       }
     }
 

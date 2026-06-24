@@ -21,7 +21,17 @@ export async function POST(req: NextRequest) {
     if (!access.ok) return access.response;
 
     const sql = getSql();
-    await markAssessmentCompletedDb(sql, access.email, moduleId);
+    const marked = await markAssessmentCompletedDb(sql, access.email, moduleId);
+    if (!marked) {
+      return NextResponse.json(
+        {
+          ok: false,
+          message:
+            "Assessment cannot be finalized. A passing score and attestation are required.",
+        },
+        { status: 400 },
+      );
+    }
 
     const emailResult = await sendModuleCompletionEmail(sql, access.email, moduleId);
     if (!emailResult.ok) {
@@ -30,7 +40,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      emailSent: emailResult.ok,
+      emailSent: emailResult.emailSent,
       emailMessage: emailResult.message,
     });
   } catch (err) {

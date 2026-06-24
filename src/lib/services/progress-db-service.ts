@@ -746,13 +746,13 @@ export async function saveAcknowledgementDb(
   }
 }
 
-/** Mark assessment completed after required feedback is submitted. */
+/** Mark assessment completed after required feedback is submitted (passing score only). */
 export async function markAssessmentCompletedDb(
   sql: Sql,
   userEmail: string,
   moduleId: string,
-): Promise<void> {
-  await sql`
+): Promise<boolean> {
+  const rows = await sql`
     UPDATE assessment_progress
     SET status = 'completed',
         completed_at = COALESCE(completed_at, NOW()),
@@ -761,7 +761,11 @@ export async function markAssessmentCompletedDb(
     WHERE user_email = ${userEmail}
       AND module_id = ${moduleId}
       AND acknowledgement IS NOT NULL
+      AND score_percent IS NOT NULL
+      AND score_percent >= ${PASS_THRESHOLD_PERCENT}
+    RETURNING 1
   `;
+  return rows.length > 0;
 }
 
 /** Clear slide + quiz answers so learner must start fresh (no resume). */
