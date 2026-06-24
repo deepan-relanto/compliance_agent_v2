@@ -296,7 +296,7 @@ export async function sendRetakeApprovalEmail(
     SELECT title FROM training_modules WHERE id = ${moduleId} LIMIT 1
   `;
   if (modules.length === 0) {
-    return { ok: false, message: "Module not found.", emailSent: false };
+    return { ok: false, message: "Module not found." };
   }
 
   const users = await sql`
