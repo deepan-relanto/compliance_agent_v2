@@ -57,6 +57,10 @@ export default function TrainingPage() {
     if (user?.username) qs.set("userEmail", user.username);
     const forEmail = searchParams.get("forEmail");
     if (forEmail) qs.set("forEmail", forEmail);
+    const preview = searchParams.get("preview");
+    if (preview) qs.set("preview", preview);
+    const fresh = searchParams.get("fresh");
+    if (fresh) qs.set("fresh", fresh);
     const query = qs.toString() ? `?${qs.toString()}` : "";
     const controller = new AbortController();
     fetch(`/api/modules/${encodeURIComponent(id)}${query}`, {
@@ -119,8 +123,10 @@ export default function TrainingPage() {
 
   useEffect(() => {
     if (!authReady || !ready) return;
-    if (!trainingModule) router.replace("/dashboard");
-  }, [ready, trainingModule, router, authReady]);
+    if (!trainingModule) {
+      router.replace(user?.role === "admin" ? "/admin/preview" : "/dashboard");
+    }
+  }, [ready, trainingModule, router, authReady, user?.role]);
 
   if (!authReady || !ready) {
     return (
@@ -132,7 +138,9 @@ export default function TrainingPage() {
 
   if (!trainingModule) return null;
 
-  if (trainingModule.viewerMode === "already_completed") {
+  const isPreview = searchParams.get("preview") === "1";
+
+  if (trainingModule.viewerMode === "already_completed" && !freshStart && !isPreview) {
     return (
       <RouteGuard allowedRoles={LEARNER_PAGE_ROLES}>
         <TrainingCompletedGate moduleTitle={trainingModule.title} />
@@ -153,6 +161,7 @@ export default function TrainingPage() {
           mcqs={mcqs}
           freshStart={freshStart}
           resumeCheckpoint={resumeCheckpoint}
+          isPreview={isPreview}
         />
       </RouteGuard>
     );

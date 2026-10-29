@@ -10,6 +10,10 @@ import { getModuleStepsDb } from "@/lib/services/course-service";
 import { warmMcqAnswerCacheFromQuestions } from "@/lib/services/mcq-answer-cache";
 import { setLearnerProgressSnapshot } from "@/lib/learner-progress-cache";
 import type { CourseStepRow } from "@/lib/course-step-types";
+import {
+  resolveDynamicActivityStep,
+  verifyActivityFileExists,
+} from "@/lib/activity-loader";
 
 type Sql = ReturnType<typeof getSql>;
 
@@ -235,15 +239,44 @@ export async function loadModuleDetail(
 
   let steps: CourseStepRow[] | undefined;
   if (isCourse) {
-    steps = (rawSteps as Awaited<ReturnType<typeof getModuleStepsDb>>)
-      .filter((s) => s.stepType !== "quiz")
-      .map((s) => ({
-        ...s,
-        config: {
-          ...s.config,
-          assetUrl: clientCourseAssetUrl(s.config.assetUrl),
-        },
-      }));
+    const rawFiltered = (rawSteps as Awaited<ReturnType<typeof getModuleStepsDb>>)
+      .filter((s) => s.stepType !== "quiz");
+
+    // Check if an activity step already exists in DB
+    const hasActivityInDb = rawFiltered.some((s) => s.stepType === "activity");
+
+    let dynamicActivityStep: CourseStepRow | null = null;
+    if (!hasActivityInDb) {
+      // Dynamic injection from activity folder by code:
+      dynamicActivityStep = resolveDynamicActivityStep(
+        row.id as string,
+        (row.title as string) ?? "",
+      );
+    }
+
+    const mappedSteps: CourseStepRow[] = rawFiltered.map((s) => ({
+      ...s,
+      config: {
+        ...s.config,
+        assetUrl: clientCourseAssetUrl(s.config.assetUrl),
+      },
+    }));
+
+    if (dynamicActivityStep) {
+      // Position activity before quiz / at the end of content steps
+      const maxOrder = mappedSteps.reduce(
+        (max, s) => Math.max(max, s.stepOrder),
+        0,
+      );
+      dynamicActivityStep.stepOrder = maxOrder + 1;
+      mappedSteps.push(dynamicActivityStep);
+    }
+
+    // Gracefully skip any activity step whose backing file does not exist on disk
+    steps = mappedSteps.filter((s) => {
+      if (s.stepType !== "activity") return true;
+      return verifyActivityFileExists(s.config?.assetUrl, row.title as string);
+    });
   }
 
   // Only resume a live attempt: a locked attempt or a freshly granted retake

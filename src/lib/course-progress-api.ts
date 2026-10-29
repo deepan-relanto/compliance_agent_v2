@@ -233,3 +233,26 @@ export async function requestCourseScoreRetake(
   const data = await res.json();
   return { ok: Boolean(data.ok), message: data.message };
 }
+
+/**
+ * Persist a single prompt-engineering activity score.
+ * Writes to the standalone prompt_activity_scores table.
+ */
+export async function syncActivityScore(params: {
+  moduleId: string;
+  activityId: string;
+  score: number;
+  maxScore: number;
+}): Promise<{ ok: boolean }> {
+  try {
+    const res = await fetch("/api/activity-score", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+    });
+    const data = (await res.json()) as { ok: boolean };
+    return { ok: Boolean(data.ok) };
+  } catch {
+    return { ok: false };
+  }
+}

@@ -67,6 +67,7 @@ import {
   fetchCourseUserProgress,
   syncCourseAbandonmentFailure,
   syncCourseResumeCheckpoint,
+  syncActivityScore,
 } from "@/lib/course-progress-api";
 import type { ServerProgressEntry } from "@/lib/progress-api";
 import { PASS_THRESHOLD_PERCENT, POINTS_PER_MCQ, isPassingScore } from "@/lib/constants";
@@ -130,6 +131,7 @@ interface CoursePlayerProps {
   mcqs?: McqQuestion[];
   freshStart?: boolean;
   resumeCheckpoint?: CourseResumeCheckpoint | null;
+  isPreview?: boolean;
 }
 
 export function CoursePlayer({
@@ -138,8 +140,13 @@ export function CoursePlayer({
   mcqs = [],
   freshStart = false,
   resumeCheckpoint = null,
+  isPreview = false,
 }: CoursePlayerProps) {
   const user = useAuthStore((s) => s.user);
+  const isPreviewEffective =
+    isPreview ||
+    (typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("preview") === "1");
   const moduleMcqs = mcqs;
   const allowSaveExit = Boolean(module.allowSaveExit);
 
@@ -155,13 +162,14 @@ export function CoursePlayer({
   const ackPendingMode = module.viewerMode === "acknowledgement_pending";
   const autoStartSession = quizOnlyModeFromModule || ackPendingMode;
 
-  /** Ignore accidental ?fresh=1 when resuming a gated Save & Exit course. */
+  /** Ignore accidental ?fresh=1 when resuming a gated Save & Exit course, unless in preview simulation mode. */
   const shouldResumeFromCheckpoint =
+    !isPreviewEffective &&
     allowSaveExit &&
     Boolean(resumeCheckpoint) &&
     !quizOnlyModeFromModule &&
     !ackPendingMode;
-  const effectiveFreshStart = shouldResumeFromCheckpoint ? false : freshStart;
+  const effectiveFreshStart = isPreviewEffective || (shouldResumeFromCheckpoint ? false : freshStart);
 
   const initialCheckpoint = shouldResumeFromCheckpoint ? resumeCheckpoint : null;
   const clampedInitialStep = Math.min(
@@ -784,35 +792,37 @@ export function CoursePlayer({
   const handleBeginSession = async () => {
     setSessionStartError(null);
     if (user?.username) {
-      const prog = getProgress(user.username, module.id);
-      const locked = prog ? isProctorLocked(prog) : false;
-      if (locked && reviewRequest?.status !== "Approved") {
-        setSessionStartError(
-          "This attempt is locked. Request administrator review to retake.",
-        );
-        setIsFailed(true);
-        return;
-      }
+      if (!isPreviewEffective) {
+        const prog = getProgress(user.username, module.id);
+        const locked = prog ? isProctorLocked(prog) : false;
+        if (locked && reviewRequest?.status !== "Approved") {
+          setSessionStartError(
+            "This attempt is locked. Request administrator review to retake.",
+          );
+          setIsFailed(true);
+          return;
+        }
 
-      const isFullRetake =
-        (getProgress(user.username, module.id)?.retakeCount ?? retakeCount) > 0 &&
-        !quizOnlyModeFromModule;
+        const isFullRetake =
+          (getProgress(user.username, module.id)?.retakeCount ?? retakeCount) > 0 &&
+          !quizOnlyModeFromModule;
 
-      const sync = await syncCourseProgressStart({
-        userEmail: user.username,
-        moduleId: module.id,
-        moduleTitle: module.title,
-        batchId: user.batchId,
-        totalSlides,
-        assignedMcqCount: moduleMcqs.length,
-        // Full retake always wipes; gated resume ignores accidental ?fresh=1.
-        freshStart: isFullRetake || (shouldResumeFromCheckpoint ? false : effectiveFreshStart),
-      });
-      if (!sync.ok) {
-        setSessionStartError(
-          sync.message ?? "Could not start session. Request a retake if you have failed.",
-        );
-        return;
+        const sync = await syncCourseProgressStart({
+          userEmail: user.username,
+          moduleId: module.id,
+          moduleTitle: module.title,
+          batchId: user.batchId,
+          totalSlides,
+          assignedMcqCount: moduleMcqs.length,
+          // Full retake always wipes; gated resume ignores accidental ?fresh=1.
+          freshStart: isFullRetake || (shouldResumeFromCheckpoint ? false : effectiveFreshStart),
+        });
+        if (!sync.ok) {
+          setSessionStartError(
+            sync.message ?? "Could not start session. Request a retake if you have failed.",
+          );
+          return;
+        }
       }
 
       markInProgress(
@@ -925,17 +935,19 @@ export function CoursePlayer({
   useEffect(() => {
     if (!autoStartSession || !user?.username) return;
     markInProgress(user.username, module.id, module.title, user.batchId, totalSlides);
-    void syncCourseProgressStart({
-      userEmail: user.username,
-      moduleId: module.id,
-      moduleTitle: module.title,
-      batchId: user.batchId,
-      totalSlides,
-      assignedMcqCount: moduleMcqs.length,
-      freshStart: effectiveFreshStart,
-    });
+    if (!isPreviewEffective) {
+      void syncCourseProgressStart({
+        userEmail: user.username,
+        moduleId: module.id,
+        moduleTitle: module.title,
+        batchId: user.batchId,
+        totalSlides,
+        assignedMcqCount: moduleMcqs.length,
+        freshStart: effectiveFreshStart,
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoStartSession, user?.username, module.id]);
+  }, [autoStartSession, user?.username, module.id, isPreviewEffective]);
 
   const handleFinishAttempt = useCallback(async () => {
     // Require every question to be recorded client-side before finalize.
@@ -974,6 +986,29 @@ export function CoursePlayer({
         showAcknowledgeButton: true,
         onAcknowledge: () => setCompletionNotice(null),
       });
+      return;
+    }
+
+    if (isPreviewEffective) {
+      const total = moduleMcqs.length || 1;
+      const correct = answeredQuestionIdsRef.current.size;
+      const scorePercent = 100;
+      const result = {
+        scorePercent,
+        passed: true,
+        mcqCorrect: total,
+        mcqTotal: total,
+      };
+      unlockBadge("champion");
+      unlockBadge("perfect");
+      setScoreResult(result);
+      setMcqOpen(false);
+      setShowAcknowledgement(false);
+      setShowFinalQa(false);
+      setCompletionNotice(null);
+      setQuizFinalizing(false);
+      setShowScoreResult(true);
+      scheduleBadgeFlush(450);
       return;
     }
 
@@ -1596,6 +1631,25 @@ export function CoursePlayer({
     }
   }, []);
 
+  /**
+   * Called by ActivityStepContent when the learner finishes the activity lab.
+   * Persists the score to prompt_activity_scores (new isolated table),
+   * then advances to the next content step automatically.
+   */
+  const handleActivityComplete = useCallback(
+    (payload: { score: number; maxScore: number }) => {
+      if (!user?.username || !module?.id || !currentContentStep || isPreviewEffective) return;
+      // Fire-and-forget — score save should not block UX
+      void syncActivityScore({
+        moduleId: module.id,
+        activityId: currentContentStep.config.assetUrl ?? "unknown",
+        score: payload.score,
+        maxScore: payload.maxScore,
+      });
+    },
+    [user?.username, module?.id, currentContentStep, isPreviewEffective],
+  );
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (!sessionStarted) return;
@@ -2078,6 +2132,7 @@ export function CoursePlayer({
                     moduleTitle={module.title}
                     onPdfPages={handlePdfPagesLoaded}
                     htmlIframeRef={setHtmlIframeRef}
+                    onActivityComplete={handleActivityComplete}
                   />
                 </div>
               ) : phase === "quiz" &&
@@ -2277,6 +2332,16 @@ export function CoursePlayer({
           onConfirm={() => {
             void (async () => {
               if (canSaveAndExit) {
+                if (isPreviewEffective) {
+                  isExitingRef.current = true;
+                  setIsNavigatingAway(true);
+                  setShowExitModal(false);
+                  if (document.fullscreenElement) {
+                    await document.exitFullscreen().catch(() => undefined);
+                  }
+                  window.location.href = "/admin/preview";
+                  return;
+                }
                 setSaveExitSaving(true);
                 if (user?.username && sessionStarted) {
                   const result = await syncCourseResumeCheckpoint({
@@ -2327,7 +2392,7 @@ export function CoursePlayer({
               isExitingRef.current = true;
               setIsNavigatingAway(true);
               setShowExitModal(false);
-              if (user?.username && sessionStarted) {
+              if (user?.username && sessionStarted && !isPreviewEffective) {
                 const reason = activeWarningReason
                   ? "Assessment abandoned after exiting fullscreen"
                   : "Assessment abandoned";
@@ -2349,7 +2414,7 @@ export function CoursePlayer({
               if (document.fullscreenElement) {
                 await document.exitFullscreen().catch(() => undefined);
               }
-              window.location.href = "/dashboard";
+              window.location.href = isPreviewEffective ? "/admin/preview" : "/dashboard";
             })();
           }}
         />

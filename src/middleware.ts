@@ -10,6 +10,8 @@ import { NextResponse } from "next/server";
 const PUBLIC_PREFIXES = [
   "/login",
   "/api/auth",
+  "/api/activity",
+  "/activity",
   "/submitted",
   "/avatars",
   "/icon",

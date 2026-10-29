@@ -18,6 +18,7 @@ export async function verifyModuleAccess(
   userEmail: string,
   moduleId: string,
   intendedEmail?: string | null,
+  isAdminUser?: boolean,
 ): Promise<ModuleAccessResult> {
   if (intendedEmail && !emailsMatch(userEmail, intendedEmail)) {
     return {
@@ -31,7 +32,7 @@ export async function verifyModuleAccess(
     sql`SELECT id FROM course_modules WHERE id = ${moduleId} LIMIT 1`,
     sql`SELECT id FROM training_modules WHERE id = ${moduleId} LIMIT 1`,
     sql`
-      SELECT email, batch_id AS primary_batch_id
+      SELECT email, batch_id AS primary_batch_id, role
       FROM users
       WHERE LOWER(email) = LOWER(${userEmail})
       LIMIT 1
@@ -42,7 +43,19 @@ export async function verifyModuleAccess(
     return { ok: false, code: "not_found", message: "Module not found." };
   }
 
+  const isAdmin = Boolean(isAdminUser || userRows[0]?.role === "admin");
+  const isCourse = courseModuleRows.length > 0;
+
   if (userRows.length === 0) {
+    if (isAdmin) {
+      const defaultBatch = isCourse
+        ? await sql`SELECT batch_id FROM course_module_batches WHERE module_id = ${moduleId} LIMIT 1`
+        : await sql`SELECT batch_id FROM module_batches WHERE module_id = ${moduleId} LIMIT 1`;
+      return {
+        ok: true,
+        batchId: (defaultBatch[0]?.batch_id as string) ?? "preview-batch",
+      };
+    }
     return {
       ok: false,
       code: "not_assigned",
@@ -51,7 +64,6 @@ export async function verifyModuleAccess(
   }
 
   const primaryBatchId = (userRows[0].primary_batch_id as string | null) ?? null;
-  const isCourse = courseModuleRows.length > 0;
 
   // Membership ∩ (currently assigned OR invite history OR marks on this batch).
   // Prefer a batch that already has this learner's progress, then primary.
@@ -158,6 +170,18 @@ export async function verifyModuleAccess(
   }
 
   if (assigned.length === 0) {
+    if (isAdmin) {
+      const defaultBatch = isCourse
+        ? await sql`SELECT batch_id FROM course_module_batches WHERE module_id = ${moduleId} LIMIT 1`
+        : await sql`SELECT batch_id FROM module_batches WHERE module_id = ${moduleId} LIMIT 1`;
+      return {
+        ok: true,
+        batchId:
+          (defaultBatch[0]?.batch_id as string) ??
+          primaryBatchId ??
+          "preview-batch",
+      };
+    }
     return {
       ok: false,
       code: "not_assigned",

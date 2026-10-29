@@ -5,6 +5,7 @@ export type CourseStepType =
   | "video"
   | "mindmap"
   | "infographic"
+  | "activity"
   | "quiz";
 
 export const COURSE_STEP_ORDER: CourseStepType[] = [
@@ -22,6 +23,7 @@ export const COURSE_STEP_LABELS: Record<CourseStepType, string> = {
   video: "Training video",
   mindmap: "Interactive HTML mind map",
   infographic: "Infographics",
+  activity: "Prompt Engineering Activity",
   quiz: "Assessment quiz",
 };
 

@@ -17,8 +17,12 @@ export async function GET(
     const access = await requireLearnerModuleAccess(id, claimedEmail, intendedEmail);
     if (!access.ok) return access.response;
 
+    const isPreviewOrFresh =
+      req.nextUrl.searchParams.get("preview") === "1" ||
+      req.nextUrl.searchParams.get("fresh") === "1";
+
     const cacheKey = CACHE_KEYS.moduleDetail(id, access.email);
-    const cached = cacheGetSWR<object>(cacheKey);
+    const cached = !isPreviewOrFresh ? cacheGetSWR<object>(cacheKey) : null;
     if (cached) {
       if (!cached.fresh) {
         queueMicrotask(() => {

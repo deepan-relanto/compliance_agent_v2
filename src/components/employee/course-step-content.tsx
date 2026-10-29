@@ -9,7 +9,9 @@ import {
 import { clientCourseAssetUrl } from "@/lib/course-asset-url";
 import { withEmbedQuery, courseEmbedVersion } from "@/lib/course-embed";
 import { MindMapPlayground } from "@/components/employee/mind-map-playground";
-import { FileCode2, FileText, GraduationCap, Loader2, Network, Video, Image as ImageIcon } from "lucide-react";
+import { ActivityStepContent } from "@/components/employee/activity-step-content";
+import type { ActivityCompletePayload } from "@/lib/activity-embed";
+import { FileCode2, FileText, GraduationCap, Loader2, Network, Video, Image as ImageIcon, FlaskConical } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 
@@ -24,6 +26,7 @@ const STEP_ICONS: Record<CourseStepType, typeof FileText> = {
   video: Video,
   mindmap: Network,
   infographic: ImageIcon,
+  activity: FlaskConical,
   quiz: FileText,
 };
 
@@ -238,6 +241,9 @@ export function CourseStepContent({
   moduleTitle,
   onPdfPages,
   htmlIframeRef,
+  onActivityComplete,
+  activityAlreadyCompleted,
+  activityPriorScore,
 }: {
   step: CourseStepRow;
   pdfPage: number;
@@ -245,6 +251,9 @@ export function CourseStepContent({
   moduleTitle: string;
   onPdfPages: (n: number) => void;
   htmlIframeRef?: React.Ref<HTMLIFrameElement>;
+  onActivityComplete?: (payload: ActivityCompletePayload) => void;
+  activityAlreadyCompleted?: boolean;
+  activityPriorScore?: number;
 }) {
   const Icon = STEP_ICONS[step.stepType];
   const url = clientCourseAssetUrl(step.config.assetUrl);
@@ -253,6 +262,29 @@ export function CourseStepContent({
     step.config.assetUrl,
     step.config.originalName,
   );
+
+  /* ── Activity step — generic iframe that fires postMessage on completion ──
+     Reads assetUrl from step.config exactly like pdf/scenarios steps.
+     To add a new activity for any module: just change the assetUrl. */
+  if (step.stepType === "activity") {
+    if (!url) {
+      return (
+        <div className="mx-auto flex max-w-lg flex-col items-center gap-3 rounded-xl border border-dashed border-zinc-600 bg-zinc-900/50 p-10 text-center">
+          <FlaskConical className="h-10 w-10 text-zinc-500" />
+          <p className="text-sm text-zinc-400">Activity not configured. Contact your administrator.</p>
+        </div>
+      );
+    }
+    return (
+      <ActivityStepContent
+        assetUrl={url}
+        label={step.config.originalName ?? step.title ?? "Activity Lab"}
+        onComplete={onActivityComplete ?? (() => undefined)}
+        alreadyCompleted={activityAlreadyCompleted}
+        priorScore={activityPriorScore}
+      />
+    );
+  }
 
   if ((step.stepType === "pdf" || step.stepType === "scenarios") && url) {
     if (htmlAsset) {

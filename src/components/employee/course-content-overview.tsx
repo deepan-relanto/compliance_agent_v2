@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import {
   FileCode2,
   FileText,
+  FlaskConical,
   GraduationCap,
   Image as ImageIcon,
   Network,
@@ -24,6 +25,7 @@ const STEP_ICONS: Record<CourseStepType, typeof FileCode2> = {
   video: Video,
   mindmap: Network,
   infographic: ImageIcon,
+  activity: FlaskConical,
   quiz: FileText,
 };
 
@@ -33,6 +35,7 @@ const STEP_BLURBS: Record<CourseStepType, string> = {
   video: "Watch the training video",
   mindmap: "Explore the concept map at your pace",
   infographic: "Review the visual summary",
+  activity: "Hands-on prompt engineering challenges",
   quiz: "Checkpoint questions to confirm understanding",
 };
 
@@ -52,14 +55,27 @@ export function CourseContentOverview({
   onBegin: () => void;
 }) {
   const byType = new Map(steps.map((s) => [s.stepType, s]));
-  const items = COURSE_STEP_ORDER.map((type, index) => {
+  const hasActivity = steps.some((s) => s.stepType === "activity");
+  const stepOrderList: CourseStepType[] = hasActivity
+    ? [
+        "pdf",
+        "scenarios",
+        "video",
+        "mindmap",
+        "infographic",
+        "activity",
+        "quiz",
+      ]
+    : COURSE_STEP_ORDER;
+
+  const items = stepOrderList.map((type, index) => {
     const step = byType.get(type);
     const available =
       type === "quiz" ? questionCount > 0 : Boolean(step?.config.assetUrl);
     return {
       type,
       index: index + 1,
-      label: COURSE_STEP_LABELS[type],
+      label: step?.title ?? COURSE_STEP_LABELS[type],
       blurb: STEP_BLURBS[type],
       available,
       meta:

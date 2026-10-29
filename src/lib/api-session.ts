@@ -97,12 +97,16 @@ export async function requireLearnerModuleAccess(
     return { ok: true, email: sessionCheck.email, batchId: cachedBatch };
   }
 
+  const session = await auth();
+  const isAdmin = session?.user?.role === "admin";
+
   const sql = getSql();
   const access = await verifyModuleAccess(
     sql,
     sessionCheck.email,
     moduleId,
     intendedEmail,
+    isAdmin,
   );
   if (!access.ok) {
     return {

@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import {
   BarChart3,
   ChevronLeft,
+  FlaskConical,
   GraduationCap,
   LayoutDashboard,
   LayoutGrid,
@@ -72,6 +73,12 @@ const navItems = [
     label: "Feedback",
     icon: MessageSquare,
     isActive: (path: string) => path.startsWith("/admin/feedback"),
+  },
+  {
+    href: "/admin/preview",
+    label: "Preview course",
+    icon: FlaskConical,
+    isActive: (path: string) => path.startsWith("/admin/preview"),
   },
   {
     href: "/dashboard",

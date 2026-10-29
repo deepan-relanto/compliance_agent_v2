@@ -20,6 +20,7 @@ import {
   CheckCircle2,
   FileCode2,
   FileJson,
+  FlaskConical,
   GraduationCap,
   Image,
   Loader2,
@@ -32,9 +33,18 @@ import { useCallback, useMemo, useState } from "react";
 type WizardStep = "info" | CourseStepType | "publish" | "done";
 type MediaKind = "lesson" | "scenarios" | "video" | "mindmap" | "infographic";
 
+const BUILDER_STEP_ORDER: CourseStepType[] = [
+  "pdf",
+  "scenarios",
+  "video",
+  "mindmap",
+  "infographic",
+  "quiz",
+];
+
 const WIZARD_STEPS: WizardStep[] = [
   "info",
-  ...COURSE_STEP_ORDER,
+  ...BUILDER_STEP_ORDER,
   "publish",
 ];
 
@@ -44,6 +54,7 @@ const STEP_ICONS: Record<CourseStepType, typeof FileCode2> = {
   video: Video,
   mindmap: Network,
   infographic: Image,
+  activity: FlaskConical,
   quiz: FileJson,
 };
 
@@ -244,6 +255,7 @@ export function CourseBuilderPanel() {
     },
     [goToNextWizardStep, htmlPreviewUrl, markComplete],
   );
+
 
   const toggleBatch = (batchId: string) => {
     setSelectedBatchIds((prev) =>
@@ -532,7 +544,7 @@ export function CourseBuilderPanel() {
                     size="sm"
                     onClick={() => {
                       const prev =
-                        COURSE_STEP_ORDER[COURSE_STEP_ORDER.indexOf(currentContentStep) - 1];
+                        BUILDER_STEP_ORDER[BUILDER_STEP_ORDER.indexOf(currentContentStep) - 1];
                       if (prev) setStep(prev);
                       else setStep("info");
                     }}
@@ -564,6 +576,7 @@ export function CourseBuilderPanel() {
                 </div>
               </>
             )}
+
 
           {currentContentStep === "quiz" && (
             <>
