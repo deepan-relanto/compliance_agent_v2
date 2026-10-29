@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   isActivityCompletePayload,
+  isActivityStatusPayload,
   type ActivityCompletePayload,
+  type ActivityStatusPayload,
 } from "@/lib/activity-embed";
 import { Loader2, FlaskConical, CheckCircle2 } from "lucide-react";
 
@@ -14,6 +16,12 @@ interface ActivityStepContentProps {
   label?: string;
   /** Called once when the activity iframe sends ACTIVITY_COMPLETE */
   onComplete: (payload: ActivityCompletePayload) => void;
+  /** Called as the learner progresses through challenges in the activity */
+  onActivityStatus?: (status: ActivityStatusPayload) => void;
+  /** Pass-through ref to the iframe element so parent can postMessage */
+  iframeRef?: React.Ref<HTMLIFrameElement>;
+  /** Alias for iframeRef */
+  activityIframeRef?: React.Ref<HTMLIFrameElement>;
   /** True when the learner already finished this step in a prior session */
   alreadyCompleted?: boolean;
   /** Score from a prior completion — shown on the "already done" card */
@@ -26,7 +34,8 @@ interface ActivityStepContentProps {
  * Generic activity iframe wrapper.
  *
  * Used for any step_type="activity" step in any course.
- * The HTML file at `assetUrl` just needs to fire:
+ * The HTML file at `assetUrl` fires:
+ *   window.parent.postMessage({ type:'ACTIVITY_STATUS', activityIndex, canAdvance, actionLabel, isComplete }, '*')
  *   window.parent.postMessage({ type:'ACTIVITY_COMPLETE', source:'prompt-lab', score, maxScore }, '*')
  *
  * To embed a new activity lab for a different course in the future:
@@ -38,31 +47,51 @@ export function ActivityStepContent({
   assetUrl,
   label = "Prompt Engineering Lab",
   onComplete,
+  onActivityStatus,
+  iframeRef: iframeRefExternal,
+  activityIframeRef,
   alreadyCompleted = false,
   priorScore,
   priorMaxScore = 100,
 }: ActivityStepContentProps) {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const internalIframeRef = useRef<HTMLIFrameElement | null>(null);
   const [loading, setLoading] = useState(true);
-  const [done, setDone] = useState(alreadyCompleted);
+  const [done] = useState(alreadyCompleted);
   const [completedPayload, setCompletedPayload] =
     useState<ActivityCompletePayload | null>(null);
+
+  const setIframeNode = useCallback(
+    (node: HTMLIFrameElement | null) => {
+      internalIframeRef.current = node;
+      const ref = activityIframeRef ?? iframeRefExternal;
+      if (typeof ref === "function") {
+        ref(node);
+      } else if (ref && "current" in ref) {
+        (ref as React.MutableRefObject<HTMLIFrameElement | null>).current = node;
+      }
+    },
+    [activityIframeRef, iframeRefExternal],
+  );
 
   const handleMessage = useCallback(
     (ev: MessageEvent) => {
       // Security: verify the message came from our iframe
       if (
-        iframeRef.current &&
-        ev.source !== iframeRef.current.contentWindow
+        internalIframeRef.current &&
+        ev.source !== internalIframeRef.current.contentWindow
       ) {
         return;
       }
-      if (!isActivityCompletePayload(ev.data)) return;
-      setDone(true);
-      setCompletedPayload(ev.data);
-      onComplete(ev.data);
+      if (isActivityStatusPayload(ev.data)) {
+        onActivityStatus?.(ev.data);
+        return;
+      }
+      if (isActivityCompletePayload(ev.data)) {
+        setCompletedPayload(ev.data);
+        onComplete(ev.data);
+      }
     },
-    [onComplete],
+    [onComplete, onActivityStatus],
   );
 
   useEffect(() => {
@@ -125,33 +154,21 @@ export function ActivityStepContent({
 
   /* ── Live activity iframe ── */
   return (
-    <div className="mx-auto flex h-full min-h-0 w-full max-w-[min(100%,96vw)] flex-col overflow-hidden rounded-lg border border-zinc-700/80 bg-zinc-950 shadow-2xl">
-      {/* Chrome bar */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-zinc-800 px-4 py-2">
-        <FlaskConical className="h-4 w-4 text-[#f15a24]" />
-        <p className="text-xs font-semibold uppercase tracking-widest text-[#f15a24]">
-          Prompt Engineering Activity
-        </p>
-        <span className="truncate text-xs text-zinc-400">{label}</span>
-      </div>
-
-      {/* iframe */}
-      <div className="relative min-h-0 flex-1 bg-[#ECEEF6]">
-        {loading && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-zinc-950">
-            <Loader2 className="h-8 w-8 animate-spin text-[#2e3192]" />
-          </div>
-        )}
-        <iframe
-          ref={iframeRef}
-          key={assetUrl}
-          src={assetUrl}
-          title={label}
-          className="absolute inset-0 h-full w-full border-0"
-          sandbox="allow-scripts allow-same-origin allow-forms"
-          onLoad={() => setLoading(false)}
-        />
-      </div>
+    <div className="relative mx-auto flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden bg-[#ECEEF6]">
+      {loading && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-zinc-950">
+          <Loader2 className="h-8 w-8 animate-spin text-[#2e3192]" />
+        </div>
+      )}
+      <iframe
+        ref={setIframeNode}
+        key={assetUrl}
+        src={assetUrl}
+        title={label}
+        className="absolute inset-0 h-full w-full border-0"
+        sandbox="allow-scripts allow-same-origin allow-forms"
+        onLoad={() => setLoading(false)}
+      />
     </div>
   );
 }

@@ -10,7 +10,7 @@ import { clientCourseAssetUrl } from "@/lib/course-asset-url";
 import { withEmbedQuery, courseEmbedVersion } from "@/lib/course-embed";
 import { MindMapPlayground } from "@/components/employee/mind-map-playground";
 import { ActivityStepContent } from "@/components/employee/activity-step-content";
-import type { ActivityCompletePayload } from "@/lib/activity-embed";
+import type { ActivityCompletePayload, ActivityStatusPayload } from "@/lib/activity-embed";
 import { FileCode2, FileText, GraduationCap, Loader2, Network, Video, Image as ImageIcon, FlaskConical } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
@@ -244,6 +244,8 @@ export function CourseStepContent({
   onActivityComplete,
   activityAlreadyCompleted,
   activityPriorScore,
+  activityIframeRef,
+  onActivityStatus,
 }: {
   step: CourseStepRow;
   pdfPage: number;
@@ -254,6 +256,8 @@ export function CourseStepContent({
   onActivityComplete?: (payload: ActivityCompletePayload) => void;
   activityAlreadyCompleted?: boolean;
   activityPriorScore?: number;
+  activityIframeRef?: React.Ref<HTMLIFrameElement>;
+  onActivityStatus?: (status: ActivityStatusPayload) => void;
 }) {
   const Icon = STEP_ICONS[step.stepType];
   const url = clientCourseAssetUrl(step.config.assetUrl);
@@ -282,6 +286,8 @@ export function CourseStepContent({
         onComplete={onActivityComplete ?? (() => undefined)}
         alreadyCompleted={activityAlreadyCompleted}
         priorScore={activityPriorScore}
+        activityIframeRef={activityIframeRef}
+        onActivityStatus={onActivityStatus}
       />
     );
   }

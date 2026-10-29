@@ -36,6 +36,10 @@ import {
   buildCourseResumeCheckpoint,
   type CourseResumeCheckpoint,
 } from "@/lib/course-resume";
+import {
+  ACTIVITY_ACTION_EVENT,
+  type ActivityStatusPayload,
+} from "@/lib/activity-embed";
 import type { McqQuestion, TrainingModule, ReviewRequest, ModuleStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, m as motion, LazyMotion, domAnimation } from "@/lib/motion";
@@ -333,7 +337,12 @@ export function CoursePlayer({
     [],
   );
 
+  const [activityStatus, setActivityStatus] = useState<ActivityStatusPayload | null>(null);
+  const [activityComplete, setActivityComplete] = useState(false);
+  const activityIframeRef = useRef<HTMLIFrameElement | null>(null);
+
   const currentContentStep = contentSteps[contentStepIndex];
+  const isActivityStep = currentContentStep?.stepType === "activity";
   const isHtmlLessonStep =
     (currentContentStep?.stepType === "pdf" ||
       currentContentStep?.stepType === "scenarios") &&
@@ -352,8 +361,11 @@ export function CoursePlayer({
   const isLastPdfPage = !isPdfStep || pdfPage >= pdfPages;
   const isLastHtmlSlide =
     !isHtmlLessonStep || (htmlEmbedState?.atEnd ?? false);
+  const isActivityComplete =
+    !isActivityStep || activityComplete || (activityStatus?.isComplete ?? false);
   const isLastContentStep = contentStepIndex >= contentSteps.length - 1;
-  const isLastContentUnit = isLastContentStep && isLastPdfPage && isLastHtmlSlide;
+  const isLastContentUnit =
+    isLastContentStep && isLastPdfPage && isLastHtmlSlide && isActivityComplete;
 
   const totalQuestions = moduleMcqs.length;
   const totalPossibleScore = totalQuestions * POINTS_PER_MCQ;
@@ -996,6 +1008,7 @@ export function CoursePlayer({
       const result = {
         scorePercent,
         passed: true,
+        canRetake: false,
         mcqCorrect: total,
         mcqTotal: total,
       };
@@ -1092,6 +1105,12 @@ export function CoursePlayer({
       !htmlEmbedState.slideComplete,
   );
   const nextFooterLabel = (() => {
+    if (isActivityStep) {
+      if (isActivityComplete) {
+        return isLastContentUnit ? "Start quiz" : "Next";
+      }
+      return "Complete activity above";
+    }
     if (htmlChoiceRequired) return "Choose above";
     if (isLastContentUnit) {
       return nextSlideLocked
@@ -1109,6 +1128,9 @@ export function CoursePlayer({
   const tryAdvanceContent = useCallback(() => {
     if (phase !== "content" || quizOnlyMode) return;
     if (nextSlideLocked) return;
+    if (isActivityStep && !isActivityComplete) {
+      return;
+    }
     if (isHtmlLessonStep) {
       if (!htmlEmbedState?.atEnd) {
         const fromIndex = htmlEmbedState?.slideIndex ?? 0;
@@ -1166,6 +1188,8 @@ export function CoursePlayer({
     phase,
     quizOnlyMode,
     nextSlideLocked,
+    isActivityStep,
+    isActivityComplete,
     isHtmlLessonStep,
     htmlEmbedState?.atEnd,
     htmlEmbedState?.slideIndex,
@@ -1473,6 +1497,8 @@ export function CoursePlayer({
     setPdfPage(1);
     htmlEmbedStateRef.current = null;
     setHtmlEmbedState(null);
+    setActivityStatus(null);
+    setActivityComplete(false);
     setNextSlideCooldownMs(0);
     clearHtmlAdvanceRetry();
     prevSlideCompleteKeyRef.current = null;
@@ -1638,6 +1664,7 @@ export function CoursePlayer({
    */
   const handleActivityComplete = useCallback(
     (payload: { score: number; maxScore: number }) => {
+      setActivityComplete(true);
       if (!user?.username || !module?.id || !currentContentStep || isPreviewEffective) return;
       // Fire-and-forget — score save should not block UX
       void syncActivityScore({
@@ -2133,6 +2160,8 @@ export function CoursePlayer({
                     onPdfPages={handlePdfPagesLoaded}
                     htmlIframeRef={setHtmlIframeRef}
                     onActivityComplete={handleActivityComplete}
+                    activityIframeRef={activityIframeRef}
+                    onActivityStatus={setActivityStatus}
                   />
                 </div>
               ) : phase === "quiz" &&
@@ -2215,6 +2244,10 @@ export function CoursePlayer({
                 <span className="text-amber-400">
                   Select an option in the slide to continue
                 </span>
+              ) : isActivityStep ? (
+                <span className={isActivityComplete ? "text-emerald-400 font-medium" : "text-zinc-400"}>
+                  {isActivityComplete ? "Activity lab completed ✓" : "Complete the activity in the window above"}
+                </span>
               ) : isHtmlLessonStep && htmlEmbedState ? (
                 `Slide ${htmlEmbedState.slideIndex + 1} of ${htmlEmbedState.slideCount}`
               ) : (
@@ -2240,7 +2273,8 @@ export function CoursePlayer({
                 navLocked ||
                 nextSlideLocked ||
                 htmlChoiceRequired ||
-                (isPdfStep && !pdfReady)
+                (isPdfStep && !pdfReady) ||
+                (isActivityStep && !isActivityComplete)
               }
               onClick={tryAdvanceContent}
               className="min-w-[7.5rem] cursor-pointer bg-[#f15a24] text-white hover:bg-[#d94e1f] disabled:cursor-not-allowed disabled:opacity-40"

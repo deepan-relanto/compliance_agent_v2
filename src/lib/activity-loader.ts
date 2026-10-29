@@ -11,8 +11,8 @@ import type { CourseStepRow } from "@/lib/course-step-types";
 function getActivitySearchDirs(): string[] {
   const cwd = process.cwd();
   return [
-    path.resolve(cwd, "..", "activity"),
     path.resolve(cwd, "public", "activity"),
+    path.resolve(cwd, "..", "activity"),
     path.resolve(cwd, "activity"),
   ];
 }

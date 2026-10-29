@@ -7,8 +7,8 @@ export const dynamic = "force-dynamic";
 function getActivitySearchDirs(): string[] {
   const cwd = process.cwd();
   return [
-    path.resolve(cwd, "..", "activity"),
     path.resolve(cwd, "public", "activity"),
+    path.resolve(cwd, "..", "activity"),
     path.resolve(cwd, "activity"),
   ];
 }
@@ -68,9 +68,10 @@ export async function GET(
       const embedCss = `
 <style id="compliance-embed-style">
 .app-header { display: none !important; }
+html, body { height: 100% !important; min-height: 100% !important; overflow: hidden !important; }
 body::before { top: 0 !important; }
-.prog-bar { top: 0; position: sticky; }
-.viewport { min-height: calc(100vh - 40px); }
+.prog-bar { top: 0; position: sticky; padding: 6px 1.25rem !important; height: 34px !important; }
+.viewport { height: calc(100% - 34px) !important; min-height: 0 !important; padding: 0.5rem 1.25rem !important; overflow-y: auto !important; overflow-x: hidden !important; }
 </style>
 `;
       if (html.includes("</head>")) {

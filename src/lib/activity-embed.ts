@@ -27,6 +27,8 @@
 
 export const ACTIVITY_EMBED_EVENT = "ACTIVITY_COMPLETE" as const;
 export const ACTIVITY_EMBED_SOURCE = "prompt-lab" as const;
+export const ACTIVITY_STATUS_EVENT = "ACTIVITY_STATUS" as const;
+export const ACTIVITY_ACTION_EVENT = "EXECUTE_ACTIVITY_ACTION" as const;
 
 /** Shape of the postMessage payload from any activity iframe */
 export interface ActivityCompletePayload {
@@ -34,6 +36,18 @@ export interface ActivityCompletePayload {
   source: typeof ACTIVITY_EMBED_SOURCE;
   score: number;
   maxScore: number;
+}
+
+export interface ActivityStatusPayload {
+  type: typeof ACTIVITY_STATUS_EVENT;
+  activityIndex: number;
+  totalActivities?: number;
+  challengeIndex?: number;
+  totalChallenges?: number;
+  canAdvance: boolean;
+  actionLabel: string;
+  isComplete?: boolean;
+  hint?: string;
 }
 
 export function isActivityCompletePayload(
@@ -45,5 +59,17 @@ export function isActivityCompletePayload(
     (data as ActivityCompletePayload).type === ACTIVITY_EMBED_EVENT &&
     (data as ActivityCompletePayload).source === ACTIVITY_EMBED_SOURCE &&
     typeof (data as ActivityCompletePayload).score === "number"
+  );
+}
+
+export function isActivityStatusPayload(
+  data: unknown,
+): data is ActivityStatusPayload {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    (data as ActivityStatusPayload).type === ACTIVITY_STATUS_EVENT &&
+    typeof (data as ActivityStatusPayload).canAdvance === "boolean" &&
+    typeof (data as ActivityStatusPayload).actionLabel === "string"
   );
 }
