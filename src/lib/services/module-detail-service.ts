@@ -11,6 +11,8 @@ import { warmMcqAnswerCacheFromQuestions } from "@/lib/services/mcq-answer-cache
 import { setLearnerProgressSnapshot } from "@/lib/learner-progress-cache";
 import type { CourseStepRow } from "@/lib/course-step-types";
 import {
+  distributePromptEngineeringActivities,
+  isPromptEngineeringModule,
   resolveDynamicActivityStep,
   verifyActivityFileExists,
 } from "@/lib/activity-loader";
@@ -242,6 +244,11 @@ export async function loadModuleDetail(
     const rawFiltered = (rawSteps as Awaited<ReturnType<typeof getModuleStepsDb>>)
       .filter((s) => s.stepType !== "quiz");
 
+    const promptEngineeringModule = isPromptEngineeringModule(
+      row.id as string,
+      (row.title as string) ?? "",
+    );
+
     // Check if an activity step already exists in DB
     const hasActivityInDb = rawFiltered.some((s) => s.stepType === "activity");
 
@@ -254,13 +261,24 @@ export async function loadModuleDetail(
       );
     }
 
-    const mappedSteps: CourseStepRow[] = rawFiltered.map((s) => ({
-      ...s,
-      config: {
-        ...s.config,
-        assetUrl: clientCourseAssetUrl(s.config.assetUrl),
-      },
-    }));
+    let mappedSteps: CourseStepRow[] = rawFiltered
+      .filter((s) => !promptEngineeringModule || s.stepType !== "activity")
+      .map((s) => ({
+        ...s,
+        config: {
+          ...s.config,
+          assetUrl: clientCourseAssetUrl(s.config.assetUrl),
+        },
+      }));
+
+    if (promptEngineeringModule) {
+      mappedSteps = distributePromptEngineeringActivities(
+        row.id as string,
+        (row.title as string) ?? "",
+        mappedSteps,
+      );
+      dynamicActivityStep = null;
+    }
 
     if (dynamicActivityStep) {
       // Position activity before quiz / at the end of content steps

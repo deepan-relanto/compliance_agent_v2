@@ -1224,7 +1224,13 @@ body::before {
 
 <script>
 /* ════ APP STATE ════ */
-const App = { scores: [0,0,0,0], timerHandle: null, secondsLeft: 60, sprintRunning: false };
+const App = { scores: [0,0,0,0], timerHandle: null, secondsLeft: 60, sprintRunning: false, sprintRevision: false };
+const ActivityIds = ['block-builder', 'robot-rescue', 'ingredient-lab', 'sprint-challenge'];
+const MASTERY_SCORE = 20;
+const requestedChallenge = Number(new URLSearchParams(window.location.search).get('challenge'));
+const SingleChallenge = Number.isInteger(requestedChallenge) && requestedChallenge >= 1 && requestedChallenge <= 4
+  ? requestedChallenge
+  : null;
 let currentChallenge = 1;
 let isSubmitting = false;
 
@@ -1256,7 +1262,7 @@ function handleParentAction() {
   } else if (currentChallenge === 3) {
     brewPrompt();
   } else if (currentChallenge === 4) {
-    if (!App.sprintRunning && App.secondsLeft === 60) {
+    if (!App.sprintRunning && !App.sprintRevision && App.secondsLeft === 60) {
       startSprintTimer();
     } else {
       submitSprint();
@@ -1285,11 +1291,14 @@ function updateProgress(n) {
 }
 
 function startLab() {
-  currentChallenge = 1;
+  currentChallenge = SingleChallenge || 1;
   isSubmitting = false;
-  showScreen('s-1');
-  updateProgress(1);
-  syncBlockUI();
+  showScreen('s-' + currentChallenge);
+  updateProgress(currentChallenge);
+  if (currentChallenge === 1) syncBlockUI();
+  if (currentChallenge === 2) onRescueType(document.getElementById('rescueInput').value || '');
+  if (currentChallenge === 3) updateCauldron();
+  if (currentChallenge === 4) onSprintInput(document.getElementById('sprintInput').value || '');
 }
 
 function navigateNext(cur) {
@@ -1310,9 +1319,105 @@ function navigateNext(cur) {
   }
 }
 
+function escapeHtml(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 function renderFeedback(type, title, desc) {
   const ico = type === 'success' ? '🎉' : type === 'warning' ? '⚡' : '💡';
-  return '<div class="fb-banner ' + type + '"><span class="fb-ico">' + ico + '</span><div><div class="fb-ttl">' + title + '</div><div class="fb-desc">' + desc + '</div></div></div>';
+  return '<div class="fb-banner ' + type + '"><span class="fb-ico">' + ico + '</span><div><div class="fb-ttl">' + escapeHtml(title) + '</div><div class="fb-desc">' + escapeHtml(desc) + '</div></div></div>';
+}
+
+function fallbackNotice(evaluation) {
+  if (evaluation.source === 'gemini') return evaluation.feedback;
+  return evaluation.feedback + ' Personalized evaluation is temporarily unavailable, so the standard rubric was used.';
+}
+
+function renderRubric(criteria) {
+  if (!Array.isArray(criteria) || !criteria.length) return '';
+  let html = '<div class="rubric-box"><div class="rub-hdr">📋 Evaluation Rubric</div>';
+  criteria.forEach(criterion => {
+    const note = criterion.note ? '<div style="font-size:10px;color:var(--mu);margin-top:2px">' + escapeHtml(criterion.note) + '</div>' : '';
+    html += '<div class="rub-item"><span class="rub-txt">' + escapeHtml(criterion.label || 'Criterion') + note + '</span><span>' + (criterion.met ? '✅' : '❌') + '</span></div>';
+  });
+  return html + '</div>';
+}
+
+async function requestActivityEvaluation(activityId, answer, fallback) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12500);
+  try {
+    const response = await fetch('/api/activity-evaluation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ activityId: activityId, answer: answer }),
+      signal: controller.signal,
+      credentials: 'same-origin'
+    });
+    if (!response.ok) return Object.assign({}, fallback, { source: 'browser-fallback' });
+    const payload = await response.json();
+    const evaluation = payload && payload.evaluation;
+    if (!evaluation || typeof evaluation.score !== 'number' || typeof evaluation.feedback !== 'string') {
+      return Object.assign({}, fallback, { source: 'browser-fallback' });
+    }
+    const level = ['success', 'warning', 'error'].includes(evaluation.level) ? evaluation.level : fallback.level;
+    return {
+      score: Math.max(0, Math.min(25, Math.round(evaluation.score))),
+      level: level,
+      title: typeof evaluation.title === 'string' ? evaluation.title : fallback.title,
+      feedback: evaluation.feedback,
+      criteria: Array.isArray(evaluation.criteria) ? evaluation.criteria : fallback.criteria,
+      source: payload.source === 'gemini' ? 'gemini' : 'server-fallback'
+    };
+  } catch (e) {
+    return Object.assign({}, fallback, { source: 'browser-fallback' });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function evaluationFeedback(evaluation) {
+  const base = fallbackNotice(evaluation);
+  if (evaluation.score >= MASTERY_SCORE) {
+    return base + ' Mastery achieved: ' + evaluation.score + '/25.';
+  }
+  return base + ' Your score is ' + evaluation.score + '/25. Review the feedback, improve your answer, and resubmit. You need 20/25 to continue.';
+}
+
+function settleChallenge(challengeIndex, evaluation, restoreForRetry, delay) {
+  if (evaluation.score < MASTERY_SCORE) {
+    isSubmitting = false;
+    restoreForRetry();
+    broadcastActivityStatus({
+      challengeIndex: challengeIndex,
+      actionLabel: 'Improve & Resubmit',
+      canAdvance: true,
+      isComplete: false,
+      hint: 'Revision required · ' + evaluation.score + '/25 (20 needed)'
+    });
+    return;
+  }
+
+  setTimeout(() => {
+    if (SingleChallenge) {
+      isSubmitting = false;
+      broadcastActivityStatus({
+        challengeIndex: challengeIndex,
+        actionLabel: 'Continue Course',
+        canAdvance: true,
+        isComplete: true,
+        hint: 'Mastery achieved · ' + evaluation.score + '/25'
+      });
+      notifyParentComplete(evaluation.score, ActivityIds[challengeIndex - 1], 25);
+      return;
+    }
+    navigateNext(challengeIndex);
+  }, delay);
 }
 
 /* ════════════════════════════════════
@@ -1439,7 +1544,7 @@ function resetAct1() {
   document.getElementById('fb1').classList.add('hidden');
 }
 
-function submitAct1() {
+async function submitAct1() {
   if (Selected.size < 3 || isSubmitting) return;
   isSubmitting = true;
   broadcastActivityStatus({
@@ -1463,13 +1568,19 @@ function submitAct1() {
   } else {
     score = 10; type = 'error'; title = '💡 Key Blocks Missing!'; desc = 'Every prompt needs at least Role, Task and Output Format.';
   }
-  App.scores[0] = score;
+  const fallback = { score: score, level: type, title: title, feedback: desc, criteria: [] };
+  const evaluation = await requestActivityEvaluation(
+    'block-builder',
+    { selected: [...Selected] },
+    fallback
+  );
+  App.scores[0] = evaluation.score;
 
   const fb = document.getElementById('fb1');
   fb.classList.remove('hidden');
-  fb.innerHTML = renderFeedback(type, title, desc);
+  fb.innerHTML = renderFeedback(evaluation.level, evaluation.title, evaluationFeedback(evaluation));
 
-  setTimeout(() => navigateNext(1), 2200);
+  settleChallenge(1, evaluation, () => syncBlockUI(), 4600);
 }
 
 function spawnParticles(x, y) {
@@ -1586,7 +1697,7 @@ function onRescueType(val) {
   document.getElementById('robotBar').style.width = mood.fill + '%';
 }
 
-function submitAct2() {
+async function submitAct2() {
   if (isSubmitting) return;
   const raw = document.getElementById('rescueInput').value;
   if (raw.trim().length < 25) return;
@@ -1596,6 +1707,8 @@ function submitAct2() {
   if (m < 3) return;
 
   isSubmitting = true;
+  document.getElementById('rescueInput').disabled = true;
+  document.getElementById('btnSub2').disabled = true;
   broadcastActivityStatus({
     challengeIndex: 2,
     actionLabel: 'Rescuing...',
@@ -1612,13 +1725,24 @@ function submitAct2() {
   } else {
     score = 8; type = 'error'; title = '😟 Still Too Vague!'; desc = 'Give the AI a clear persona, dataset context, and an exact formatting target.';
   }
-  App.scores[1] = score;
+  const fallback = { score: score, level: type, title: title, feedback: desc, criteria: [] };
+  const evaluation = await requestActivityEvaluation(
+    'robot-rescue',
+    { text: raw },
+    fallback
+  );
+  App.scores[1] = evaluation.score;
 
   const fb = document.getElementById('fb2');
   fb.classList.remove('hidden');
-  fb.innerHTML = renderFeedback(type, title, desc);
+  fb.innerHTML = renderFeedback(evaluation.level, evaluation.title, evaluationFeedback(evaluation));
 
-  setTimeout(() => navigateNext(2), 2400);
+  settleChallenge(2, evaluation, () => {
+    const input = document.getElementById('rescueInput');
+    input.disabled = false;
+    onRescueType(input.value || '');
+    input.focus();
+  }, 4600);
 }
 
 /* ════════════════════════════════════
@@ -1695,9 +1819,18 @@ function updatePotionSlots() {
   let h = '';
   [...SelIng].forEach(id => {
     const d = IngData.find(x => x.id === id);
-    if (d) h += '<div class="p-slot-ico" style="border-color:' + d.col + '" title="' + d.lbl + '">' + d.ico + '</div>';
+    if (d) h += '<div class="p-slot-ico" style="border-color:' + d.col + ';cursor:pointer" title="Remove ' + d.lbl + '" onclick="removeIngredientFromCauldron(\'' + id + '\')">' + d.ico + '</div>';
   });
   slots.innerHTML = h;
+}
+
+function removeIngredientFromCauldron(id) {
+  if (!SelIng.has(id) || isSubmitting) return;
+  SelIng.delete(id);
+  const vial = document.getElementById('vial-' + id);
+  if (vial) vial.classList.remove('is-used');
+  updatePotionSlots();
+  updateCauldron();
 }
 
 function updateCauldron() {
@@ -1744,7 +1877,7 @@ function updateCauldron() {
   }
 }
 
-function brewPrompt() {
+async function brewPrompt() {
   if (SelIng.size < 4 || isSubmitting) return;
   isSubmitting = true;
   broadcastActivityStatus({
@@ -1773,13 +1906,19 @@ function brewPrompt() {
     score = 8; type = 'error'; title = '💥 Formula Contaminated!'; desc = 'Distractors confuse the AI model. Stick strictly to role, plain English, bullets & risk flags.';
     zone.style.setProperty('--brew-color', '#EF4444');
   }
-  App.scores[2] = score;
+  const fallback = { score: score, level: type, title: title, feedback: desc, criteria: [] };
+  const evaluation = await requestActivityEvaluation(
+    'ingredient-lab',
+    { selected: [...SelIng] },
+    fallback
+  );
+  App.scores[2] = evaluation.score;
 
   const fb = document.getElementById('fb3');
   fb.classList.remove('hidden');
-  fb.innerHTML = renderFeedback(type, title, desc);
+  fb.innerHTML = renderFeedback(evaluation.level, evaluation.title, evaluationFeedback(evaluation));
 
-  setTimeout(() => navigateNext(3), 2500);
+  settleChallenge(3, evaluation, () => updateCauldron(), 4600);
 }
 
 /* ════════════════════════════════════
@@ -1807,9 +1946,10 @@ function onSprintInput(val) {
 
   const btn = document.getElementById('btnSubSprint');
   const hint = document.getElementById('hintSprint');
-  const isReady = App.sprintRunning && wc >= 12 && criteriaPassed >= 2;
-  if (btn && App.sprintRunning) btn.disabled = !isReady;
-  if (hint && App.sprintRunning) {
+  const sprintActive = App.sprintRunning || App.sprintRevision;
+  const isReady = sprintActive && wc >= 12 && criteriaPassed >= 2;
+  if (btn && sprintActive) btn.disabled = !isReady;
+  if (hint && sprintActive) {
     if (isReady) {
       hint.textContent = '✓ Ready (' + wc + ' words, ' + criteriaPassed + ' criteria met) — submit when ready!';
       hint.style.color = 'var(--ok)';
@@ -1822,10 +1962,10 @@ function onSprintInput(val) {
   if (!isSubmitting && currentChallenge === 4) {
     broadcastActivityStatus({
       challengeIndex: 4,
-      actionLabel: App.sprintRunning ? 'Submit Sprint' : 'Start Sprint Timer',
-      canAdvance: App.sprintRunning ? isReady : true,
+      actionLabel: sprintActive ? 'Submit Sprint' : 'Start Sprint Timer',
+      canAdvance: sprintActive ? isReady : true,
       isComplete: false,
-      hint: !App.sprintRunning
+      hint: !sprintActive
         ? "Click 'Start Sprint Timer' to begin sprint"
         : isReady
           ? '✓ ' + wc + ' words, ' + criteriaPassed + ' criteria — ready to submit!'
@@ -1837,6 +1977,7 @@ function onSprintInput(val) {
 function startSprintTimer() {
   if (App.sprintRunning) return;
   App.sprintRunning = true;
+  App.sprintRevision = false;
   App.secondsLeft = 60;
 
   const ta = document.getElementById('sprintInput');
@@ -1891,7 +2032,7 @@ function startSprintTimer() {
   }, 1000);
 }
 
-function submitSprint() {
+async function submitSprint() {
   if (isSubmitting) return;
   isSubmitting = true;
   clearInterval(App.timerHandle);
@@ -1919,12 +2060,7 @@ function submitSprint() {
   ];
 
   let passed = 0;
-  let rubHtml = '<div class="rubric-box"><div class="rub-hdr">📋 Evaluation Rubric</div>';
-  criteria.forEach(c => {
-    if (c.pass) passed++;
-    rubHtml += '<div class="rub-item"><span style="font-size:14px">' + c.ico + '</span><span class="rub-txt">' + c.lbl + '</span><span>' + (c.pass ? '✅' : '❌') + '</span></div>';
-  });
-  rubHtml += '</div>';
+  criteria.forEach(c => { if (c.pass) passed++; });
 
   let score, type, title, desc;
   if (passed >= 4) {
@@ -1934,13 +2070,36 @@ function submitSprint() {
   } else {
     score = 8; type = 'error'; title = '🎯 Keep Practicing! (' + passed + '/5 criteria)'; desc = 'Remember the formula under pressure: Role + Context + Task + Format.';
   }
-  App.scores[3] = score;
+  const fallback = {
+    score: score,
+    level: type,
+    title: title,
+    feedback: desc,
+    criteria: criteria.map((criterion, index) => ({
+      id: 'criterion-' + (index + 1),
+      label: criterion.lbl,
+      met: criterion.pass
+    }))
+  };
+  const evaluation = await requestActivityEvaluation(
+    'sprint-challenge',
+    { text: document.getElementById('sprintInput').value },
+    fallback
+  );
+  App.scores[3] = evaluation.score;
 
   const fb = document.getElementById('fb4');
   fb.classList.remove('hidden');
-  fb.innerHTML = renderFeedback(type, title, desc) + rubHtml;
+  fb.innerHTML = renderFeedback(evaluation.level, evaluation.title, evaluationFeedback(evaluation)) + renderRubric(evaluation.criteria);
 
-  setTimeout(() => showResults(), 3200);
+  settleChallenge(4, evaluation, () => {
+    App.sprintRevision = true;
+    const input = document.getElementById('sprintInput');
+    input.disabled = false;
+    document.getElementById('timerStatus').textContent = 'Revise & resubmit';
+    onSprintInput(input.value || '');
+    input.focus();
+  }, 5600);
 }
 
 /* ════════════════════════════════════
@@ -2022,13 +2181,14 @@ function spawnConfetti() {
 }
 
 /* ════ EMBED BRIDGE — postMessage to CoursePlayer ════ */
-function notifyParentComplete(totalScore) {
+function notifyParentComplete(totalScore, activityId, maxScore) {
   try {
     window.parent.postMessage({
       type: 'ACTIVITY_COMPLETE',
       source: 'prompt-lab',
       score: totalScore,
-      maxScore: 100
+      maxScore: maxScore || 100,
+      activityId: activityId || 'prompt-lab'
     }, '*');
   } catch (e) {}
 }

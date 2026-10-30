@@ -14,4 +14,4 @@ services:
         value: production
     # Set secrets in Render dashboard (sync: false):
     # DATABASE_URL, AUTH_AZURE_AD_*, AUTH_SECRET, AUTH_URL, NEXTAUTH_URL,
-    # MAIL_FROM_ADDRESS, NVIDIA_API_KEY, NVIDIA_MODEL
+    # MAIL_FROM_ADDRESS, NVIDIA_API_KEY, NVIDIA_MODEL, GEMINI_API_KEY, GEMINI_MODEL

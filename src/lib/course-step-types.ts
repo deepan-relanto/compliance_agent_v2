@@ -51,6 +51,8 @@ export type CourseStepConfig = {
   sizeBytes?: number;
   /** Bumped on every content-kit sync so learners never see stale HTML. */
   contentRevision?: number;
+  /** Stable identifier for an independently gated embedded activity. */
+  activityId?: string;
 };
 
 export type CourseStepRow = {

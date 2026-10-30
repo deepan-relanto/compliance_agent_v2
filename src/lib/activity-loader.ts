@@ -25,6 +25,16 @@ export interface ActivityResolutionResult {
   slug?: string;
 }
 
+export function isPromptEngineeringModule(
+  moduleId: string,
+  moduleTitle: string,
+): boolean {
+  return (
+    moduleTitle.toLowerCase().includes("prompt engineering") ||
+    moduleId.toLowerCase().includes("prompt-engineering")
+  );
+}
+
 /**
  * Checks if an activity exists in the activity folders for the given course module.
  * If found, returns its location and web asset URL.
@@ -34,9 +44,7 @@ export function findActivityForModule(
   moduleId: string,
   moduleTitle: string,
 ): ActivityResolutionResult {
-  const isPromptEng =
-    moduleTitle.toLowerCase().includes("prompt engineering") ||
-    moduleId.toLowerCase().includes("prompt-engineering");
+  const isPromptEng = isPromptEngineeringModule(moduleId, moduleTitle);
 
   const slug = isPromptEng
     ? "prompt-engineering"
@@ -107,6 +115,73 @@ export function resolveDynamicActivityStep(
       mimeType: "text/html",
     },
   };
+}
+
+const PROMPT_ACTIVITY_SPECS = [
+  { activityId: "block-builder", challenge: 1, title: "Activity 1 · Build a Complete Prompt" },
+  { activityId: "robot-rescue", challenge: 2, title: "Activity 2 · Rescue a Vague Prompt" },
+  { activityId: "ingredient-lab", challenge: 3, title: "Activity 3 · Select the Right Ingredients" },
+  { activityId: "sprint-challenge", challenge: 4, title: "Activity 4 · Prompt Sprint" },
+] as const;
+
+/**
+ * Interleave the four Prompt Engineering mastery activities across the course.
+ * These are runtime-only steps, avoiding the legacy DB uniqueness constraint
+ * that permits only one row per module + step_type.
+ */
+export function distributePromptEngineeringActivities(
+  moduleId: string,
+  moduleTitle: string,
+  contentSteps: CourseStepRow[],
+): CourseStepRow[] {
+  if (!isPromptEngineeringModule(moduleId, moduleTitle) || contentSteps.length === 0) {
+    return contentSteps;
+  }
+
+  const match = findActivityForModule(moduleId, moduleTitle);
+  if (!match.found || !match.assetUrl) return contentSteps;
+
+  const baseSteps = [...contentSteps]
+    .filter((step) => step.stepType !== "activity")
+    .sort((a, b) => a.stepOrder - b.stepOrder);
+  if (!baseSteps.length) return contentSteps;
+
+  // For five normal content sections this yields anchors 0,1,2,4:
+  // after the opening lesson, early-middle, middle, and at the end.
+  const lastIndex = baseSteps.length - 1;
+  const anchorIndexes = [
+    0,
+    Math.max(0, Math.floor(lastIndex / 3)),
+    Math.max(0, Math.floor((lastIndex * 2) / 3)),
+    lastIndex,
+  ];
+
+  const activitiesByAnchor = new Map<number, CourseStepRow[]>();
+  PROMPT_ACTIVITY_SPECS.forEach((spec, index) => {
+    const anchor = anchorIndexes[index];
+    const list = activitiesByAnchor.get(anchor) ?? [];
+    list.push({
+      stepType: "activity",
+      stepOrder: 0,
+      title: spec.title,
+      config: {
+        assetUrl: `${match.assetUrl}?challenge=${spec.challenge}`,
+        originalName: spec.title,
+        mimeType: "text/html",
+        activityId: spec.activityId,
+      },
+    });
+    activitiesByAnchor.set(anchor, list);
+  });
+
+  const distributed: CourseStepRow[] = [];
+  baseSteps.forEach((step, index) => {
+    distributed.push(step);
+    distributed.push(...(activitiesByAnchor.get(index) ?? []));
+  });
+
+  // Runtime ordering only; no database rows are changed.
+  return distributed.map((step, index) => ({ ...step, stepOrder: index + 1 }));
 }
 
 /**

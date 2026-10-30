@@ -1658,18 +1658,20 @@ export function CoursePlayer({
   }, []);
 
   /**
-   * Called by ActivityStepContent when the learner finishes the activity lab.
-   * Persists the score to prompt_activity_scores (new isolated table),
-   * then advances to the next content step automatically.
+   * Called only after an independently gated activity reaches mastery.
+   * Persists that challenge score; the learner advances with the course footer.
    */
   const handleActivityComplete = useCallback(
-    (payload: { score: number; maxScore: number }) => {
+    (payload: { score: number; maxScore: number; activityId?: string }) => {
       setActivityComplete(true);
       if (!user?.username || !module?.id || !currentContentStep || isPreviewEffective) return;
       // Fire-and-forget — score save should not block UX
       void syncActivityScore({
         moduleId: module.id,
-        activityId: currentContentStep.config.assetUrl ?? "unknown",
+        activityId:
+          payload.activityId ??
+          currentContentStep.config.activityId ??
+          "unknown",
         score: payload.score,
         maxScore: payload.maxScore,
       });

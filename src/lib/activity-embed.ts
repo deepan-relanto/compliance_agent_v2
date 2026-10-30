@@ -36,6 +36,7 @@ export interface ActivityCompletePayload {
   source: typeof ACTIVITY_EMBED_SOURCE;
   score: number;
   maxScore: number;
+  activityId?: string;
 }
 
 export interface ActivityStatusPayload {
