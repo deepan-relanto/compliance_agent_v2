@@ -1,8 +1,3 @@
-const { neon } = require("@neondatabase/serverless");
-
-const sql = neon(
-  "postgresql://neondb_owner:npg_7kQnAvhsMuH8@ep-soft-fog-ap6xo07v.c-7.us-east-1.aws.neon.tech/neondb?sslmode=require"
-);
 
 async function migrate() {
   await sql`
